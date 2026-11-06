@@ -1,0 +1,644 @@
+﻿using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
+
+namespace MapleBar;
+
+/// <summary>화면 맨 위에 항상 떠 있는 메이플 바.</summary>
+public class BarForm : Form
+{
+    [DllImport("user32.dll")] static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mod, uint vk);
+    [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+
+    const int HotkeyId = 1;
+    const uint MOD_ALT = 1, MOD_CONTROL = 2;
+
+    readonly Settings settings = Settings.Load();
+    readonly FlowLayoutPanel left, right;
+    readonly Panel searchBox;
+    readonly TextBox search = new();
+    readonly Label recentChip;
+    readonly float sc;
+
+    int S(int v) => (int)Math.Round(v * sc);
+
+    public BarForm()
+    {
+        // Windows 배율(DPI)에 더해 모니터 가로 해상도에 맞춰 크기와 글꼴을 같이 키우거나 줄인다
+        UI.Z = UI.FitZoom(Screen.PrimaryScreen!, DeviceDpi);
+        sc = DeviceDpi / 96f * UI.Z;
+        Text = "메이플 바";
+        FormBorderStyle = FormBorderStyle.None;
+        TopMost = true;
+        ShowInTaskbar = true;
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        StartPosition = FormStartPosition.Manual;
+        Font = new Font("맑은 고딕", 10.5f * UI.Z, FontStyle.Bold);
+        BackColor = UI.Line;          // 1px 테두리 색
+        Padding = new Padding(1);
+        Height = S(56);
+
+        left = MakeFlow(DockStyle.Left);
+        right = MakeFlow(DockStyle.Right);
+        var filler = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+        filler.MouseDown += DragMove;
+        Controls.Add(left);
+        Controls.Add(right);
+        Controls.Add(filler);
+        filler.BringToFront();
+
+        // ── 왼쪽: 이동 손잡이, 로고, 메뉴 ──
+        var grip = new Label
+        {
+            Text = "⠿", AutoSize = true, Cursor = Cursors.SizeAll,
+            ForeColor = Color.FromArgb(170, 170, 170), Font = new Font("Segoe UI Symbol", 12f * UI.Z),
+            Margin = new Padding(0, 0, S(4), 0),
+        };
+        grip.MouseDown += DragMove;
+        left.Controls.Add(pin = MakePin());
+        left.Controls.Add(grip);
+
+        left.Controls.Add(UI.Button("환산", "환산주스탯 홈", () => Navigate("/ko"), sc, fore: UI.Accent));
+
+        foreach (var top in SiteMenu.Top)
+        {
+            Label nav = null!;
+            if (top.Items == null)
+            {
+                nav = UI.Button(top.Name, "", () => Navigate(WithName(top.Path!)), sc);
+                nav.MouseEnter += (_, _) => HideMega();
+            }
+            else
+            {
+                var mega = new MegaMenuForm(top.Items, sc, p => Navigate(WithName(p))) { Owner = this };
+                nav = UI.Button(top.Name, "", () => OpenMega(mega, nav), sc);
+                nav.MouseEnter += (_, _) => OpenMega(mega, nav);
+            }
+            nav.Margin = new Padding(S(6), 0, S(6), 0);
+            left.Controls.Add(nav);
+        }
+
+        // 마우스가 메뉴 글자와 펼친 메뉴 밖으로 나가면 닫는다
+        megaTimer.Tick += (_, _) =>
+        {
+            if (openMega == null || megaNav == null) { megaTimer.Stop(); return; }
+            var cur = Cursor.Position;
+            var navRect = megaNav.RectangleToScreen(megaNav.ClientRectangle);
+            navRect = Rectangle.FromLTRB(navRect.Left, navRect.Top, navRect.Right, openMega.Top + 2); // 바와 메뉴 사이 틈까지 이어지게
+            if (!navRect.Contains(cur) && !openMega.Bounds.Contains(cur)) HideMega();
+        };
+
+        // ── 오른쪽: 뮤직 컨트롤(듣는 중일 때만), 닉네임 검색, 최근 기록, 설정/숨기기/종료 ──
+        AddMusicControls();
+
+        searchBox = new Panel { Size = new Size(S(230), S(36)), BackColor = Color.White, Margin = new Padding(S(10), 0, S(4), 0) };
+        searchBox.Paint += PaintSearchBorder;
+        search.BorderStyle = BorderStyle.None;
+        search.PlaceholderText = "닉네임을 입력하세요";
+        search.Font = new Font("맑은 고딕", 10.5f * UI.Z);
+        search.Width = searchBox.Width - S(44);
+        search.Location = new Point(S(12), (searchBox.Height - search.PreferredHeight) / 2);
+        search.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Search(SiteMenu.InfoPath); }
+            else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; search.Clear(); }
+        };
+        var searchIcon = UI.Button("🔍", "캐릭터정보 검색 (Enter)", () => Search(SiteMenu.InfoPath), sc);
+        searchIcon.Font = new Font("Segoe UI Emoji", 10f * UI.Z);
+        searchIcon.Padding = new Padding(S(2));
+        searchIcon.Location = new Point(searchBox.Width - S(34), (searchBox.Height - searchIcon.PreferredSize.Height) / 2);
+        searchBox.Controls.Add(search);
+        searchBox.Controls.Add(searchIcon);
+        searchBox.Click += (_, _) => search.Focus();
+        search.GotFocus += (_, _) => searchBox.Invalidate();
+        search.LostFocus += (_, _) => searchBox.Invalidate();
+        right.Controls.Add(searchBox);
+
+
+        recentChip = UI.Button("", "최근 검색한 캐릭터", ShowRecentMenu, sc,
+            fore: Color.FromArgb(150, 80, 0), back: Color.FromArgb(255, 243, 224));
+        recentChip.Margin = new Padding(S(8), 0, S(4), 0);
+        right.Controls.Add(recentChip);
+        UpdateRecentChip();
+
+        Label? gear = null;
+        gear = UI.Button("⚙", "설정", () => ShowSettingsMenu(gear!), sc);
+        right.Controls.Add(gear);
+        right.Controls.Add(UI.Button("—", "바 숨기기 (Ctrl+Alt+M으로 다시 열기)", HideAll, sc));
+        right.Controls.Add(UI.Button("✕", "종료 (열린 창도 모두 닫힘)", Close, sc));
+    }
+
+    // ── 뮤직: 메애기 창은 숨겨 두고 바에서 곡 제목·진행 바·⏮ ⏯ ⏭만 보여 준다 ──
+    MusicPill? musicPill;
+    MusicDock? musicDock;
+
+    void AddMusicControls()
+    {
+        musicPill = new MusicPill(sc) { Visible = false, Margin = new Padding(S(4), 0, S(6), 0) };
+        musicPill.TitleClick += () => MusicPicker.Open(this, settings, sc, false);
+        var menu = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 9.5f * UI.Z), ShowImageMargin = false });
+        menu.Items.Add("인기 TOP 100", null, (_, _) => MusicPicker.Open(this, settings, sc, false));
+        menu.Items.Add("브금 검색", null, (_, _) => MusicPicker.Open(this, settings, sc, true));
+        menu.Items.Add("메애기 창 보기/숨기기", null, (_, _) => WebWindow.ToggleMusicWindow());
+        var dockBack = menu.Items.Add("바에 다시 넣기", null, (_, _) => musicDock?.DockBack());
+        menu.Opening += (_, _) => dockBack.Visible = musicDock?.Floating == true;
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("뮤직 끄기", null, (_, _) => WebWindow.StopMusic());
+        musicPill.ContextMenuStrip = menu;
+        right.Controls.Add(musicPill);
+        musicDock = new MusicDock(this, right, musicPill, settings, sc, LayoutBar, () => new Rectangle(Left, Top, Width, Math.Max(S(10), VisibleBottom - Top)));
+        WebWindow.MusicChanged += OnMusicChanged;
+    }
+
+    void OnMusicChanged(WebWindow.MusicInfo? m)
+    {
+        if (IsDisposed || musicPill == null) return;
+        bool show = m != null;
+        if (m != null) musicPill.SetInfo(m);
+        if (musicPill.Visible != show) { musicPill.Visible = show; if (musicDock?.Floating != true) LayoutBar(); }
+        // 지난번에 꺼내 뒀으면 그 자리에 다시 꺼내 둔다
+        if (show && settings.MusicFloat && musicDock?.Floating == false) musicDock.RestoreFloat();
+        musicDock?.SetShown(show && Visible);
+    }
+
+    protected override void OnHandleDestroyed(EventArgs e)
+    {
+        WebWindow.MusicChanged -= OnMusicChanged;
+        base.OnHandleDestroyed(e);
+    }
+
+    FlowLayoutPanel MakeFlow(DockStyle dock)
+    {
+        var f = new FlowLayoutPanel
+        {
+            Dock = dock, AutoSize = true, WrapContents = false, BackColor = Color.White,
+            Padding = new Padding(S(8), 0, S(8), 0),
+        };
+        f.MouseDown += DragMove;
+        return f;
+    }
+
+    // ── 펼침 메뉴 ──
+    readonly System.Windows.Forms.Timer megaTimer = new() { Interval = 120 };
+    MegaMenuForm? openMega;
+    Label? megaNav;
+
+    void OpenMega(MegaMenuForm mega, Label nav)
+    {
+        if (openMega != null && openMega != mega) openMega.Hide();
+        if (megaNav != null && megaNav != nav) megaNav.ForeColor = UI.Text;
+        openMega = mega;
+        megaNav = nav;
+        nav.ForeColor = UI.Accent;
+        mega.ShowUnder(this);
+        megaTimer.Start();
+    }
+
+    void HideMega()
+    {
+        openMega?.Hide();
+        if (megaNav != null) megaNav.ForeColor = UI.Text;
+        openMega = null;
+        megaNav = null;
+        megaTimer.Stop();
+    }
+
+    /// <summary>실행 인자: MapleBar.exe 닉네임 [--boss]</summary>
+    public void RunArgs(string[] args)
+    {
+        var name = args.FirstOrDefault(a => !a.StartsWith("--"));
+        if (name == null) return;
+        search.Text = name;
+        Search(args.Contains("--boss") ? SiteMenu.BossCutPath : SiteMenu.InfoPath);
+    }
+
+    // ── 동작 ──
+
+    /// <summary>닉네임을 받는 페이지면 검색칸의 닉네임을 붙인다.</summary>
+    string WithName(string path)
+    {
+        var name = search.Text.Trim();
+        return SiteMenu.NamePages.Contains(path) && name.Length > 0
+            ? path + "?name=" + Uri.EscapeDataString(name)
+            : path;
+    }
+
+    void Search(string path)
+    {
+        var name = search.Text.Trim();
+        if (name.Length == 0)
+        {
+            search.Focus();
+            searchBox.BackColor = Color.FromArgb(255, 240, 230);
+            var t = new System.Windows.Forms.Timer { Interval = 400 };
+            t.Tick += (_, _) => { searchBox.BackColor = Color.White; t.Dispose(); };
+            t.Start();
+            return;
+        }
+        settings.AddRecent(name);
+        settings.Save();
+        UpdateRecentChip();
+
+        // 열린 캐릭터 창을 모두 이 캐릭터로 바꾸고, 누른 화면이 없으면 새 창으로 연다
+        bool shown = WebWindow.ApplyName(name, path);
+        if (!shown) Navigate(path + "?name=" + Uri.EscapeDataString(name));
+    }
+
+    /// <summary>링크를 항상 새 창으로 연다.</summary>
+    void Navigate(string path)
+    {
+        HideMega();
+        // 뮤직은 이미 열린 창에서 페이지만 바꾼다 (노래가 두 곳에서 겹쳐 나오지 않게)
+        if (Music.IsMusic(path))
+        {
+            // 인기 차트·검색은 바의 곡 목록으로 고른다. 메애기 창은 뒤에 숨어서 재생만 한다.
+            if (path == Music.Home) { MusicPicker.Open(this, settings, sc, false); return; }
+            if (path == Music.Home + "/search") { MusicPicker.Open(this, settings, sc, true); return; }
+            WebWindow.EnsureMusic(settings, sc, path, true); // 내 목록(로그인 필요)은 창으로 연다
+            return;
+        }
+        try { new WebWindow(path.StartsWith("http") ? path : SiteMenu.Base + path, settings, sc).Show(); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "창을 열지 못했어요.\n\n" + ex, "메이플 바", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    void ShowRecentMenu()
+    {
+        var cms = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 10f * UI.Z), ShowImageMargin = false });
+        if (settings.Recent.Count == 0)
+        {
+            cms.Items.Add(new ToolStripMenuItem("검색 기록이 없어요") { Enabled = false });
+        }
+        foreach (var name in settings.Recent)
+        {
+            var n = name;
+            var mi = new ToolStripMenuItem(n);
+            mi.Click += (_, _) => { search.Text = n; Search(SiteMenu.InfoPath); };
+            var info = new ToolStripMenuItem("캐릭터정보");
+            info.Click += (_, _) => { search.Text = n; Search(SiteMenu.InfoPath); };
+            var boss = new ToolStripMenuItem("보스컷");
+            boss.Click += (_, _) => { search.Text = n; Search(SiteMenu.BossCutPath); };
+            mi.DropDownItems.Add(info);
+            mi.DropDownItems.Add(boss);
+            cms.Items.Add(mi);
+        }
+        if (settings.Recent.Count > 0)
+        {
+            cms.Items.Add(new ToolStripSeparator());
+            var clear = new ToolStripMenuItem("기록 지우기");
+            clear.Click += (_, _) => { settings.Recent.Clear(); settings.Save(); UpdateRecentChip(); };
+            cms.Items.Add(clear);
+        }
+        ShowBelowBar(cms, recentChip);
+    }
+
+    Control? closedByAnchor;
+    long closedAt;
+    int menusOpen; // 바의 메뉴가 열려 있는 동안은 바를 맨 위로 올리지 않는다 (메뉴가 바 뒤로 숨지 않게)
+
+    /// <summary>메뉴를 바 아래에 조금 띄워서 연다.</summary>
+    void ShowBelowBar(ContextMenuStrip cms, Control anchor)
+    {
+        // 열린 메뉴의 버튼을 다시 누르면: 누르는 순간 메뉴가 먼저 닫히므로, 여기서 다시 열지 않고 끝낸다
+        if (closedByAnchor == anchor && Environment.TickCount64 - closedAt < 800)
+        {
+            closedByAnchor = null;
+            BeginInvoke(cms.Dispose);
+            return;
+        }
+        cms.Opened += (_, _) => menusOpen++;
+        cms.Closed += (_, e) =>
+        {
+            menusOpen = Math.Max(0, menusOpen - 1);
+            bool onAnchor = anchor.ClientRectangle.Contains(anchor.PointToClient(Cursor.Position));
+            closedByAnchor = e.CloseReason == ToolStripDropDownCloseReason.AppClicked && onAnchor ? anchor : null;
+            closedAt = Environment.TickCount64;
+        };
+        // 화면 오른쪽을 넘으면 윈도우가 알아서 안쪽으로 옮긴다
+        cms.Show(new Point(anchor.PointToScreen(Point.Empty).X, Bottom + S(8)));
+    }
+
+    void UpdateRecentChip()
+    {
+        recentChip.Text = settings.Recent.Count > 0 ? settings.Recent[0] + " ▾" : "최근 ▾";
+        if (IsHandleCreated) LayoutBar();
+    }
+
+    void ShowSettingsMenu(Control anchor)
+    {
+        HideMega();
+        var cms = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 10f * UI.Z), ShowImageMargin = false, ShowCheckMargin = true });
+        var top = new ToolStripMenuItem("사이트 창 항상 위") { Checked = settings.WinTopMost };
+        top.Click += (_, _) =>
+        {
+            settings.WinTopMost = !settings.WinTopMost;
+            settings.Save();
+            WebWindow.SetTopMost(settings.WinTopMost);
+        };
+        cms.Items.Add(top);
+        var fx = new ToolStripMenuItem("곡 넘김 효과음 (레코드)") { Checked = settings.MusicFx };
+        fx.Click += (_, _) =>
+        {
+            settings.MusicFx = !settings.MusicFx;
+            settings.Save();
+            WebWindow.SetMusicFx(settings.MusicFx);
+        };
+        cms.Items.Add(fx);
+        var fold = new ToolStripMenuItem("바 고정 (끄면 3초 뒤 접힘)") { Checked = !settings.BarAutoHide };
+        fold.Click += (_, _) => SetPinned(settings.BarAutoHide);
+        cms.Items.Add(fold);
+        var closeAll = new ToolStripMenuItem("사이트 창 모두 닫기") { Enabled = WebWindow.AnyOpen };
+        closeAll.Click += (_, _) => WebWindow.CloseAll();
+        cms.Items.Add(closeAll);
+
+        // 인벤 자유게시판 알림: 체크한 목록에 새 글이 올라오면 화면 오른쪽 아래에 알려 준다
+        cms.Items.Add(new ToolStripSeparator());
+        cms.Items.Add(new ToolStripMenuItem("자유게시판 알림 (인벤)")
+        {
+            Enabled = false, Font = new Font("맑은 고딕", 9f * UI.Z, FontStyle.Bold),
+        });
+        const string WatchTag = "watch";
+        foreach (var f in Inven.Feeds)
+        {
+            var key = f.Key;
+            var mi = new ToolStripMenuItem(f.Label) { Checked = settings.InvenWatch.Contains(key), Tag = WatchTag };
+            mi.Click += (_, _) =>
+            {
+                mi.Checked = !mi.Checked;
+                settings.InvenWatch.Remove(key);
+                if (mi.Checked) settings.InvenWatch.Add(key);
+                settings.Save();
+                inven?.PollNow();
+            };
+            cms.Items.Add(mi);
+        }
+        cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
+        // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
+        bool keepOpen = false;
+        cms.ItemClicked += (_, e) => keepOpen = (e.ClickedItem?.Tag as string) == WatchTag;
+        cms.Closing += (_, e) =>
+        {
+            if (keepOpen && e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
+            keepOpen = false;
+        };
+
+        cms.Items.Add(new ToolStripSeparator());
+        cms.Items.Add("바 숨기기 (Ctrl+Alt+M)", null, (_, _) => HideAll());
+        cms.Closed += (_, _) => BeginInvoke(cms.Dispose);
+        ShowBelowBar(cms, anchor);
+    }
+
+    void HideAll()
+    {
+        HideMega();
+        Hide();
+        musicDock?.SetShown(false);
+    }
+
+    void ShowAll()
+    {
+        lastActive = DateTime.Now; // 단축키로 불러오면 펼친 채로 시작한다
+        shown = 1; ApplyRegion();
+        if (peek != null) peek.Visible = false;
+        Show();
+        musicDock?.SetShown(musicPill?.Visible == true);
+        Activate();
+        search.Focus();
+        search.SelectAll();
+    }
+
+    // ── 창 처리 ──
+
+    void DragMove(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        ReleaseCapture();
+        SendMessage(Handle, 0xA1 /*WM_NCLBUTTONDOWN*/, (IntPtr)2 /*HTCAPTION*/, IntPtr.Zero);
+    }
+
+    void LayoutBar()
+    {
+        int rowH = ClientSize.Height - Padding.Vertical;
+        foreach (Control c in left.Controls) UI.CenterV(c, rowH);
+        foreach (Control c in right.Controls) UI.CenterV(c, rowH);
+        int w = left.PreferredSize.Width + right.PreferredSize.Width + S(24) + Padding.Horizontal;
+        if (w == Width) return;
+        // 폭이 바뀌어도 바의 가운데는 그대로 둔다
+        if (IsHandleCreated) SetBounds(Left - (w - Width) / 2, Top, w, Height);
+        else Width = w;
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        LayoutBar();
+        var wa = Screen.PrimaryScreen!.WorkingArea;
+        var pos = new Point(wa.Left + (wa.Width - Width) / 2, wa.Top + S(6));
+        // 가운데 좌표로 저장해 두었다가 되살린다 (예전처럼 왼쪽 끝을 저장하면 브금 칸이 붙을 때마다 조금씩 왼쪽으로 밀린다)
+        if (settings.BarY is int by)
+        {
+            if (settings.BarCX is int cx && Screen.AllScreens.Any(s => s.WorkingArea.Contains(cx, by + 10)))
+                pos = new Point(cx - Width / 2, by);
+            else if (wa.Contains(wa.Left + wa.Width / 2, by + 10))
+                pos = new Point(pos.X, by); // 예전 저장값은 가로를 화면 가운데로 되돌린다
+        }
+        Location = pos;
+        search.Focus();
+        keepTop.Tick += (_, _) => StayOnTop();
+        keepTop.Start();
+        // 접혔을 때 남는 주황 띠
+        peek = new Panel { Bounds = new Rectangle(0, 0, Width, PeekH), BackColor = UI.Accent, Visible = false, Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+        Controls.Add(peek);
+        peek.BringToFront();
+        foldTimer.Tick += (_, _) => FoldTick();
+        foldTimer.Start();
+        inven = new InvenWatcher(settings, (tag, post) =>
+            NoticeStrip.Show(this, tag == "새 글" ? 0 : 1, tag, post.Title, post.Category, () => Navigate(post.Url), sc));        RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
+    }
+
+    // 다른 '항상 위' 창(사이트 창, 다른 프로그램)이 바를 덮지 않게 계속 맨 위로 올린다
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    readonly System.Windows.Forms.Timer keepTop = new() { Interval = 500 };
+    InvenWatcher? inven;
+
+    void StayOnTop()
+    {
+        if (menusOpen > 0 || !Visible || WindowState == FormWindowState.Minimized || !IsHandleCreated) return;
+        const uint NOSIZE = 1, NOMOVE = 2, NOACTIVATE = 0x10, NOOWNERZORDER = 0x200;
+        SetWindowPos(Handle, new IntPtr(-1) /*HWND_TOPMOST*/, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE | NOOWNERZORDER);
+        musicDock?.RaiseCard();
+    }
+
+    protected override void OnLocationChanged(EventArgs e)
+    {
+        base.OnLocationChanged(e);
+        HideMega();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        ApplyRegion();
+    }
+
+    // 보이는 부분만 둥근 모양으로 남긴다 (접힐 때는 아래쪽부터 잘려서 위로 말려 올라간다)
+    void ApplyRegion()
+    {
+        int h = Math.Max(PeekH, (int)Math.Round(Height * shown));
+        // 다 접히면 가운데 짧은 손잡이만 남긴다 (나머지는 마우스가 그대로 뒤로 지나간다)
+        var rgn = shown <= 0
+            ? CreateRoundRectRgn(PeekRect.Left, 0, PeekRect.Right + 1, PeekH + 1, PeekH, PeekH)
+            : CreateRoundRectRgn(0, 0, Width + 1, h + 1, S(14), S(14));
+        if (peek != null) peek.Bounds = PeekRect;
+        Region = Region.FromHrgn(rgn);
+        DeleteObject(rgn);
+    }
+
+    // ── 자동 접기: 마우스가 3초 동안 바에 없으면 접고, 남은 띠에 마우스를 대면 펼친다 ──
+    // 고정핀: 꽂혀 있으면 바를 늘 펼쳐 두고, 빼 두면 3초 뒤에 접는다
+    Panel? pin;
+    readonly ToolTip pinTip = new();
+    void SetPinned(bool pinned)
+    {
+        settings.BarAutoHide = !pinned;
+        settings.Save();
+        lastActive = DateTime.Now;
+        if (pin != null) { pin.Invalidate(); pinTip.SetToolTip(pin, PinText); }
+    }
+    string PinText => settings.BarAutoHide ? "고정핀: 꺼짐 (안 쓰면 3초 뒤 접혀요 · 누르면 고정)" : "고정핀: 켜짐 (늘 펼쳐 둬요 · 누르면 해제)";
+
+    Panel MakePin()
+    {
+        var p = new Panel { Size = new Size(S(28), S(28)), Cursor = Cursors.Hand, BackColor = Color.White, Margin = new Padding(0, 0, S(2), 0) };
+        bool hot = false;
+        p.MouseEnter += (_, _) => { hot = true; p.Invalidate(); };
+        p.MouseLeave += (_, _) => { hot = false; p.Invalidate(); };
+        p.Click += (_, _) => SetPinned(settings.BarAutoHide);
+        pinTip.SetToolTip(p, PinText);
+        p.Paint += (_, e) =>
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            bool on = !settings.BarAutoHide;
+            float cx = p.Width / 2f, cy = p.Height / 2f, u = S(5);
+            if (on || hot)
+                using (var b = new SolidBrush(Color.FromArgb(on ? 40 : 25, UI.Accent))) g.FillEllipse(b, cx - S(12), cy - S(12), S(24), S(24));
+            var col = on ? UI.Accent : Color.FromArgb(165, 150, 135);
+            // 꽂혀 있으면 똑바로, 빼 두면 비스듬히 눕힌다
+            g.TranslateTransform(cx, cy);
+            if (!on) g.RotateTransform(45);
+            using var b2 = new SolidBrush(col);
+            using var pen = new Pen(col, S(2)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.FillRectangle(b2, -u * 0.75f, -u * 1.5f, u * 1.5f, u * 0.45f);                 // 머리 윗판
+            g.FillPolygon(b2, new[] { new PointF(-u * 0.5f, -u * 1.1f), new PointF(u * 0.5f, -u * 1.1f),
+                                      new PointF(u * 0.95f, u * 0.2f), new PointF(-u * 0.95f, u * 0.2f) }); // 몸통
+            g.DrawLine(pen, 0, u * 0.25f, 0, u * 1.55f);                                          // 바늘
+            g.ResetTransform();
+        };
+        return p;
+    }
+
+    int PeekH => S(6);
+    Rectangle PeekRect => new((Width - S(120)) / 2, 0, S(120), PeekH);
+    /// <summary>지금 화면에 보이는 바의 아래쪽 (접히면 손잡이 아래). 알림이 이 아래에 붙는다.</summary>
+    public int VisibleBottom => Top + Math.Max(PeekH, (int)Math.Round(Height * shown));
+    // 알림이 뜰 자리: 펼친 메뉴가 있으면 그 아래, 없으면 바 아래
+    public int NoticeTop => openMega is { Visible: true } m ? Math.Max(VisibleBottom, m.Bottom) : VisibleBottom;
+    double shown = 1;          // 보이는 비율 (1 = 다 펼침)
+    DateTime lastActive = DateTime.Now;
+    readonly System.Windows.Forms.Timer foldTimer = new() { Interval = 15 };
+    Panel? peek;
+
+    bool InUse()
+    {
+        var cur = Cursor.Position;
+        // 접혀 있으면 손잡이 근처만, 펼쳐져 있으면 바 전체 (조금 넉넉하게)
+        var vis = shown <= 0
+            ? new Rectangle(Left + PeekRect.Left - S(20), Top - S(8), PeekRect.Width + S(40), PeekH + S(16))
+            : new Rectangle(Left, Top, Width, Math.Max(PeekH + S(4), (int)(Height * shown)));
+        if (shown >= 1) vis.Inflate(S(6), S(6));
+        if (vis.Contains(cur)) return true;
+        if (openMega != null || menusOpen > 0) return true;
+        if (ContainsFocus && search.Focused && search.TextLength > 0) return true; // 닉네임을 치는 중
+        // 바에서 띄운 소리 조절기·곡 목록 위에 마우스가 있으면 쓰는 중
+        foreach (Form f in Application.OpenForms)
+            if (f.Visible && f is VolumeDial or MusicPicker && f.Bounds.Contains(cur)) return true;
+        return false;
+    }
+
+    void FoldTick()
+    {
+        if (!Visible || !IsHandleCreated) return;
+        double target = 1;
+        if (settings.BarAutoHide)
+        {
+            if (InUse()) lastActive = DateTime.Now;
+            else if ((DateTime.Now - lastActive).TotalSeconds >= 3) target = 0;
+        }
+        if (Math.Abs(shown - target) < 0.001) return;
+        if (target == 0 && shown >= 1) HideMega();
+        // 펼칠 때는 빠르게, 접을 때는 조금 천천히
+        shown += (target - shown) * (target > shown ? 0.35 : 0.18);
+        if (Math.Abs(shown - target) < 0.02) shown = target;
+        if (peek != null) peek.Visible = shown <= 0;
+        ApplyRegion();
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ClassStyle |= 0x20000; // CS_DROPSHADOW: 그림자
+            return cp;
+        }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        RegisterHotKey(Handle, HotkeyId, MOD_CONTROL | MOD_ALT, (uint)Keys.M);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x0312 /*WM_HOTKEY*/ && m.WParam == (IntPtr)HotkeyId)
+        {
+            if (Visible && WindowState != FormWindowState.Minimized) HideAll();
+            else { WindowState = FormWindowState.Normal; ShowAll(); }
+            return;
+        }
+        base.WndProc(ref m);
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        settings.BarX = Left;
+        settings.BarY = Top;
+        settings.BarCX = Left + Width / 2;
+        settings.Save();
+        UnregisterHotKey(Handle, HotkeyId);
+        base.OnFormClosing(e);
+    }
+
+    void PaintSearchBorder(object? sender, PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var r = new Rectangle(0, 0, searchBox.Width - 1, searchBox.Height - 1);
+        int d = S(10);
+        using var path = new GraphicsPath();
+        path.AddArc(r.Left, r.Top, d, d, 180, 90);
+        path.AddArc(r.Right - d, r.Top, d, d, 270, 90);
+        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        path.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        using var pen = new Pen(search.Focused ? UI.Accent : UI.Line, Math.Max(1, S(1)));
+        g.DrawPath(pen, path);
+    }
+}
