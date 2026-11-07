@@ -9,6 +9,10 @@ public class Settings
     public int? BarX { get; set; }
     public int? BarY { get; set; }
     public int? BarCX { get; set; } // 바의 가운데 x (폭이 바뀌어도 자리가 밀리지 않게)
+    // 게임 창에 붙어 있을 때의 자리: 게임 화면 가로 가운데·위쪽 끝에서 얼마나 떨어졌는지 (게임 화면 폭에 대한 비율)
+    public double? GameDX { get; set; }
+    public double? GameDY { get; set; }
+    public bool GameFollow { get; set; } = true; // 게임 화면 밖에 놓으면 false
     // 사이트 창: 마지막 위치·크기, 항상 위 여부
     public int? WinX { get; set; }
     public int? WinY { get; set; }
@@ -25,6 +29,25 @@ public class Settings
     public int? MusicY { get; set; }
     // 인벤 자유게시판 알림으로 지켜볼 목록 (Inven.Feeds의 Key)
     public List<string> InvenWatch { get; set; } = new();
+    // 솔 야누스 알림: 설치 키를 누르면 지속시간을 세고, 꺼지면 게임 화면 가장자리에 보랏빛을 한 바퀴 돌린다
+    public bool JanusOn { get; set; }
+    public int JanusKey { get; set; }   // 가상 키 코드 (0이면 없음)
+    public int JanusSec { get; set; } = 80;
+    public bool LunaExt { get; set; } = true;   // 루나 익스텐션: 있으면 다시 깔 때 시간을 새로 센다
+    public bool PickupOn { get; set; } = true;  // 설치 65초 뒤 아이템 회수 알림
+    // 룬 알림: NPC 대화 키 뒤에 방향키 4번을 누르면 룬 주기(분)를 세고, 다 되면 알린다
+    public bool RuneOn { get; set; }
+    public int NpcKey { get; set; }
+    public int RuneMin { get; set; } = 15;
+    // 껐다 켜도 이어서 세도록 시작 시각을 남긴다 (끝 = 시작 + 지속시간)
+    public DateTime? JanusStart { get; set; }
+    public DateTime? RuneStart { get; set; }
+    // 네이버 웹툰: 누르고 있는 동안 부드럽게 위/아래로 스크롤하는 키와 속도(초당 픽셀)
+    public int WebtoonUpKey { get; set; }
+    public int WebtoonDownKey { get; set; }
+    public int WebtoonSpeed { get; set; } = 900;
+    public int WebtoonNextKey { get; set; } // 다음 화
+    public int WebtoonPrevKey { get; set; } // 이전 화
 
     static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar");

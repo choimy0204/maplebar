@@ -61,6 +61,14 @@ public static class SiteMenu
             H("계정"),
             I("인벤 로그인", Inven.LoginUrl),
         }),
+        // 네이버 웹툰 (작은 창에 맞는 모바일 화면, 로그인은 사용자가 직접 한다)
+        new("웹툰", null, new[]
+        {
+            H("네이버 웹툰"),
+            I("웹툰 홈", Webtoon.Home),
+            H("계정"),
+            I("네이버 로그인", Webtoon.LoginUrl),
+        }),
         // 메애기 메이플 뮤직 (사이트의 플레이어로 듣는다. 창 하나를 같이 쓴다)
         new("🎵 뮤직", null, new[]
         {
@@ -71,6 +79,20 @@ public static class SiteMenu
             I("재생목록", Music.Home + "/my/playlists"),
         }),
     };
+}
+
+public static class Webtoon
+{
+    public const string Home = "https://m.comic.naver.com/"; // 내 웹툰은 페이지의 MY 버튼으로 간다
+    public static string LoginUrl => "https://nid.naver.com/nidlogin.login?mode=form&url=" + Uri.EscapeDataString(Home);
+    /// <summary>웹툰·네이버 로그인 화면 (세로로 긴 창, 스크롤 키 대상)</summary>
+    public static bool IsWebtoon(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) &&
+        (u.Host.EndsWith("comic.naver.com", StringComparison.OrdinalIgnoreCase) || u.Host.Equals("nid.naver.com", StringComparison.OrdinalIgnoreCase));
+    /// <summary>네이버 안의 주소 (새 창 링크를 앱 안에서 연다)</summary>
+    public static bool IsNaver(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) &&
+        (u.Host.Equals("naver.com", StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith(".naver.com", StringComparison.OrdinalIgnoreCase));
 }
 
 public static class Music

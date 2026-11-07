@@ -554,6 +554,16 @@ sealed class Splash : Form
         }
     }
 
+    /// <summary>그림은 그대로 두고 창 전체 투명도만 바꾼다 (큰 그림을 매번 다시 올리지 않으려고).</summary>
+    public void SetAlpha(byte a)
+    {
+        if (!IsHandleCreated) return;
+        var blend = new BLENDFUNCTION { BlendOp = 0, SourceConstantAlpha = a, AlphaFormat = 1 };
+        UpdateLayeredWindow(Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref blend, 2);
+    }
+    [DllImport("user32.dll", EntryPoint = "UpdateLayeredWindow")]
+    static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, IntPtr pptDst, IntPtr psize, IntPtr hdcSrc, IntPtr pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
+
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int x, y; }
     [StructLayout(LayoutKind.Sequential)] struct SIZE { public int cx, cy; }
     [StructLayout(LayoutKind.Sequential, Pack = 1)] struct BLENDFUNCTION { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }

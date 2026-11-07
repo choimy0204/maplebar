@@ -28,7 +28,8 @@ public class BarForm : Form
     public BarForm()
     {
         // Windows 배율(DPI)에 더해 모니터 가로 해상도에 맞춰 크기와 글꼴을 같이 키우거나 줄인다
-        UI.Z = UI.FitZoom(Screen.PrimaryScreen!, DeviceDpi);
+        // 메이플이 켜져 있으면 게임 화면 가로를, 없으면 모니터 가로를 기준으로 한다
+        UI.Z = Game.Area() is Rectangle game ? Game.ZoomFor(game, DeviceDpi) : UI.FitZoom(Screen.PrimaryScreen!, DeviceDpi);
         sc = DeviceDpi / 96f * UI.Z;
         Text = "메이플 바";
         FormBorderStyle = FormBorderStyle.None;
@@ -61,10 +62,10 @@ public class BarForm : Form
         left.Controls.Add(pin = MakePin());
         left.Controls.Add(grip);
 
-        left.Controls.Add(UI.Button("환산", "환산주스탯 홈", () => Navigate("/ko"), sc, fore: UI.Accent));
-
         foreach (var top in SiteMenu.Top)
         {
+            if (top.Name == "직접입력") continue; // 바에서는 안 쓴다
+
             Label nav = null!;
             if (top.Items == null)
             {
@@ -98,6 +99,10 @@ public class BarForm : Form
         searchBox.Paint += PaintSearchBorder;
         search.BorderStyle = BorderStyle.None;
         search.PlaceholderText = "닉네임을 입력하세요";
+        // 메이플에서 넘어오면 입력기가 꺼진 채로 남아 한/영이 안 먹을 때가 있다.
+        // 칸에 들어오면 입력기를 다시 붙이고, 마지막에 쓰던 한글/영문 상태로 돌려놓는다
+        search.GotFocus += (_, _) => ImeRestore(search.Handle);
+        search.LostFocus += (_, _) => ImeRemember(search.Handle);
         search.Font = new Font("맑은 고딕", 10.5f * UI.Z);
         search.Width = searchBox.Width - S(44);
         search.Location = new Point(S(12), (searchBox.Height - search.PreferredHeight) / 2);
@@ -378,6 +383,9 @@ public class BarForm : Form
             cms.Items.Add(mi);
         }
         cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
+        cms.Items.Add(new ToolStripSeparator());
+        cms.Items.Add("솔 야누스 · 룬 알림 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
+        cms.Items.Add("웹툰 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
         // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
         bool keepOpen = false;
         cms.ItemClicked += (_, e) => keepOpen = (e.ClickedItem?.Tag as string) == WatchTag;
@@ -418,7 +426,47 @@ public class BarForm : Form
     {
         if (e.Button != MouseButtons.Left) return;
         ReleaseCapture();
-        SendMessage(Handle, 0xA1 /*WM_NCLBUTTONDOWN*/, (IntPtr)2 /*HTCAPTION*/, IntPtr.Zero);
+        dragging = true;
+        SendMessage(Handle, 0xA1 /*WM_NCLBUTTONDOWN*/, (IntPtr)2 /*HTCAPTION*/, IntPtr.Zero); // 놓을 때까지 돌아오지 않는다
+        dragging = false;
+        // 게임 화면 안에 놓으면 그 자리를 게임 기준으로 기억하고 따라다닌다. 밖에 놓으면 따라다니지 않는다
+        if (Game.Area() is Rectangle g)
+        {
+            var center = new Point(Left + Width / 2, Top + S(10));
+            settings.GameFollow = g.Contains(center);
+            if (settings.GameFollow)
+            {
+                settings.GameDX = (center.X - (g.Left + g.Width / 2)) / (double)g.Width;
+                settings.GameDY = (Top - g.Top) / (double)g.Width;
+            }
+            settings.Save();
+        }
+    }
+
+    // ── 메이플 창 따라가기 ──
+    bool dragging;
+    readonly System.Windows.Forms.Timer gameTimer = new() { Interval = 500 };
+
+    Point GameAnchor(Rectangle g)
+    {
+        double dx = settings.GameDX ?? 0, dy = settings.GameDY ?? 6 / 1920.0;
+        int cx = g.Left + g.Width / 2 + (int)Math.Round(dx * g.Width);
+        return new Point(cx - Width / 2, g.Top + (int)Math.Round(dy * g.Width));
+    }
+
+    void FollowGame()
+    {
+        if (dragging || !Visible || WindowState == FormWindowState.Minimized || musicDock?.Floating == true && MouseButtons != MouseButtons.None) return;
+        if (Game.Area() is not Rectangle g) return;
+        // 게임 해상도가 바뀌면 크기를 다시 잡기 위해 바를 새로 띄운다 (쓰는 중이면 손을 뗄 때까지 기다린다)
+        if (Math.Abs(Game.ZoomFor(g, DeviceDpi) - UI.Z) > 0.03f)
+        {
+            if (!InUse() && MouseButtons == MouseButtons.None) { Program.RestartRequested = true; Close(); }
+            return;
+        }
+        if (!settings.GameFollow) return;
+        var p = GameAnchor(g);
+        if (p != Location) Location = p;
     }
 
     void LayoutBar()
@@ -431,6 +479,31 @@ public class BarForm : Form
         // 폭이 바뀌어도 바의 가운데는 그대로 둔다
         if (IsHandleCreated) SetBounds(Left - (w - Width) / 2, Top, w, Height);
         else Width = w;
+    }
+
+    JanusWatch? janus; // 솔 야누스·룬 알림 (키 상태만 읽는다)
+    readonly System.Windows.Forms.Timer chipTimer = new() { Interval = 250 };
+
+    // 타이머가 도는 동안 바 오른쪽 앞에 아이콘과 남은 시간을 띄운다
+    void AddTimerChips(JanusWatch w)
+    {
+        var janusChip = new TimerChip(TimerChip.Kind.Janus, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+        var runeChip = new TimerChip(TimerChip.Kind.Rune, sc) { Visible = false, Margin = new Padding(S(2), 0, S(6), 0) };
+        // 칩을 누르면 그 타이머를 취소한다 (설정은 톱니 메뉴에서)
+        janusChip.Click += (_, _) => { w.CancelJanus(); if (janusChip.SetTime(null)) LayoutBar(); };
+        runeChip.Click += (_, _) => { w.CancelRune(); if (runeChip.SetTime(null)) LayoutBar(); };
+        foreach (var c in new[] { runeChip, janusChip })
+        {
+            right.Controls.Add(c);
+            right.Controls.SetChildIndex(c, 0);
+        }
+        chipTimer.Tick += (_, _) =>
+        {
+            bool changed = janusChip.SetTime(w.Remaining);
+            changed |= runeChip.SetTime(w.RuneRemaining, w.RuneReady);
+            if (changed) LayoutBar();
+        };
+        chipTimer.Start();
     }
 
     protected override void OnLoad(EventArgs e)
@@ -447,7 +520,12 @@ public class BarForm : Form
             else if (wa.Contains(wa.Left + wa.Width / 2, by + 10))
                 pos = new Point(pos.X, by); // 예전 저장값은 가로를 화면 가운데로 되돌린다
         }
+        if (settings.GameFollow && Game.Area() is Rectangle game) pos = GameAnchor(game);
         Location = pos;
+        gameTimer.Tick += (_, _) => FollowGame();
+        gameTimer.Start();
+        janus = new JanusWatch(settings, sc);
+        AddTimerChips(janus);
         search.Focus();
         keepTop.Tick += (_, _) => StayOnTop();
         keepTop.Start();
@@ -553,6 +631,32 @@ public class BarForm : Form
     DateTime lastActive = DateTime.Now;
     readonly System.Windows.Forms.Timer foldTimer = new() { Interval = 15 };
     Panel? peek;
+
+    [DllImport("imm32.dll")] static extern bool ImmAssociateContextEx(IntPtr hWnd, IntPtr hIMC, uint flags);
+    [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr hWnd);
+    [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
+    [DllImport("imm32.dll")] static extern bool ImmGetConversionStatus(IntPtr hIMC, out uint conv, out uint sent);
+    [DllImport("imm32.dll")] static extern bool ImmSetConversionStatus(IntPtr hIMC, uint conv, uint sent);
+    bool? imeHangul; // 검색칸에서 마지막으로 쓰던 상태 (모르면 건드리지 않음)
+
+    void ImeRemember(IntPtr h)
+    {
+        var c = ImmGetContext(h);
+        if (c == IntPtr.Zero) return;
+        if (ImmGetConversionStatus(c, out uint conv, out _)) imeHangul = (conv & 1) != 0; // IME_CMODE_NATIVE
+        ImmReleaseContext(h, c);
+    }
+
+    void ImeRestore(IntPtr h)
+    {
+        ImmAssociateContextEx(h, IntPtr.Zero, 0x10); // IACE_DEFAULT: 기본 입력기를 다시 붙인다
+        if (imeHangul is not bool want) return;
+        var c = ImmGetContext(h);
+        if (c == IntPtr.Zero) return;
+        if (ImmGetConversionStatus(c, out uint conv, out uint sent) && ((conv & 1) != 0) != want)
+            ImmSetConversionStatus(c, want ? conv | 1 : conv & ~1u, sent);
+        ImmReleaseContext(h, c);
+    }
 
     bool InUse()
     {

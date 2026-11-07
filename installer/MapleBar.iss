@@ -52,7 +52,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startup
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "지금 메이플 바 실행"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExe}"; Description: "지금 메이플 바 실행"; Flags: nowait postinstall skipifsilent shellexec
 
 [Code]
 // 사이트 창은 Microsoft Edge WebView2 런타임이 있어야 뜬다 (Windows 11에는 기본으로 들어 있다)

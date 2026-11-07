@@ -347,7 +347,7 @@ public class WebWindow : Form
         MinimumSize = new Size(S(300), S(240));
         BackColor = Color.White; // 테두리(크기 조절 영역)가 따로 보이지 않게 흰색
         Padding = new Padding(edge);
-        TopMost = settings.WinTopMost;
+        TopMost = settings.WinTopMost || Webtoon.IsWebtoon(url); // 웹툰은 늘 맨 위
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
         // 위쪽 제목 줄: 주황 점 + 닉네임(굵게) + 페이지 이름(회색), 오른쪽에 주황 동그라미 ✕
@@ -420,20 +420,24 @@ public class WebWindow : Form
         Controls.Add(grip);
         web.BringToFront();
 
-        Bounds = NextBounds();
+        Bounds = NextBounds(url);
         startUrl = url;
         open.Add(this);
         _ = InitAsync(url);
+        CloseKeys.Track(this);
+        if (Webtoon.IsWebtoon(url)) scrollTimer.Start();
     }
 
     /// <summary>작은 창(약 420×560)으로, 이미 열린 창과 겹치지 않게 조금씩 비켜서 연다.</summary>
-    Rectangle NextBounds()
+    Rectangle NextBounds(string url)
     {
         // 바가 있는 화면에 연다
         var bar = Application.OpenForms.OfType<BarForm>().FirstOrDefault();
         var wa = (bar != null ? Screen.FromControl(bar) : Screen.FromPoint(Cursor.Position)).WorkingArea;
-        int w = Math.Min(S(420), wa.Width);
-        int h = Math.Min(S(560), wa.Height);
+        // 웹툰은 세로로 길게 본다: 폭은 조금 넓게, 높이는 화면 거의 전부
+        bool tall = Webtoon.IsWebtoon(url);
+        int w = Math.Min(S(tall ? 460 : 420), wa.Width);
+        int h = tall ? Math.Max(Math.Min(S(560), wa.Height), wa.Height - S(40)) : Math.Min(S(560), wa.Height);
 
         Point p;
         if (open.Count > 0)
@@ -480,21 +484,25 @@ public class WebWindow : Form
             // 페이지 안에 포커스가 있어도 Ctrl+W로 창을 닫는다 (한글 입력 중에도 되도록 키 위치로 본다)
             await cw.AddScriptToExecuteOnDocumentCreatedAsync(
                 "addEventListener('keydown',e=>{if(e.ctrlKey&&!e.altKey&&!e.shiftKey&&e.code==='KeyW'){e.preventDefault();e.stopImmediatePropagation();" +
-                "try{chrome.webview.postMessage('mb:close')}catch(_){}}},true);");
+                "try{chrome.webview.postMessage('mb:close')}catch(_){}}},true);" +
+                // Esc도 창을 닫는다. 페이지가 먼저 쓴 Esc(팝업 닫기 등)는 건드리지 않는다
+                "addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.defaultPrevented&&!e.isComposing&&!document.fullscreenElement){" +
+                "try{chrome.webview.postMessage('mb:close')}catch(_){}}});");
             cw.WebMessageReceived += (_, e) =>
             {
                 string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
                 if (m == "mb:close" && !IsDisposed) BeginInvoke(() => { if (!IsDisposed) Close(); });
             };
             // 메애기는 광고로 운영되므로 광고를 막지 않는다
-            if (!Music.IsMusic(startUrl)) await BlockAds(cw, env); // 숨김 스크립트 등록이 끝난 뒤에 페이지를 연다
+            if (Webtoon.IsWebtoon(startUrl)) await cw.AddScriptToExecuteOnDocumentCreatedAsync(ScrollScript);
+            else if (!Music.IsMusic(startUrl)) await BlockAds(cw, env); // 숨김 스크립트 등록이 끝난 뒤에 페이지를 연다
             else
             {
                 await cw.AddScriptToExecuteOnDocumentCreatedAsync(MusicScript);
                 fxScriptId = await cw.AddScriptToExecuteOnDocumentCreatedAsync(FxScript(settings.MusicFx));
             }
             // 인벤은 작은 창에 맞는 모바일 화면으로 보이게 한다
-            if (Inven.IsInven(startUrl))
+            if (Inven.IsInven(startUrl) || Webtoon.IsWebtoon(startUrl))
                 cw.Settings.UserAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
             // 새 창 링크: 사이트 안이면 또 새 창으로, 바깥이면 기본 브라우저로
             cw.NewWindowRequested += (_, e) =>
@@ -509,7 +517,7 @@ public class WebWindow : Form
                     return;
                 }
                 if (Music.IsMusic(e.Uri) && ShowMusic(e.Uri)) return;
-                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMusic(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
+                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMusic(e.Uri) || Webtoon.IsNaver(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
                 else OpenExternal(e.Uri);
             };
             cw.DocumentTitleChanged += (_, _) => { Text = cw.DocumentTitle; grip.Invalidate(); };
@@ -585,7 +593,8 @@ public class WebWindow : Form
     // ── 설정 메뉴에서 쓰는 기능 ──
     public static void SetTopMost(bool on)
     {
-        foreach (var w in open.ToList()) w.TopMost = on;
+        foreach (var w in open.ToList()) w.TopMost = on || Webtoon.IsWebtoon(w.startUrl);
+        RaiseWebtoons();
     }
 
     public static void CloseAll()
@@ -647,6 +656,103 @@ public class WebWindow : Form
     }
 
     // ── 제목줄 없는 창 옮기기·크기 조절 ──
+    // ── 웹툰: 정한 키를 누르고 있는 동안 부드럽게 스크롤 ──
+    // 키 상태만 읽는다(GetAsyncKeyState). 게임에는 아무것도 보내지 않는다.
+    // 대상: 웹툰 창에 포커스가 있으면 그 창, 메이플이 앞에 있으면 마지막으로 본 웹툰 창
+    const string ScrollScript =
+        "(()=>{let dir=0,speed=900,raf=0,last=0,start=0,el=null,pos=0,keys=[];" +
+        "const typing=()=>{const a=document.activeElement;return a&&(a.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))};" +
+        "const pick=()=>{const se=document.scrollingElement||document.documentElement;if(se.scrollHeight>se.clientHeight+5)return se;" +
+        "let b=se,bh=0;for(const e of document.querySelectorAll('div,main,section,article')){const s=getComputedStyle(e);" +
+        "if(/(auto|scroll)/.test(s.overflowY)&&e.scrollHeight>e.clientHeight+5&&e.clientHeight>bh){b=e;bh=e.clientHeight}}return b};" +
+        "const step=t=>{if(!dir||!el){raf=0;return}const dt=Math.min(50,t-last);last=t;" +
+        "if(Math.abs(el.scrollTop-pos)>3)pos=el.scrollTop;" + // 사용자가 직접 굴렸으면 거기서 이어 간다
+        "const ramp=Math.min(1,(t-start)/180);pos+=dir*speed*ramp*dt/1000;" +
+        "pos=Math.max(0,Math.min(pos,el.scrollHeight-el.clientHeight));el.scrollTop=pos;raf=requestAnimationFrame(step)};" +
+        "window.__mbScroll=(d,sp,k)=>{if(sp)speed=sp;if(k)keys=k;if(d&&document.hasFocus()&&typing())d=0;" +
+        "if(d===dir)return;dir=d;if(dir&&!raf){el=pick();pos=el.scrollTop;last=start=performance.now();raf=requestAnimationFrame(step)}};" +
+        // 창에 포커스가 있을 때 같은 키로 페이지가 따로 움직이지 않게 막는다 (입력 칸은 그대로)
+        "addEventListener('keydown',e=>{if(keys.includes(e.keyCode)&&!e.ctrlKey&&!e.altKey&&!typing())e.preventDefault()},true);" +
+        // 다음 화/이전 화: 페이지의 버튼을 누르고, 없으면 주소의 회차 번호(no)를 하나 옮긴다
+        "window.__mbEp=d=>{if(document.hasFocus()&&typing())return;const re=d>0?/다음\\s*화/:/이전\\s*화/;" +
+        "const el=[...document.querySelectorAll('a,button,[role=button]')].find(e=>{const t=(e.textContent||'').trim();" +
+        "return re.test(e.getAttribute('aria-label')||'')||(t.length<12&&re.test(t))});" +
+        "if(el){el.click();return}try{const u=new URL(location.href),n=parseInt(u.searchParams.get('no'));" +
+        "if(n>0&&n+d>0){u.searchParams.set('no',n+d);location.href=u.href}}catch(_){}};})();";
+
+    static readonly System.Windows.Forms.Timer scrollTimer = CreateScrollTimer();
+    static WebWindow? lastWebtoon, scrollWin;
+    static int scrollDir;
+    static bool nextWas = true, prevWas = true; // 켜자마자 눌려 있던 키는 무시한다
+
+    static System.Windows.Forms.Timer CreateScrollTimer()
+    {
+        var t = new System.Windows.Forms.Timer { Interval = 30 };
+        t.Tick += (_, _) => ScrollTick();
+        return t;
+    }
+
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    static bool KeyIsDown(int vk) => vk != 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    static void ScrollTick()
+    {
+        if (!open.Any(x => !x.IsDisposed && Webtoon.IsWebtoon(x.startUrl))) { scrollTimer.Stop(); scrollWin = null; scrollDir = 0; return; }
+        var wins = open.Where(x => !x.IsDisposed && x.Visible && x.WindowState != FormWindowState.Minimized && Webtoon.IsWebtoon(x.startUrl)).ToList();
+        var fg = GetForegroundWindow();
+        WebWindow? target = wins.FirstOrDefault(x => x.Handle == fg);
+        if (target == null && wins.Count > 0 && Game.Foreground())
+            target = lastWebtoon != null && wins.Contains(lastWebtoon) ? lastWebtoon : wins[^1];
+        int dir = 0;
+        if (target != null)
+        {
+            var s = target.settings;
+            dir = (KeyIsDown(s.WebtoonDownKey) ? 1 : 0) - (KeyIsDown(s.WebtoonUpKey) ? 1 : 0);
+            // 다음 화/이전 화는 누르는 순간 한 번만
+            bool next = KeyIsDown(s.WebtoonNextKey), prev = KeyIsDown(s.WebtoonPrevKey);
+            if (next && !nextWas) target.SendEpisode(1);
+            if (prev && !prevWas) target.SendEpisode(-1);
+            nextWas = next; prevWas = prev;
+        }
+        else nextWas = prevWas = false;
+        if (target == scrollWin && dir == scrollDir) return;
+        if (scrollWin != null && scrollWin != target && !scrollWin.IsDisposed) scrollWin.SendScroll(0);
+        scrollWin = target; scrollDir = dir;
+        target?.SendScroll(dir);
+    }
+
+    void SendScroll(int dir)
+    {
+        try
+        {
+            var keys = $"[{settings.WebtoonUpKey},{settings.WebtoonDownKey},{settings.WebtoonNextKey},{settings.WebtoonPrevKey}]";
+            _ = web.CoreWebView2?.ExecuteScriptAsync($"window.__mbScroll&&window.__mbScroll({dir},{Math.Clamp(settings.WebtoonSpeed, 100, 5000)},{keys})");
+        }
+        catch { }
+    }
+
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    /// <summary>웹툰 창들을 포커스는 그대로 둔 채 맨 위로 올린다.</summary>
+    static void RaiseWebtoons()
+    {
+        foreach (var w in open.ToList())
+            if (!w.IsDisposed && w.IsHandleCreated && w.Visible && Webtoon.IsWebtoon(w.startUrl))
+                SetWindowPos(w.Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010); // TOPMOST, NOSIZE|NOMOVE|NOACTIVATE
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        if (!Webtoon.IsWebtoon(startUrl)) BeginInvoke(RaiseWebtoons);
+    }
+
+    void SendEpisode(int d)
+    {
+        try { _ = web.CoreWebView2?.ExecuteScriptAsync($"window.__mbEp&&window.__mbEp({d})"); } catch { }
+    }
+
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
@@ -723,6 +829,8 @@ public class WebWindow : Form
     protected override void OnActivated(EventArgs e)
     {
         base.OnActivated(e);
+        if (Webtoon.IsWebtoon(startUrl)) lastWebtoon = this;
+        else RaiseWebtoons(); // 다른 창이 앞으로 와도 웹툰 창이 그 위에 있게
         if (!web.ContainsFocus) web.Focus();
     }
 
@@ -730,7 +838,7 @@ public class WebWindow : Form
     {
         if (keyData == Keys.F5) { web.CoreWebView2?.Reload(); return true; }
         if (keyData == (Keys.Alt | Keys.Left)) { if (web.CanGoBack) web.GoBack(); return true; }
-        if (keyData == (Keys.Control | Keys.W)) { Close(); return true; }
+        if (keyData == (Keys.Control | Keys.W) || keyData == Keys.Escape) { Close(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
