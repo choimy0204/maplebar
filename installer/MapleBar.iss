@@ -2,7 +2,7 @@
 ; 만들기: 먼저 dotnet publish로 ..\publish\MapleBar.exe를 만든 뒤 이 파일을 ISCC로 컴파일한다.
 
 #define AppName "메이플 바"
-#define AppVer "1.0.2"
+#define AppVer "1.0.3"
 #define AppExe "MapleBar.exe"
 
 [Setup]
