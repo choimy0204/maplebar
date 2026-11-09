@@ -51,6 +51,7 @@ sealed class JanusWatch
     bool runeAlerted;
     DateTime? runeAt => st.RuneStart is DateTime s ? s.AddMinutes(st.RuneMin) : null;
     const double RuneAlertLagSec = 8; // 시간은 그대로 세고, 알림만 8초 늦게 띄운다
+    static readonly TimeSpan StaleAfter = TimeSpan.FromHours(1); // 끝난 뒤 이만큼 갱신이 없으면 사냥 종료로 본다
     /// <summary>룬 시간이 다 되어 맵에 룬이 있을 때 (다음에 룬을 풀 때까지 true)</summary>
     public bool RuneReady => runeAt is DateTime e && DateTime.Now >= e;
     /// <summary>룬이 다시 나올 때까지 남은 초. 세고 있지 않거나 이미 나왔으면 null.</summary>
@@ -133,11 +134,18 @@ sealed class JanusWatch
                 LastKey = now; LastKind = "룬 해방";
             }
         }
+        // 나온 지 1시간이 지나도 다시 풀지 않으면 사냥을 끝낸 것으로 보고 조용히 지운다
+        if (runeAt is DateTime old && now >= old + StaleAfter)
+        {
+            st.RuneStart = null; st.Save();
+            runeAlerted = false;
+            return;
+        }
         // 다 되면 한 번만 알리고, 다음에 룬을 풀 때까지 "나옴"으로 둔다
         if (runeAt is DateTime r && now >= r.AddSeconds(RuneAlertLagSec) && !runeAlerted)
         {
             runeAlerted = true;
-            JanusAlert.Play(sc, "룬이 나왔어요", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255));
+            JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255));
         }
     }
 
@@ -468,7 +476,7 @@ sealed class JanusForm : Form
             "NPC 대화 키", 3, out var nk,
             "룬 주기", st.RuneMin, Enumerable.Range(1, 60).ToArray(), v => v + "분", v => st.RuneMin = v,
             "평소 15분, 이벤트 땐 10분이에요. NPC 키를 누르고 방향키 4번을 누르면 세기 시작하고, 실패해서 다시 풀면 처음부터 다시 셉니다.",
-            () => JanusAlert.Play(sc, "룬이 나왔어요", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255)), out var rs);
+            () => JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255)), out var rs);
         npcKey = nk; runeStatus = rs;
         y += runeCard.Height + S(10);
         }

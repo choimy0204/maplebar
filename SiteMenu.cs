@@ -69,6 +69,13 @@ public static class SiteMenu
             H("계정"),
             I("네이버 로그인", Webtoon.LoginUrl),
         }),
+        // 메애기 코디 (드레스룸에서 꾸며 보고, 코디 분석·룩북에서 다른 사람 코디를 본다)
+        new("👗 코디", null, new[]
+        {
+            H("메애기 코디"),
+            I("드레스룸", Coordi.Base + "/dressing-room"), I("드레스룸 v2", Coordi.Base + "/dressing-room/v2"),
+            I("코디 분석", Coordi.Base + "/analysis/coordi"), I("룩북", Coordi.Base + "/lookbook"),
+        }),
         // 메애기 메이플 뮤직 (사이트의 플레이어로 듣는다. 창 하나를 같이 쓴다)
         new("🎵 뮤직", null, new[]
         {
@@ -98,6 +105,18 @@ public static class Webtoon
 public static class Music
 {
     public const string Home = "https://meaegi.com/music";
-    public static bool IsMusic(string url) =>
+    /// <summary>메애기 주소 중 코디 페이지를 뺀 나머지 (숨은 뮤직 창 하나가 맡는다)</summary>
+    public static bool IsMusic(string url) => IsMeaegi(url) && !Coordi.IsCoordi(url);
+    public static bool IsMeaegi(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("meaegi.com", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>메애기 코디 페이지: 뮤직 창과 따로, 보통 사이트 창으로 연다 (광고는 막지 않는다)</summary>
+public static class Coordi
+{
+    public const string Base = "https://meaegi.com";
+    static readonly string[] Paths = { "/dressing-room", "/analysis/coordi", "/lookbook" };
+    public static bool IsCoordi(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("meaegi.com", StringComparison.OrdinalIgnoreCase) &&
+        Paths.Any(p => u.AbsolutePath.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 }

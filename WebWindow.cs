@@ -53,7 +53,11 @@ public class WebWindow : Form
             int bar = t.IndexOf(" | ", StringComparison.Ordinal);
             if (bar > 0) { main = t[..bar]; sub = t[(bar + 3)..]; }
 
+            // 오른쪽 버튼·슬라이드 바 앞에서 글자를 끊는다
             int right = Width - Padding.Right - owner.S(30);
+            foreach (Control c in Controls) if (c.Visible && c.Width > 0 && c.BackColor != Color.Transparent) right = Math.Min(right, c.Left - owner.S(6));
+            // 페이지 부가 설명(예: '메이플 코디·믹스 염색…')은 창을 펼쳤을 때만 보인다
+            if (!owner.Expanded) sub = "";
             var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine;
             var r1 = new Rectangle(x, 0, Math.Max(0, right - x), Height);
             TextRenderer.DrawText(g, main, bold, r1, UI.Text, flags);
@@ -394,10 +398,17 @@ public class WebWindow : Form
         grow.Click += (_, _) =>
         {
             ToggleBig();
-            grow.Invalidate();
+            grow.Invalidate(); grip.Invalidate();
             growTip.SetToolTip(grow, smallBounds != null ? "원래 크기로" : "크게 보기");
         };
         grip.Controls.Add(grow); grow.BringToFront();
+        // 펼치기 버튼 왼쪽: 투명도 슬라이드 바
+        var gap2 = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
+        grip.Controls.Add(gap2); gap2.BringToFront();
+        alphaBar = new AlphaSlider { Dock = DockStyle.Right, Width = S(70), Value = Music.IsMusic(url) ? 100 : Math.Clamp(settings.WinOpacity, AlphaSlider.Min, 100) };
+        alphaBar.Changed += v => SetAlpha(v);
+        new ToolTip().SetToolTip(alphaBar, "투명도");
+        grip.Controls.Add(alphaBar); alphaBar.BringToFront();
         if (Music.IsMusic(url))
         {
             // 뮤직 창: 곡 정보를 1초마다 읽어 바에 알린다
@@ -411,6 +422,8 @@ public class WebWindow : Form
         menu.Items.Add("브라우저로 열기", null, (_, _) => { if (web.Source != null) OpenExternal(web.Source.ToString()); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("닫기 (Ctrl+W)", null, (_, _) => Close());
+        // 투명도: 제목 줄의 슬라이드 바(또는 제목 줄에서 휠). 마지막 값은 새 창에도 쓴다
+        grip.MouseWheel += (_, e) => SetAlpha((int)Math.Round(Opacity * 100) + (e.Delta > 0 ? 5 : -5));
 
         grip.ContextMenuStrip = menu;
         grip.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left && e.Clicks == 1) DragMove(); };
@@ -421,6 +434,7 @@ public class WebWindow : Form
         web.BringToFront();
 
         Bounds = NextBounds(url);
+        if (!Music.IsMusic(url)) Opacity = Math.Clamp(settings.WinOpacity, 30, 100) / 100.0;
         startUrl = url;
         open.Add(this);
         _ = InitAsync(url);
@@ -493,8 +507,24 @@ public class WebWindow : Form
                 string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
                 if (m == "mb:close" && !IsDisposed) BeginInvoke(() => { if (!IsDisposed) Close(); });
             };
-            // 메애기는 광고로 운영되므로 광고를 막지 않는다
+            // 숨은 뮤직 창은 화면에 안 보이니 광고를 건드리지 않는다
             if (Webtoon.IsWebtoon(startUrl)) await cw.AddScriptToExecuteOnDocumentCreatedAsync(ScrollScript);
+            else if (Coordi.IsCoordi(startUrl)) // 코디 창: 광고(사용자 요청)와 아래쪽 뮤직 플레이어 바를 숨긴다 (노래는 바의 뮤직이 맡는다)
+            {
+                await BlockAds(cw, env);
+                await cw.AddScriptToExecuteOnDocumentCreatedAsync(
+                    "(()=>{const add=()=>{if(document.getElementById('mbNoPlayer'))return;const s=document.createElement('style');s.id='mbNoPlayer';" +
+                    "s.textContent='div.fixed.left-0.bottom-0.w-full{display:none!important}';(document.head||document.documentElement).appendChild(s)};" +
+                    "if(document.documentElement)add();document.addEventListener('DOMContentLoaded',add);" +
+                    // '새 드레스룸 v2도 써 보세요!' 안내 상자: 그 글과 'v2 써보기' 버튼을 함께 감싼 가장 작은 상자를 숨긴다
+                    // (글이 들어 있는 가장 안쪽 요소에서 시작하고, 글이 400자 넘는 큰 상자는 건드리지 않는다)
+                    "const R=/새\\s*드레스룸\\s*v2도\\s*써\\s*보세요/;" +
+                    "const promo=()=>{try{for(const el of document.querySelectorAll('h1,h2,h3,h4,p,span,div,strong,b')){" +
+                    "if(el.dataset.mbPromo||!R.test(el.textContent||'')||[...el.children].some(c=>R.test(c.textContent||'')))continue;let n=el;" +
+                    "for(let i=0;i<8&&n&&n!==document.body&&(n.textContent||'').length<400;i++,n=n.parentElement){if(/v2\\s*써보기/.test(n.textContent||'')){" +
+                    "n.style.setProperty('display','none','important');el.dataset.mbPromo='1';break}}}}catch(e){}};" +
+                    "setInterval(promo,700)})();");
+            }
             else if (!Music.IsMusic(startUrl)) await BlockAds(cw, env); // 숨김 스크립트 등록이 끝난 뒤에 페이지를 연다
             else
             {
@@ -517,7 +547,7 @@ public class WebWindow : Form
                     return;
                 }
                 if (Music.IsMusic(e.Uri) && ShowMusic(e.Uri)) return;
-                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMusic(e.Uri) || Webtoon.IsNaver(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
+                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
                 else OpenExternal(e.Uri);
             };
             cw.DocumentTitleChanged += (_, _) => { Text = cw.DocumentTitle; grip.Invalidate(); };
@@ -543,6 +573,8 @@ public class WebWindow : Form
         "affec.tv", "hyth.io", "script.ac", "ad-delivery.net", "clean.gg", "ccgateway.net",
         "pubmatic.com", "openx.net", "adsrvr.org", "casalemedia.com", "33across.com",
         "sharethrough.com", "smartadserver.com", "teads.tv", "media.net", "id5-sync.com",
+        // 인벤 자체 광고 서버
+        "zicf.inven.co.kr", "ads-partners.coupang.com", "coupangad",
     };
 
     // 사이트가 직접 올리는 배너 이미지 폴더
@@ -555,7 +587,10 @@ public class WebWindow : Form
         ".horizontal-sticky,[id*='google_ads_iframe'],a:has(img[src*='/ads/']),img[alt='banner ad']," +
         "#desktop_takeover,[id^='slot-'],[data-gamera-placement-container]," +
         // 썬데이메이플 이벤트 둥근 버튼
-        "button:has(> img[src*='fab_sunday']),img[src*='fab_sunday']";
+        "button:has(> img[src*='fab_sunday']),img[src*='fab_sunday']," +
+        // 인벤 모바일 광고 칸 (아래 고정 배너, 글 사이·떠 있는 광고)
+        "[id^='mobileTailAd'],.madfoh50,[class*='mobileDaNs'],[class*='mobileDaWide'],[class^='ibt'],iframe[src*='zicf.inven']," +
+        "[id^='comAdM'],.ad-bbs-view-bottom,.mobileTopAd,iframe[src*='coupang']";
     // 환산주스탯 머리글(로고·로그인·닉네임 입력)과 맨 아래 안내: 바가 대신하므로 숨긴다. 인벤 같은 다른 사이트에는 넣지 않는다.
     const string MapleOnlyCss = ",div:has(> main) > div:first-child,div:has(> main) > footer";
     const string HideRule = "{display:none!important;height:0!important;min-height:0!important}";
@@ -813,7 +848,22 @@ public class WebWindow : Form
 
     // 펼치기: 크게 볼 때의 크기. 화면 밖으로 나가지 않게 맞추고, 접으면 펼치기 전 자리·크기로 돌아간다
     static readonly Size BigSize = new(1040, 565);
+    readonly ToolTip alphaTip = new();
+    readonly AlphaSlider alphaBar;
+    /// <summary>창 투명도(%)를 바꾼다. 너무 흐려져 못 찾는 일이 없게 30% 아래로는 내리지 않는다.</summary>
+    void SetAlpha(int pct)
+    {
+        pct = Math.Clamp(pct, AlphaSlider.Min, 100);
+        Opacity = pct / 100.0;
+        alphaBar.Value = pct;
+        settings.WinOpacity = pct;
+        settings.Save();
+        alphaTip.Show($"투명도 {pct}%", grip, grip.PointToClient(Cursor.Position) + new Size(S(12), S(12)), 900);
+    }
+
     Rectangle? smallBounds;
+    /// <summary>크게 보기(펼치기)나 최대화 상태</summary>
+    bool Expanded => smallBounds != null || WindowState == FormWindowState.Maximized;
     void ToggleBig()
     {
         if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;

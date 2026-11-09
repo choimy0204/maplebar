@@ -19,6 +19,7 @@ public class Settings
     public int WinW { get; set; }
     public int WinH { get; set; }
     public bool WinTopMost { get; set; } = true;
+    public int WinOpacity { get; set; } = 100; // 사이트 창 투명도(%), 마지막으로 고른 값
     // 뮤직: 곡이 바뀔 때 레코드 효과음
     public bool MusicFx { get; set; } = true;
     // 바: 마우스가 3초 동안 없으면 위로 접는다 (끄면 항상 펼쳐 둔다)
