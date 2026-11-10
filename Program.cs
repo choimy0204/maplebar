@@ -13,6 +13,8 @@ static class Program
         if (!created) return;
 
         ApplicationConfiguration.Initialize();
+        // GitHub에 더 새 설치 파일이 올라와 있으면 업데이트해야 켤 수 있다
+        if (!RestartRequested && !UpdateCheck.AllowStart()) { mutex.ReleaseMutex(); mutex.Dispose(); return; }
         ToolStripManager.Renderer = new RoundMenuRenderer(); // 둥근 메뉴
         Application.Run(new BarForm());
 

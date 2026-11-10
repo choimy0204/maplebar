@@ -36,6 +36,9 @@ public class Settings
     public int JanusSec { get; set; } = 80;
     public bool LunaExt { get; set; } = true;   // 루나 익스텐션: 있으면 다시 깔 때 시간을 새로 센다
     public bool PickupOn { get; set; } = true;  // 설치 65초 뒤 아이템 회수 알림
+    public bool PetOn { get; set; }             // 5석펫: 게더링(쿨 90초)마다 야누스 시간이 더해진다
+    public DateTime? PetGatherAt { get; set; }   // 지금 세는 야누스의 게더링 박자 기준 (이 시각 + 90초×k)
+    public DateTime? PetLastGather { get; set; } // 마지막 게더링 (다음 설치 때 쿨이 남았는지 본다)
     // 룬 알림: NPC 대화 키 뒤에 방향키 4번을 누르면 룬 주기(분)를 세고, 다 되면 알린다
     public bool RuneOn { get; set; }
     public int NpcKey { get; set; }
@@ -43,6 +46,18 @@ public class Settings
     // 껐다 켜도 이어서 세도록 시작 시각을 남긴다 (끝 = 시작 + 지속시간)
     public DateTime? JanusStart { get; set; }
     public DateTime? RuneStart { get; set; }
+    // 버프 알림: 버프 키를 누르고 20분(주황) 또는 10분(노랑) 뒤에 알린다. 시작 시각을 남겨 껐다 켜도 이어서 센다
+    public bool BuffOn { get; set; }
+    public int BuffKey { get; set; }
+    public int BuffMin { get; set; } = 20;
+    public DateTime? BuffStart { get; set; }
+    // 부스트 도핑: 키를 누르면 100초를 세고 빨간색으로 알린다
+    public bool DopeOn { get; set; }
+    public int DopeKey { get; set; }
+    public int DopeSec { get; set; } = 100;
+    public DateTime? DopeStart { get; set; }       // 실제로 효과가 시작되는 시각 (사용 대기를 더한 값)
+    public bool DopeDelayOn { get; set; } = true;  // 쓰고 몇 초 뒤에 효과가 붙는 경우
+    public int DopeDelaySec { get; set; } = 3;
     // 네이버 웹툰: 누르고 있는 동안 부드럽게 위/아래로 스크롤하는 키와 속도(초당 픽셀)
     public int WebtoonUpKey { get; set; }
     public int WebtoonDownKey { get; set; }

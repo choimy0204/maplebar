@@ -6,7 +6,10 @@ namespace MapleBar;
 /// <summary>바에 붙는 작은 칩: 솔 야누스·룬 아이콘(직접 그린 것)과 남은 시간.</summary>
 sealed class TimerChip : Control
 {
-    public enum Kind { Janus, Rune }
+    public enum Kind { Janus, Rune, Buff }
+    /// <summary>버프 칩 색 (20분 주황 · 10분 노랑)</summary>
+    public Color BuffTint { get => buffTint; set { if (value != buffTint) { buffTint = value; Invalidate(); } } }
+    Color buffTint = Color.FromArgb(255, 140, 0);
 
     readonly Kind kind;
     readonly float sc;
@@ -22,7 +25,12 @@ sealed class TimerChip : Control
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
         Font = new Font("맑은 고딕", 10f * UI.Z, FontStyle.Bold);
-        tip.SetToolTip(this, kind == Kind.Janus ? "솔 야누스 남은 시간 (누르면 취소)" : "다음 룬까지 남은 시간 (누르면 취소)");
+        tip.SetToolTip(this, kind switch
+        {
+            Kind.Janus => "솔 야누스 남은 시간 (누르면 취소)",
+            Kind.Rune => "다음 룬까지 남은 시간 (누르면 취소)",
+            _ => "버프 남은 시간 (누르면 취소)",
+        });
         Size = new Size(S(84), S(28));
     }
 
@@ -39,7 +47,12 @@ sealed class TimerChip : Control
         return true;
     }
 
-    Color Tint => kind == Kind.Janus ? Color.FromArgb(135, 80, 235) : Color.FromArgb(20, 150, 220);
+    Color Tint => kind switch
+    {
+        Kind.Janus => Color.FromArgb(135, 80, 235),
+        Kind.Rune => Color.FromArgb(20, 150, 220),
+        _ => buffTint,
+    };
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -54,7 +67,9 @@ sealed class TimerChip : Control
 
         float isz = Height - S(4);
         var icon = new RectangleF(S(4), (Height - isz) / 2f, isz, isz);
-        if (kind == Kind.Janus) DrawJanus(g, icon); else DrawRune(g, icon);
+        if (kind == Kind.Janus) DrawJanus(g, icon);
+        else if (kind == Kind.Rune) DrawRune(g, icon);
+        else DrawBuff(g, icon, c);
 
         var tr = new RectangleF(icon.Right + S(3), 0, Width - icon.Right - S(8), Height);
         using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
@@ -131,6 +146,18 @@ sealed class TimerChip : Control
             new PointF(cx - hw, top + hw),
         });
         using (var b = new SolidBrush(Color.White)) g.FillPath(b, arrow);
+    }
+
+    // 버프: 칩 색 원 안에 흰 위쪽 화살표 두 개
+    static void DrawBuff(Graphics g, RectangleF r, Color c)
+    {
+        var disc = Inset(r, r.Width * 0.1f);
+        using (var b = new SolidBrush(c)) g.FillEllipse(b, disc);
+        using (var p = new Pen(Color.FromArgb(200, 255, 255, 255), Math.Max(1f, r.Width / 22f))) g.DrawEllipse(p, Inset(disc, disc.Width * 0.08f));
+        float cx = disc.X + disc.Width / 2, hw = disc.Width * 0.24f, h = disc.Height * 0.18f;
+        using var pen = new Pen(Color.White, Math.Max(1.5f, r.Width / 9f)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        foreach (float y in new[] { disc.Y + disc.Height * 0.32f, disc.Y + disc.Height * 0.56f })
+            g.DrawLines(pen, new[] { new PointF(cx - hw, y + h), new PointF(cx, y), new PointF(cx + hw, y + h) });
     }
 
     static RectangleF Inset(RectangleF r, float d) => new(r.X + d, r.Y + d, r.Width - 2 * d, r.Height - 2 * d);

@@ -24,6 +24,18 @@ public sealed class NoticeStrip : Form
         else current[lane]!.Invalidate(); // 남은 개수 표시 갱신
     }
 
+    /// <summary>바를 숨길 때: 기다리던 알림을 버리고 떠 있는 알림을 닫는다.</summary>
+    public static void CloseAll()
+    {
+        for (int i = 0; i < Lanes; i++)
+        {
+            queues[i].Clear();
+            var c = current[i];
+            if (c != null && !c.IsDisposed) c.Finish(); // 큐가 비어 있어 다음 알림은 뜨지 않는다
+            current[i] = null;
+        }
+    }
+
     static void Next(Form bar, int lane, float sc)
     {
         current[lane] = null;
@@ -60,7 +72,7 @@ public sealed class NoticeStrip : Form
         this.bar = bar; this.lane = lane; this.item = item; this.sc = sc;
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
-        TopMost = true;
+        // TopMost 속성은 창을 띄울 때 활성화까지 시켜 입력 중인 칸의 포커스를 뺏는다. 항상 위는 CreateParams로 준다.
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.White;
         DoubleBuffered = true;
@@ -206,7 +218,7 @@ public sealed class NoticeStrip : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x80 | 0x08000000; // 작업 표시줄에 안 나오고, 눌러도 포커스를 뺏지 않게
+            cp.ExStyle |= 0x80 | 0x08000000 | 0x08; // 작업 표시줄에 안 나오고, 눌러도 포커스를 뺏지 않고, 항상 위
             cp.ClassStyle |= 0x20000;        // 그림자
             return cp;
         }

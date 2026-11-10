@@ -385,6 +385,7 @@ public class BarForm : Form
         cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
         cms.Items.Add(new ToolStripSeparator());
         cms.Items.Add("솔 야누스 · 룬 알림 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
+        cms.Items.Add("버프 알림 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, buff: true); });
         cms.Items.Add("웹툰 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
         // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
         bool keepOpen = false;
@@ -404,6 +405,7 @@ public class BarForm : Form
     void HideAll()
     {
         HideMega();
+        NoticeStrip.CloseAll(); // 떠 있던 인벤 알림과 기다리던 알림도 같이 치운다
         Hide();
         musicDock?.SetShown(false);
     }
@@ -492,7 +494,11 @@ public class BarForm : Form
         // 칩을 누르면 그 타이머를 취소한다 (설정은 톱니 메뉴에서)
         janusChip.Click += (_, _) => { w.CancelJanus(); if (janusChip.SetTime(null)) LayoutBar(); };
         runeChip.Click += (_, _) => { w.CancelRune(); if (runeChip.SetTime(null)) LayoutBar(); };
-        foreach (var c in new[] { runeChip, janusChip })
+        var buffChip = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+        buffChip.Click += (_, _) => { w.CancelBuff(); if (buffChip.SetTime(null)) LayoutBar(); };
+        var dopeChip = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.DopeMain };
+        dopeChip.Click += (_, _) => { w.CancelDope(); if (dopeChip.SetTime(null)) LayoutBar(); };
+        foreach (var c in new[] { runeChip, janusChip, buffChip, dopeChip })
         {
             right.Controls.Add(c);
             right.Controls.SetChildIndex(c, 0);
@@ -501,6 +507,9 @@ public class BarForm : Form
         {
             bool changed = janusChip.SetTime(w.Remaining);
             changed |= runeChip.SetTime(w.RuneRemaining, w.RuneReady);
+            buffChip.BuffTint = JanusWatch.BuffColors(w.BuffMin).main;
+            changed |= buffChip.SetTime(w.BuffRemaining);
+            changed |= dopeChip.SetTime(w.DopeRemaining);
             if (changed) LayoutBar();
         };
         chipTimer.Start();
@@ -536,7 +545,11 @@ public class BarForm : Form
         foldTimer.Tick += (_, _) => FoldTick();
         foldTimer.Start();
         inven = new InvenWatcher(settings, (tag, post) =>
-            NoticeStrip.Show(this, tag == "새 글" ? 0 : 1, tag, post.Title, post.Category, () => Navigate(post.Url), sc));        RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
+        {
+            if (!Visible || WindowState == FormWindowState.Minimized) return; // 바를 숨겨 두면 인벤 알림도 띄우지 않는다
+            NoticeStrip.Show(this, tag == "새 글" ? 0 : 1, tag, post.Title, post.Category, () => Navigate(post.Url), sc);
+        });
+        RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
     }
 
     // 다른 '항상 위' 창(사이트 창, 다른 프로그램)이 바를 덮지 않게 계속 맨 위로 올린다
