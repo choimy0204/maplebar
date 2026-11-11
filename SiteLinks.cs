@@ -75,6 +75,53 @@ public static class YouTube
     }
 }
 
+/// <summary>실시간 방송 (SOOP·치지직): 가로로 넓은 창에서 사이트 그대로 본다. 광고는 막지 않고, 로그인은 사용자가 직접 한다</summary>
+public static class Live
+{
+    public const string Soop = "https://www.sooplive.co.kr/";
+    public const string Chzzk = "https://chzzk.naver.com/";
+    static bool On(Uri u, string host) =>
+        u.Host.Equals(host, StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase);
+    public static bool IsLive(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) &&
+        (On(u, "sooplive.co.kr") || On(u, "sooplive.com") || On(u, "afreecatv.com") || On(u, "chzzk.naver.com"));
+
+    static string[] Parts(Uri u) => u.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    static bool SoopPlay(Uri u) =>
+        u.Host.StartsWith("play.", StringComparison.OrdinalIgnoreCase) && (On(u, "sooplive.com") || On(u, "sooplive.co.kr") || On(u, "afreecatv.com"));
+    static bool SoopVod(Uri u) =>
+        u.Host.StartsWith("vod.", StringComparison.OrdinalIgnoreCase) && (On(u, "sooplive.com") || On(u, "sooplive.co.kr") || On(u, "afreecatv.com")) &&
+        u.AbsolutePath.StartsWith("/player/", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>재생 창에서 열 방송 주소: SOOP 방송·다시보기, 치지직 방송(/live/채널)·다시보기(/video/번호)</summary>
+    public static bool IsPlayer(string? url)
+    {
+        if (IsChat(url) || !Uri.TryCreate(url, UriKind.Absolute, out var u)) return false;
+        var p = Parts(u);
+        if (SoopPlay(u)) return p.Length >= 1;
+        if (SoopVod(u)) return true;
+        if (On(u, "chzzk.naver.com"))
+            return p.Length == 2 && (p[0].Equals("live", StringComparison.OrdinalIgnoreCase) || p[0].Equals("video", StringComparison.OrdinalIgnoreCase));
+        return false;
+    }
+
+    // 채팅 창: 방송 주소 끝에 이 표시를 붙여 재생 창과 구분한다
+    const string ChatMark = "#mb-chat";
+    public static bool IsChat(string? url) => url != null && url.EndsWith(ChatMark, StringComparison.Ordinal) && IsLive(url);
+
+    /// <summary>재생 창 주소로 채팅 창 주소를 만든다 (방송 주소가 아니면 null).</summary>
+    public static string? ChatUrl(string? url)
+    {
+        if (!IsPlayer(url) || !Uri.TryCreate(url, UriKind.Absolute, out var u)) return null;
+        var p = Parts(u);
+        var root = u.GetLeftPart(UriPartial.Authority);
+        if (SoopPlay(u)) return root + "/" + p[0] + ChatMark; // 방송 번호가 바뀌어도 같은 BJ면 같은 채팅이다
+        if (On(u, "chzzk.naver.com") && p[0].Equals("live", StringComparison.OrdinalIgnoreCase))
+            return root + "/live/" + p[1] + "/chat" + ChatMark; // 치지직 채팅 팝업 화면
+        return u.GetLeftPart(UriPartial.Query) + ChatMark;
+    }
+}
+
 /// <summary>메애기 코디 페이지: 뮤직 창과 따로, 보통 사이트 창으로 연다 (광고는 막지 않는다)</summary>
 public static class Coordi
 {

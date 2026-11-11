@@ -121,45 +121,62 @@ public partial class WebWindow
     }
 
     /// <summary>재생 창 제목 줄에 '댓글' 버튼을 단다. 누르면 댓글 창을 열고, 다시 누르면 닫는다.</summary>
-    void AddCommentsButton()
+    void AddCommentsButton(string text)
     {
         // 제목 글자가 버튼 밑으로 들어가지 않게 흰 상자에 담는다
         var box = new Panel { Dock = DockStyle.Right, Width = S(46), BackColor = Color.White };
         var b = new RoundLabel
         {
-            Dock = DockStyle.Fill, AutoSize = false, Text = "댓글", TextAlign = ContentAlignment.MiddleCenter,
+            Dock = DockStyle.Fill, AutoSize = false, Text = text, TextAlign = ContentAlignment.MiddleCenter,
             Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6),
             Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
         };
         b.MouseEnter += (_, _) => b.Fill = Color.FromArgb(255, 226, 196);
         b.MouseLeave += (_, _) => b.Fill = UI.SoftAccent;
         b.Click += (_, _) => ToggleComments();
-        new ToolTip().SetToolTip(b, "댓글 창 열기·닫기");
+        new ToolTip().SetToolTip(b, text + " 창 열기·닫기");
         box.Controls.Add(b);
         var gap = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
         grip.Controls.Add(gap); gap.BringToFront();
         grip.Controls.Add(box); box.BringToFront();
-        // 재생 창을 닫으면 댓글 창도 닫는다
-        FormClosed += (_, _) => { if (CommentsWindow() is { } c) { c.keepPlayer = true; c.Close(); } };
+        // 재생 창을 닫으면 댓글(채팅) 창도 닫는다
+        FormClosed += (_, _) => { if (SideWindow() is { } c) { c.keepPlayer = true; c.Close(); } };
     }
 
     bool keepPlayer; // 댓글 버튼으로 댓글 창만 닫을 때는 재생 창을 남긴다
 
+    /// <summary>이 재생 창에 붙는 창: 유튜브는 댓글 창, 방송은 채팅 창</summary>
+    WebWindow? SideWindow() => kind == SiteKind.LivePlayer ? ChatWindow() : CommentsWindow();
+
     void ToggleComments()
     {
-        var c = CommentsWindow();
+        // SOOP은 채팅 창을 따로 열면 재생 창이 멈춘다: 같은 창 안에서 채팅 칸만 켜고 끈다
+        var host = web.Source?.Host ?? "";
+        if (kind == SiteKind.LivePlayer && (host.EndsWith("sooplive.com") || host.EndsWith("sooplive.co.kr") || host.EndsWith("afreecatv.com")))
+        {
+            try { _ = web.CoreWebView2?.ExecuteScriptAsync("window.__mbsn=0;document.documentElement.classList.toggle('mbnoch');dispatchEvent(new Event('resize'))"); } catch { }
+            return;
+        }
+        var c = SideWindow();
         if (c != null) { c.keepPlayer = true; c.Close(); return; }
-        var src = web.Source?.ToString() ?? startUrl;
-        var id = YouTube.VideoId(src);
-        if (id == null) { src = startUrl; id = YouTube.VideoId(src); }
-        if (id == null) return; // 아직 영상이 안 열렸다
-        var w = new WebWindow(YouTube.CommentsUrl(id, YouTube.IsShorts(src)), settings, sc);
+        string? url;
+        if (kind == SiteKind.LivePlayer) url = Live.ChatUrl(web.Source?.ToString()) ?? Live.ChatUrl(startUrl);
+        else
+        {
+            var src = web.Source?.ToString() ?? startUrl;
+            var id = YouTube.VideoId(src);
+            if (id == null) { src = startUrl; id = YouTube.VideoId(src); }
+            url = id == null ? null : YouTube.CommentsUrl(id, YouTube.IsShorts(src));
+        }
+        if (url == null) return; // 아직 영상이 안 열렸다
+        var w = new WebWindow(url, settings, sc);
         // 재생 창 왼쪽에 같은 높이로 붙인다 (자리가 없으면 오른쪽)
         var wa = Screen.FromControl(this).WorkingArea;
         int cw = Math.Min((int)Math.Round(400 * Math.Max(sc, DeviceDpi / 96f * 0.9f)), wa.Width);
         int x = Left - cw;
         if (x < wa.Left) x = Math.Max(wa.Left, Math.Min(Right, wa.Right - cw));
-        int h = Math.Min(Height, wa.Height);
+        // 방송 채팅은 세로로 길게 연다 (재생 창보다 짧지 않게)
+        int h = Math.Min(kind == SiteKind.LivePlayer ? Math.Max(Height, (int)Math.Round(820 * Math.Max(sc, DeviceDpi / 96f * 0.9f))) : Height, wa.Height);
         int y = Math.Max(wa.Top, Math.Min(Top, wa.Bottom - h));
         w.Bounds = new Rectangle(x, y, cw, h);
         // 댓글 창을 ✕로 닫으면 재생 창도 같이 닫는다

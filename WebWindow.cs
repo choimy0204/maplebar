@@ -28,12 +28,13 @@ public partial class WebWindow : Form
     readonly Settings settings;
     readonly TitleStrip grip;
     // 어떤 사이트 창인지: 주소를 바꿀 때마다 한 번 정해 두고, 매번 주소를 다시 풀지 않는다
-    enum SiteKind { Other, Webtoon, Music, Coordi, YouTube, YouTubePlayer, YouTubeComments }
+    enum SiteKind { Other, Webtoon, Music, Coordi, YouTube, YouTubePlayer, YouTubeComments, Live, LivePlayer, LiveChat }
     string startUrlValue = "";
     SiteKind kind;
     /// <summary>창이 연(또는 이어서 열) 주소. 바꾸면 kind도 같이 바뀐다.</summary>
     string startUrl { get => startUrlValue; set { startUrlValue = value; kind = KindOf(value); } }
     static SiteKind KindOf(string url) =>
+        Live.IsChat(url) ? SiteKind.LiveChat : Live.IsPlayer(url) ? SiteKind.LivePlayer : Live.IsLive(url) ? SiteKind.Live :
         Webtoon.IsWebtoon(url) ? SiteKind.Webtoon :
         Music.IsYtMusic(url) ? SiteKind.Music : // 유튜브 뮤직은 유튜브 주소보다 먼저 본다
         YouTube.IsComments(url) ? SiteKind.YouTubeComments :
@@ -158,7 +159,7 @@ public partial class WebWindow : Form
         alphaBar.Changed += v => SetAlpha(v);
         new ToolTip().SetToolTip(alphaBar, "투명도");
         grip.Controls.Add(alphaBar); alphaBar.BringToFront();
-        if (KindOf(url) == SiteKind.YouTubePlayer) { AddCommentsButton(); StartBare(); }
+        if (KindOf(url) is SiteKind.YouTubePlayer or SiteKind.LivePlayer) { AddCommentsButton(KindOf(url) == SiteKind.LivePlayer ? "채팅" : "댓글"); StartBare(); }
         if (Music.IsMusic(url))
         {
             // 뮤직 창: 곡 정보를 1초마다 읽어 바에 알린다
@@ -205,7 +206,13 @@ public partial class WebWindow : Form
         int W(int v) => (int)Math.Round(v * ws);
         int w = Math.Min(W(tall ? 460 : 420), wa.Width);
         int h = tall ? Math.Max(Math.Min(W(560), wa.Height), wa.Height - S(40)) : Math.Min(W(560), wa.Height);
-        if (KindOf(url) == SiteKind.YouTubePlayer) { var ps = PlayerSize(YouTube.IsShorts(url), wa); w = ps.Width; h = ps.Height; }
+        if (KindOf(url) is SiteKind.YouTubePlayer or SiteKind.LivePlayer) { var ps = PlayerSize(YouTube.IsShorts(url), wa); w = ps.Width; h = ps.Height; }
+        // SOOP 재생 창은 영상과 채팅을 같이 보이므로 넓게 연다 (사용자가 맞춘 1018×515)
+        if (KindOf(url) == SiteKind.LivePlayer && Uri.TryCreate(url, UriKind.Absolute, out var lu)
+            && (lu.Host.EndsWith("sooplive.com") || lu.Host.EndsWith("sooplive.co.kr") || lu.Host.EndsWith("afreecatv.com")))
+        { float d = DeviceDpi / 96f; w = Math.Min((int)Math.Round(1018 * d), wa.Width); h = Math.Min((int)Math.Round(515 * d), wa.Height); }
+        // 방송은 영상과 채팅이 옆으로 놓이니 가로로 넓게 연다
+        if (KindOf(url) == SiteKind.Live) { w = Math.Min(W(800), wa.Width); h = Math.Min(W(500), wa.Height); }
 
         Point p;
         if (open.Count > 0)
@@ -281,6 +288,7 @@ public partial class WebWindow : Form
                     "setInterval(promo,700)})();");
             }
             else if (kind is SiteKind.YouTube or SiteKind.YouTubePlayer or SiteKind.YouTubeComments) await InitYouTube(cw); // 유튜브는 광고를 막지 않는다
+            else if (kind is SiteKind.Live or SiteKind.LivePlayer or SiteKind.LiveChat) await InitLive(cw); // 방송 사이트도 광고를 막지 않는다
             else if (kind != SiteKind.Music) await BlockAds(cw, env); // 숨김 스크립트 등록이 끝난 뒤에 페이지를 연다
             else if (yt) await cw.AddScriptToExecuteOnDocumentCreatedAsync(YtMusicScript); // 유튜브 뮤직: 광고는 그대로 둔다
             else
@@ -305,7 +313,8 @@ public partial class WebWindow : Form
                 }
                 if (Music.IsMusic(e.Uri) && ShowMusic(e.Uri)) return;
                 if (YouTube.IsVideo(e.Uri)) { ShowYouTube(e.Uri, settings, sc); return; }
-                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri) || YouTube.IsYouTube(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
+                if (Live.IsPlayer(e.Uri)) { ShowLive(e.Uri, settings, sc); return; }
+                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri) || YouTube.IsYouTube(e.Uri) || Live.IsLive(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
                 else OpenExternal(e.Uri);
             };
             cw.DocumentTitleChanged += (_, _) => { Text = cw.DocumentTitle; grip.Invalidate(); };

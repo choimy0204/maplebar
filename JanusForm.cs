@@ -59,7 +59,7 @@ sealed class JanusForm : Form
     JanusForm(Settings st, JanusWatch watch, float sc, bool toon, bool buff)
     {
         this.st = st; this.watch = watch; this.sc = sc; this.toon = toon;
-        Text = toon ? "웹툰 키" : "알림 설정";
+        Text = toon ? "웹툰·쇼츠 키" : "알림 설정";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
@@ -384,7 +384,7 @@ sealed class JanusForm : Form
         shortsPrevKey = KeyPill(card, "이전 쇼츠 키", 11, w, ip, ref cy);
         var tip = new Label
         {
-            Text = "바 메뉴의 '유튜브' 재생 창에 쇼츠가 떠 있을 때, 한 번 누르면 다음·이전 쇼츠로 넘어가요. " +
+            Text = "바 메뉴 '영상'의 유튜브 재생 창에 쇼츠가 떠 있을 때, 한 번 누르면 다음·이전 쇼츠로 넘어가요. " +
                    "재생 창이나 메이플 창이 앞에 있을 때 동작해요.",
             Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy),
         };

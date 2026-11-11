@@ -76,16 +76,16 @@ public static class SiteMenu
             I("드레스룸", Coordi.Base + "/dressing-room"), I("드레스룸 v2", Coordi.Base + "/dressing-room/v2"),
             I("코디 분석", Coordi.Base + "/analysis/coordi"), I("룩북", Coordi.Base + "/lookbook"),
         }),
-        // 유튜브 (영상·쇼츠는 재생 창 하나에서 연다. 로그인은 사용자가 직접 한다)
-        new("유튜브", YouTube.Home, new[] // 메뉴 글자만 눌러도 유튜브 홈을 연다
+        // 영상: 유튜브(영상·쇼츠는 재생 창 하나에서 연다)와 실시간 방송. 로그인은 사용자가 직접 한다
+        new("영상", YouTube.Home, new[] // 메뉴 글자만 눌러도 유튜브 홈을 연다
         {
             H("유튜브"),
             I("유튜브 홈", YouTube.Home), I("쇼츠", YouTube.Shorts),
             // 유튜브 뮤직: 바의 뮤직 칸에서 조종한다 (메이플 브금과 둘 중 하나만 켜진다)
-            H("유튜브 뮤직"),
-            I("유튜브 뮤직 열기", Music.YtHome),
-            H("계정"),
+            I("유튜브 뮤직", Music.YtHome),
             I("구글 로그인", YouTube.LoginUrl),
+            H("실시간 방송"),
+            I("SOOP", Live.Soop), I("치지직", Live.Chzzk),
         }),
         // 메애기 메이플 뮤직 (사이트의 플레이어로 듣는다. 창 하나를 같이 쓴다)
         new("🎵 뮤직", null, new[]

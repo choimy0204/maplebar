@@ -83,7 +83,7 @@ public class BarForm : Form
                 nav.MouseEnter += (_, _) => OpenMega(mega, nav);
             }
             nav.Margin = new Padding(S(6), 0, S(6), 0);
-            if (top.Name == "유튜브") AddPlayIcon(nav);
+            if (top.Name == "영상") AddPlayIcon(nav);
             left.Controls.Add(nav);
         }
 
@@ -444,7 +444,7 @@ public class BarForm : Form
         cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
         cms.Items.Add(new ToolStripSeparator());
         cms.Items.Add("알림 설정 (야누스·룬·버프)…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
-        cms.Items.Add("웹툰 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
+        cms.Items.Add("웹툰·쇼츠 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
         cms.Items.Add(ClockItem());
         // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
         bool keepOpen = false;
