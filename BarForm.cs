@@ -622,6 +622,28 @@ public class BarForm : Form
     {
         base.OnLoad(e);
         LayoutBar();
+        Location = InitialLocation();
+        gameTimer.Tick += (_, _) => { CheckGame(); FollowGame(); SyncClock(); };
+        PrepareHiddenStart();
+        AutoStart.Init();
+        ListenForSecondLaunch();
+        gameTimer.Start();
+        janus = new JanusWatch(settings, sc);
+        AddTimerChips(janus);
+        clock = new ClockForm(settings, sc);
+        search.Focus();
+        keepTop.Tick += (_, _) => StayOnTop();
+        keepTop.Start();
+        MakePeek();
+        foldTimer.Tick += (_, _) => FoldTick();
+        foldTimer.Start();
+        StartInvenWatch();
+        RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
+    }
+
+    /// <summary>처음 놓을 자리: 저장된 자리, 없으면 주 화면 위 가운데. 게임 따라가기가 켜져 있으면 게임 창 기준.</summary>
+    Point InitialLocation()
+    {
         var wa = Screen.PrimaryScreen!.WorkingArea;
         var pos = new Point(wa.Left + (wa.Width - Width) / 2, wa.Top + S(6));
         // 가운데 좌표로 저장해 두었다가 되살린다 (예전처럼 왼쪽 끝을 저장하면 브금 칸이 붙을 때마다 조금씩 왼쪽으로 밀린다)
@@ -633,8 +655,11 @@ public class BarForm : Form
                 pos = new Point(pos.X, by); // 예전 저장값은 가로를 화면 가운데로 되돌린다
         }
         if (settings.GameFollow && Game.Area() is Rectangle game) pos = GameAnchor(game);
-        Location = pos;
-        gameTimer.Tick += (_, _) => { CheckGame(); FollowGame(); SyncClock(); };
+        return pos;
+    }
+
+    void PrepareHiddenStart()
+    {
         // PC를 켤 때 자동으로 실행됐으면 바를 보이지 않게 띄웠다가 곧바로 아이콘으로 넣는다
         if (Program.StartHidden) { Opacity = 0; noActivate = true; }
         Shown += (_, _) =>
@@ -650,7 +675,10 @@ public class BarForm : Form
             // 처음 켤 때 게임이 없으면 바로 숨긴다
             BeginInvoke(CheckGame);
         };
-        AutoStart.Init();
+    }
+
+    void ListenForSecondLaunch()
+    {
         // 메이플 바를 또 실행하면 (숨어 있던) 바를 앞으로 불러온다
         if (Program.ShowEvent is { } ev)
             ThreadPool.RegisterWaitForSingleObject(ev, (_, _) =>
@@ -658,26 +686,24 @@ public class BarForm : Form
                 if (IsDisposed || !IsHandleCreated) return;
                 try { BeginInvoke(() => { WindowState = FormWindowState.Normal; ShowAll(); }); } catch { }
             }, null, -1, executeOnlyOnce: false);
-        gameTimer.Start();
-        janus = new JanusWatch(settings, sc);
-        AddTimerChips(janus);
-        clock = new ClockForm(settings, sc);
-        search.Focus();
-        keepTop.Tick += (_, _) => StayOnTop();
-        keepTop.Start();
+    }
+
+    void MakePeek()
+    {
         // 접혔을 때 남는 주황 띠
         peek = new Panel { Bounds = new Rectangle(0, 0, Width, PeekH), BackColor = UI.Accent, Visible = false, Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
         Controls.Add(peek);
         peek.BringToFront();
-        foldTimer.Tick += (_, _) => FoldTick();
-        foldTimer.Start();
+    }
+
+    void StartInvenWatch()
+    {
         inven = new InvenWatcher(settings, (tag, post) =>
         {
             // 바를 숨겨도 "바를 숨겨도 알림 받기"가 켜져 있으면 띄운다 (게임 화면 위 가운데에)
             if ((!Visible || WindowState == FormWindowState.Minimized) && !settings.AlertWhenHidden) return;
             NoticeStrip.Show(this, tag == "새 글" ? 0 : 1, tag, post.Title, post.Category, () => Navigate(post.Url), sc);
         });
-        RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
     }
 
     // 다른 '항상 위' 창(사이트 창, 다른 프로그램)이 바를 덮지 않게 계속 맨 위로 올린다
@@ -853,19 +879,22 @@ public class BarForm : Form
 
     // 작업 표시줄 오른쪽 아래(알림 영역) 아이콘: 두 번 누르면 바를 열거나 숨긴다 (Ctrl+Alt+M과 같다)
     NotifyIcon? tray;
+    ToolStripMenuItem? trayAlertItem, trayAutoStartItem; // 트레이 메뉴의 체크 항목 (열 때마다 다시 맞춘다)
 
     void MakeTray()
     {
         if (tray != null) return;
         var menu = new ContextMenuStrip();
         menu.Items.Add("바 열기 / 숨기기 (Ctrl+Alt+M)", null, (_, _) => ToggleBar());
-        menu.Items.Add(AlertWhenHiddenItem());
+        trayAlertItem = AlertWhenHiddenItem();
+        menu.Items.Add(trayAlertItem);
         // 바 메뉴에서 바꾼 값도 맞게 보이도록 열 때마다 체크를 다시 맞춘다
-        menu.Items.Add(AutoStartItem());
+        trayAutoStartItem = AutoStartItem();
+        menu.Items.Add(trayAutoStartItem);
         menu.Opening += (_, _) =>
         {
-            if (menu.Items[1] is ToolStripMenuItem a) a.Checked = settings.AlertWhenHidden;
-            if (menu.Items[2] is ToolStripMenuItem s) s.Checked = AutoStart.On;
+            if (trayAlertItem != null) trayAlertItem.Checked = settings.AlertWhenHidden;
+            if (trayAutoStartItem != null) trayAutoStartItem.Checked = AutoStart.On;
         };
         menu.Items.Add("메이플 바 끄기", null, (_, _) => Close());
         tray = new NotifyIcon

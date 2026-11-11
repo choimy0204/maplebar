@@ -9,6 +9,7 @@ namespace MapleBar;
 /// </summary>
 static class Thumbs
 {
+    // [전역] 썸네일 캐시. 주소별 그림(실패는 null)과 받는 중인 주소 목록을 앱이 끝날 때까지 들고 있다
     static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(10) };
     static readonly Dictionary<string, Image?> cache = new();
     static readonly HashSet<string> loading = new();
@@ -72,7 +73,7 @@ public sealed class MusicPill : Control
     readonly ToolTip tip = new();
     WebWindow.MusicInfo? info;
     public WebWindow.MusicInfo? Info => info;
-    int hot = -1; // 0 이전, 1 재생, 2 다음, 3 제목
+    int hot = BtnNone; // 마우스가 올라간 버튼 (아래 Btn… 번호)
     public event Action? TitleClick;
 
     public MusicPill(float sc)
@@ -86,8 +87,10 @@ public sealed class MusicPill : Control
     }
 
     int S(int v) => UI.Scale(v, sc);
-    // 버튼 순서(왼→오): 랜덤(4) 이전(0) 재생(1) 다음(2) 반복(5)
-    static readonly int[] Order = { 0, 1, 2, 4, 5 }; // 이전·재생·다음 · 랜덤·한 곡 반복
+    // 버튼 번호. 0~2는 WebWindow.MusicCmd에 그대로 넘기는 번호다 (0 이전, 1 재생/일시정지, 2 다음)
+    const int BtnNone = -1, BtnPrev = 0, BtnPlay = 1, BtnNext = 2, BtnTitle = 3, BtnShuffle = 4, BtnRepeat = 5;
+    // 버튼 순서(왼→오): 랜덤 이전 재생 다음 반복
+    static readonly int[] Order = { BtnPrev, BtnPlay, BtnNext, BtnShuffle, BtnRepeat }; // 이전·재생·다음 · 랜덤·한 곡 반복
     Rectangle Btn(int i)
     {
         int w = S(30), slot = Array.IndexOf(Order, i);
@@ -133,7 +136,7 @@ public sealed class MusicPill : Control
 
         // ♪ + 제목
         var tr = TitleRect;
-        if (hot == 3) using (var b = new SolidBrush(Color.FromArgb(40, UI.Accent)))
+        if (hot == BtnTitle) using (var b = new SolidBrush(Color.FromArgb(40, UI.Accent)))
             using (var p = UI.RoundRect(new RectangleF(tr.Left - S(2), S(4), tr.Width + S(4), Height - S(10)), S(8))) g.FillPath(b, p);
         // 썸네일 (없으면 ♪)
         var thumb = Thumbs.Get(info?.Img, this);
@@ -159,11 +162,11 @@ public sealed class MusicPill : Control
         foreach (int i in Order)
         {
             var r = Btn(i);
-            bool on = (i == 4 && info?.Shuffle == true) || (i == 5 && info?.Repeat == true);
+            bool on = (i == BtnShuffle && info?.Shuffle == true) || (i == BtnRepeat && info?.Repeat == true);
             if (on && hot != i)
                 using (var b = new SolidBrush(Color.FromArgb(36, UI.Accent))) g.FillEllipse(b, r.Left + (r.Width - S(26)) / 2f, r.Top + (r.Height - S(26)) / 2f, S(26), S(26));
-            if (i == 1)
-                using (var b = new SolidBrush(hot == 1 ? ControlPaint.Dark(UI.Accent, 0.05f) : UI.Accent)) g.FillEllipse(b, r.Left + (r.Width - S(26)) / 2f, r.Top + (r.Height - S(26)) / 2f, S(26), S(26));
+            if (i == BtnPlay)
+                using (var b = new SolidBrush(hot == BtnPlay ? ControlPaint.Dark(UI.Accent, 0.05f) : UI.Accent)) g.FillEllipse(b, r.Left + (r.Width - S(26)) / 2f, r.Top + (r.Height - S(26)) / 2f, S(26), S(26));
             else if (hot == i)
                 using (var b = new SolidBrush(Color.FromArgb(50, UI.Accent))) g.FillEllipse(b, r.Left + (r.Width - S(26)) / 2f, r.Top + (r.Height - S(26)) / 2f, S(26), S(26));
             DrawIcon(g, i, r);
@@ -174,9 +177,9 @@ public sealed class MusicPill : Control
     {
         float cx = r.Left + r.Width / 2f, cy = r.Top + r.Height / 2f, u = S(5);
         if (i >= 4) { DrawModeIcon(g, i, cx, cy, u); return; }
-        var col = i == 1 ? Color.White : Color.FromArgb(70, 50, 30);
+        var col = i == BtnPlay ? Color.White : Color.FromArgb(70, 50, 30);
         using var b = new SolidBrush(col);
-        if (i == 1)
+        if (i == BtnPlay)
         {
             if (info?.Playing == true)
             {
@@ -186,7 +189,7 @@ public sealed class MusicPill : Control
             else g.FillPolygon(b, new[] { new PointF(cx - u * 0.7f, cy - u * 1.05f), new PointF(cx - u * 0.7f, cy + u * 1.05f), new PointF(cx + u * 1.1f, cy) });
             return;
         }
-        float d = i == 0 ? -1 : 1; // 왼쪽(이전) / 오른쪽(다음)
+        float d = i == BtnPrev ? -1 : 1; // 왼쪽(이전) / 오른쪽(다음)
         g.FillPolygon(b, new[] { new PointF(cx - d * u * 0.8f, cy - u), new PointF(cx - d * u * 0.8f, cy + u), new PointF(cx + d * u * 0.6f, cy) });
         g.FillRectangle(b, d > 0 ? cx + u * 0.6f : cx - u * 0.6f - u * 0.4f, cy - u, u * 0.4f, u * 2);
     }
@@ -196,12 +199,12 @@ public sealed class MusicPill : Control
 
     void DrawModeIcon(Graphics g, int i, float cx, float cy, float u)
     {
-        bool on = i == 4 ? info?.Shuffle == true : info?.Repeat == true;
+        bool on = i == BtnShuffle ? info?.Shuffle == true : info?.Repeat == true;
         var col = on ? UI.Accent : Color.FromArgb(165, 150, 135);
         using var pen = new Pen(col, S(2)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
         using var b = new SolidBrush(col);
         float l = cx - u * 1.2f, rt = cx + u * 1.2f, t = cy - u * 0.8f, bt = cy + u * 0.8f, a = u * 0.55f;
-        if (i == 4)
+        if (i == BtnShuffle)
         {
             g.DrawBezier(pen, l, t, cx - u * 0.2f, t, cx + u * 0.2f, bt, rt - a * 0.6f, bt);
             g.DrawBezier(pen, l, bt, cx - u * 0.2f, bt, cx + u * 0.2f, t, rt - a * 0.6f, t);
@@ -222,7 +225,7 @@ public sealed class MusicPill : Control
     int HitTest(Point p)
     {
         foreach (int i in Order) if (Btn(i).Contains(p)) return i;
-        return TitleRect.Contains(p) ? 3 : -1;
+        return TitleRect.Contains(p) ? BtnTitle : BtnNone;
     }
 
     // 끌어서 꺼내기: 누른 채로 조금 움직이면 클릭 대신 DragStart(잡은 자리)를 알린다
@@ -247,7 +250,7 @@ public sealed class MusicPill : Control
         {
             dragged = true; downAt = null;
             dial?.Hide(); tip.Hide(this);
-            hot = -1; Invalidate();
+            hot = BtnNone; Invalidate();
             Capture = false;
             DragStart?.Invoke(d);
             return;
@@ -269,21 +272,21 @@ public sealed class MusicPill : Control
             tip.SetToolTip(this, text);
         }
         // 제목에 마우스를 올리면 아래에 소리 조절기를 띄운다
-        if (h == 3 && info != null) (dial ??= new VolumeDial(this, sc)).ShowAt(info.Volume);
+        if (h == BtnTitle && info != null) (dial ??= new VolumeDial(this, sc)).ShowAt(info.Volume);
         base.OnMouseMove(e);
     }
     VolumeDial? dial;
-    protected override void OnMouseLeave(EventArgs e) { hot = -1; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseLeave(EventArgs e) { hot = BtnNone; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnMouseClick(MouseEventArgs e)
     {
         base.OnMouseClick(e);
         if (e.Button != MouseButtons.Left) return;
         if (dragged) { dragged = false; return; }
         int h = HitTest(e.Location);
-        if (h is >= 0 and <= 2) WebWindow.MusicCmd(h);
-        else if (h == 4) WebWindow.MusicMode("shuf");
-        else if (h == 5) WebWindow.MusicMode("rep");
-        else if (h == 3) TitleClick?.Invoke();
+        if (h is >= BtnPrev and <= BtnNext) WebWindow.MusicCmd(h);
+        else if (h == BtnShuffle) WebWindow.MusicMode(WebWindow.ModeShuffle);
+        else if (h == BtnRepeat) WebWindow.MusicMode(WebWindow.ModeRepeat);
+        else if (h == BtnTitle) TitleClick?.Invoke();
     }
 
     protected override void Dispose(bool disposing)
@@ -511,6 +514,7 @@ public sealed class VolumeDial : Form
 /// <summary>바 아래에 뜨는 곡 목록: 인기 TOP 100 / 검색. 곡을 누르면 숨은 메애기 창에서 재생한다.</summary>
 public sealed class MusicPicker : Form
 {
+    // [전역] 곡 고르기 창은 하나만 띄운다. 닫혔으면 다음에 새로 만든다
     static MusicPicker? current;
 
     public static void Open(Form bar, Settings st, float sc, bool search)
