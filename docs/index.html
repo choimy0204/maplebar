@@ -102,6 +102,8 @@ kbd {
 .feature h3 { margin: 0; font-size: 18px; }
 .feature p { margin: 0; color: var(--muted); }
 .feature ul { margin: 0; padding-left: 1.2em; color: var(--muted); }
+.dl-note { margin: -4px 0 0; font-size: 13px; color: var(--muted); font-family: var(--font-mono); }
+.dl-ver { font-family: var(--font-mono); font-size: 13px; opacity: .85; }
 .patch-head { display: grid; gap: 4px; }
 .patch-head p { margin: 0; color: var(--muted); }
 footer { color: var(--muted); font-size: 14px; display: grid; gap: 4px; }
@@ -115,9 +117,10 @@ footer a, .note a { color: var(--accent); }
     <h1>메이플 바 패치 노트</h1>
     <p class="lead">재획하면서 자주 쓰는 알림과 사이트를 메이플 화면 위에 모아 보여 주는 프로그램이에요. 버전마다 무엇이 바뀌었는지 정리했어요.</p>
     <div class="actions">
-      <a class="btn primary" href="https://github.com/choimy0204/maplebar/releases/latest">최신 버전 받기</a>
+      <a class="btn primary dl" href="https://github.com/choimy0204/maplebar/releases/download/v1.0.8/MapleBar-Setup-1.0.8.exe">설치 파일 받기 <span class="dl-ver">1.0.8</span></a>
       <a class="btn" href="https://github.com/choimy0204/maplebar">코드 보기 (깃허브)</a>
     </div>
+    <p class="dl-note"><span class="dl-name">MapleBar-Setup-1.0.8.exe</span> · 약 49MB · 누르면 바로 받아져요</p>
     <nav class="jump" aria-label="버전 바로 가기">
       <a href="#features">주요 기능</a><a href="#v108">1.0.8</a><a href="#v107">1.0.7</a><a href="#v106">1.0.6</a><a href="#v105">1.0.5</a>
     </nav>
@@ -127,7 +130,7 @@ footer a, .note a { color: var(--accent); }
     <h2>업데이트하는 방법</h2>
     <ul>
       <li><strong>1.0.8부터</strong>: 켤 때 새 버전 안내가 뜨면 [예]만 누르세요. 알아서 설치하고 다시 켜져요.</li>
-      <li><strong>1.0.7 이하</strong>: 이번 한 번만 <a href="https://github.com/choimy0204/maplebar/releases/latest">최신 버전</a>을 받아 설치해 주세요.</li>
+      <li><strong>1.0.7 이하</strong>: 이번 한 번만 <a class="dl" href="https://github.com/choimy0204/maplebar/releases/download/v1.0.8/MapleBar-Setup-1.0.8.exe">설치 파일</a>을 받아 설치해 주세요.</li>
       <li>설치할 때 "Windows의 PC 보호" 창이 뜨면 [추가 정보] → [실행]을 누르세요.</li>
     </ul>
   </section>
@@ -373,6 +376,21 @@ footer a, .note a { color: var(--accent); }
     <span>코드는 모두 <a href="https://github.com/choimy0204/maplebar">깃허브</a>에 공개돼 있어요. 의견은 인벤 글 댓글로 남겨 주세요.</span>
   </footer>
 </div>
+<script>
+// 새 버전이 나오면 받기 링크를 그 버전 설치 파일로 바꾼다 (실패하면 적힌 링크 그대로)
+fetch("https://api.github.com/repos/choimy0204/maplebar/releases/latest")
+  .then(function (r) { return r.ok ? r.json() : null; })
+  .then(function (rel) {
+    if (!rel || !rel.assets) return;
+    var a = rel.assets.find(function (x) { return /^MapleBar-Setup-[\d.]+\.exe$/i.test(x.name); });
+    if (!a) return;
+    var ver = a.name.replace(/^MapleBar-Setup-|\.exe$/gi, "");
+    document.querySelectorAll("a.dl").forEach(function (el) { el.href = a.browser_download_url; });
+    document.querySelectorAll(".dl-ver").forEach(function (el) { el.textContent = ver; });
+    document.querySelectorAll(".dl-name").forEach(function (el) { el.textContent = a.name; });
+  })
+  .catch(function () {});
+</script>
 
 </body>
 </html>
