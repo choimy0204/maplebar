@@ -2,7 +2,10 @@
 ; 만들기: 먼저 dotnet publish로 ..\publish\MapleBar.exe를 만든 뒤 이 파일을 ISCC로 컴파일한다.
 
 #define AppName "메이플 바"
+; 깃허브 빌드는 /DAppVer=로 버전을 넘긴다
+#ifndef AppVer
 #define AppVer "1.0.5"
+#endif
 #define AppExe "MapleBar.exe"
 
 [Setup]

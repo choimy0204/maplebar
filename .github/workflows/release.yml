@@ -1,0 +1,62 @@
+# 버전 태그(v1.0.6 같은)를 올리면 깃허브 서버가 공개된 코드로 직접 exe와 설치 파일을 만들어
+# Releases에 올린다. 누가 어떤 코드로 만들었는지 이 기록(Actions 탭)에 그대로 남는다.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # 릴리스 만들기
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "7.0.x"
+
+      # 태그와 csproj 버전이 다르면 멈춘다 (실수로 다른 버전을 올리지 않게)
+      - name: 버전 확인
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $ver = ([xml](Get-Content MapleBar.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if ($tag -ne $ver) { throw "태그($tag)와 MapleBar.csproj 버전($ver)이 달라요" }
+          "VER=$ver" >> $env:GITHUB_ENV
+
+      - name: exe 만들기
+        run: dotnet publish MapleBar.csproj -c Release -r win-x64 --self-contained true -o publish
+
+      - name: 설치 파일 만들기
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit 1 } }
+          & $iscc "/DAppVer=$env:VER" installer\MapleBar.iss
+          if ($LASTEXITCODE) { exit 1 }
+
+      # 받은 파일이 이 빌드에서 나온 것과 같은지 누구나 확인할 수 있게 SHA256 값을 함께 올린다
+      - name: 해시 만들기
+        shell: pwsh
+        run: |
+          $f = "dist\MapleBar-Setup-$env:VER.exe"
+          $h = (Get-FileHash $f -Algorithm SHA256).Hash
+          "$h  MapleBar-Setup-$env:VER.exe" | Out-File -Encoding ascii dist\SHA256.txt
+          "HASH=$h" >> $env:GITHUB_ENV
+
+      - name: 릴리스 올리기
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          이 설치 파일은 깃허브 서버가 이 저장소의 공개된 코드로 직접 만들었어요.
+          만든 기록: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          SHA256: ``$env:HASH``
+          "@
+          gh release create "${{ github.ref_name }}" "dist\MapleBar-Setup-$env:VER.exe" dist\SHA256.txt --title "메이플 바 $env:VER" --notes $notes
