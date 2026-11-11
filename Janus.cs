@@ -454,6 +454,7 @@ static class JanusAlert
                 foreach (var b in x.bmps) b.Dispose();
                 x.pill.Dispose();
             }
+            pillBmp?.Dispose(); pillBmp = null;
             stop = null;
         };
 
@@ -465,7 +466,7 @@ static class JanusAlert
             double ta = el < Lap ? Math.Sin(el / Lap * Math.PI / 2) : 1 - Math.Pow((el - Lap) / Fade, 1.5);
             // 글씨: 처음에 살짝 늦게 떠서 끝날 때 같이 사라진다
             double a = Math.Clamp((el - 0.15) / 0.3, 0, 1) * Math.Clamp((Lap + Fade - el) / 0.6, 0, 1);
-            using var pb = Pill(a, sc);
+            var pb = PillFor(a, sc);
             foreach (var (area, rects, strips, bmps, tint, pill) in sets)
             {
                 tint.SetAlpha((byte)(255 * Math.Clamp(ta, 0, 1)));
@@ -507,17 +508,18 @@ static class JanusAlert
 
             // 머리와 꼬리: 머리에 가까울수록 크고 밝다
             float tail = len * 0.28f, step = Math.Max(2f, 4 * sc);
+            using var b = new SolidBrush(Color.Empty); // 점마다 새로 만들지 않고 색만 바꿔 쓴다
             for (float d = Math.Max(0, head - tail); d <= head; d += step)
             {
                 float k = 1 - (head - d) / tail;
                 var pt = At(r, d);
                 float rad = (8 + 26 * k) * sc;
                 if (pt.X + rad < clip.Left || pt.X - rad > clip.Right || pt.Y + rad < clip.Top || pt.Y - rad > clip.Bottom) continue;
-                using (var b = new SolidBrush(Color.FromArgb(5 + (int)(50 * k * k), Main)))
-                    g.FillEllipse(b, pt.X - rad, pt.Y - rad, rad * 2, rad * 2);
+                b.Color = Color.FromArgb(5 + (int)(50 * k * k), Main);
+                g.FillEllipse(b, pt.X - rad, pt.Y - rad, rad * 2, rad * 2);
                 float core = (3 + 8 * k) * sc;
-                using (var b = new SolidBrush(Color.FromArgb((int)(210 * k * k * k), Light)))
-                    g.FillEllipse(b, pt.X - core, pt.Y - core, core * 2, core * 2);
+                b.Color = Color.FromArgb((int)(210 * k * k * k), Light);
+                g.FillEllipse(b, pt.X - core, pt.Y - core, core * 2, core * 2);
             }
         }
         else
@@ -570,6 +572,19 @@ static class JanusAlert
         g.CompositingMode = CompositingMode.SourceCopy; // 겹쳐 칠하지 않고 바꿔 칠한다
         g.FillPath(pb, path);
         return bmp;
+    }
+
+    // 글씨 알약은 15ms마다 쓰이지만 진하기(a)가 같으면 모양이 같다. 글·색·배율·진하기가 다 같을 때만 지난 것을 다시 쓴다
+    static Bitmap? pillBmp;
+    static (string, int, float, double) pillKey;
+    static Bitmap PillFor(double a, float sc)
+    {
+        var key = (Text, Main.ToArgb(), sc, a);
+        if (pillBmp != null && key == pillKey) return pillBmp;
+        pillBmp?.Dispose();
+        pillBmp = Pill(a, sc);
+        pillKey = key;
+        return pillBmp;
     }
 
     static Bitmap Pill(double a, float sc)

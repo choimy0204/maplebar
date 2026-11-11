@@ -18,11 +18,18 @@ static class Game
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
 
+    /// <summary>지금 켜져 있는 메이플 프로세스 번호들.</summary>
+    static HashSet<uint> MaplePids()
+    {
+        var set = new HashSet<uint>();
+        foreach (var p in Process.GetProcessesByName("MapleStory")) { set.Add((uint)p.Id); p.Dispose(); }
+        return set;
+    }
+
     /// <summary>게임 화면 영역. 게임이 꺼져 있거나 최소화되어 있으면 null.</summary>
     public static Rectangle? Area()
     {
-        var pids = new HashSet<uint>();
-        foreach (var p in Process.GetProcessesByName("MapleStory")) { pids.Add((uint)p.Id); p.Dispose(); }
+        var pids = MaplePids();
         if (pids.Count == 0) return null;
 
         Rectangle? best = null;
@@ -51,9 +58,7 @@ static class Game
         if ((DateTime.Now - fgPidsAt).TotalSeconds > 2)
         {
             fgPidsAt = DateTime.Now;
-            var set = new HashSet<uint>();
-            foreach (var p in Process.GetProcessesByName("MapleStory")) { set.Add((uint)p.Id); p.Dispose(); }
-            fgPids = set;
+            fgPids = MaplePids();
         }
         if (fgPids.Count == 0) return false;
         GetWindowThreadProcessId(GetForegroundWindow(), out uint pid);
@@ -67,8 +72,7 @@ static class Game
         if (fgPids.Contains(pid)) return true;
         if ((DateTime.Now - fgPidsAt).TotalSeconds < 0.5) return false;
         fgPidsAt = DateTime.Now;
-        var set = new HashSet<uint>();
-        foreach (var p in Process.GetProcessesByName("MapleStory")) { set.Add((uint)p.Id); p.Dispose(); }
+        var set = MaplePids();
         fgPids = set;
         return set.Contains(pid);
     }

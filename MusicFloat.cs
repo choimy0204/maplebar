@@ -263,6 +263,8 @@ sealed class MusicDock
     // ── 그리기 ──
     static readonly Color Fill = UI.SoftAccent, Edge = Color.FromArgb(255, 214, 160);
 
+    Bitmap? fxBmp; // Render가 15ms마다 쓰는 판
+
     void Render(Action<Graphics> draw, Rectangle? area = null)
     {
         // 그릴 범위: 바 칸 자리와 마우스 주변을 모두 덮는다
@@ -273,7 +275,14 @@ sealed class MusicDock
         else r.Inflate(S(30), S(30));
         r.Intersect(SystemInformation.VirtualScreen);
         if (r.Width <= 0 || r.Height <= 0) return;
-        using var bmp = new Bitmap(r.Width, r.Height, PixelFormat.Format32bppArgb);
+        // 크기가 같으면 지난 판을 지우고 다시 쓴다 (새 판과 같게 모든 칸을 0으로)
+        if (fxBmp == null || fxBmp.Width != r.Width || fxBmp.Height != r.Height)
+        {
+            fxBmp?.Dispose();
+            fxBmp = new Bitmap(r.Width, r.Height, PixelFormat.Format32bppArgb);
+        }
+        else using (var cg = Graphics.FromImage(fxBmp)) cg.Clear(Color.FromArgb(0, 0, 0, 0));
+        var bmp = fxBmp;
         using (var g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;

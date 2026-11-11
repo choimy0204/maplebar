@@ -734,12 +734,21 @@ public class WebWindow : Form
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
     static bool KeyIsDown(int vk) => vk != 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
 
+    static readonly List<WebWindow> scrollWins = new();
+
     static void ScrollTick()
     {
-        if (!open.Any(x => !x.IsDisposed && Webtoon.IsWebtoon(x.startUrl))) { scrollTimer.Stop(); scrollWin = null; scrollDir = 0; return; }
-        var wins = open.Where(x => !x.IsDisposed && x.Visible && x.WindowState != FormWindowState.Minimized && Webtoon.IsWebtoon(x.startUrl)).ToList();
+        // 30ms마다 돌아서 LINQ 대신 그냥 반복문으로 고른다 (고르는 순서와 결과는 같다)
+        bool anyToon = false;
+        foreach (var x in open) if (!x.IsDisposed && Webtoon.IsWebtoon(x.startUrl)) { anyToon = true; break; }
+        if (!anyToon) { scrollTimer.Stop(); scrollWin = null; scrollDir = 0; return; }
+        var wins = scrollWins;
+        wins.Clear();
+        foreach (var x in open)
+            if (!x.IsDisposed && x.Visible && x.WindowState != FormWindowState.Minimized && Webtoon.IsWebtoon(x.startUrl)) wins.Add(x);
         var fg = GetForegroundWindow();
-        WebWindow? target = wins.FirstOrDefault(x => x.Handle == fg);
+        WebWindow? target = null;
+        foreach (var x in wins) if (x.Handle == fg) { target = x; break; }
         if (target == null && wins.Count > 0 && Game.Foreground())
             target = lastWebtoon != null && wins.Contains(lastWebtoon) ? lastWebtoon : wins[^1];
         int dir = 0;

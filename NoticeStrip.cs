@@ -67,6 +67,7 @@ public sealed class NoticeStrip : Form
     double holdLeft = HoldMs;
     long lastMs;
     bool hover, hoverClose, done;
+    (bool, bool, int, int, int)? drawnKey; // 머무르는 동안 마지막으로 그린 상태
     int S(int v) => UI.Scale(v, sc);
     int H => S(36);
     int FullW => Math.Max(bar.Width, S(420));
@@ -136,7 +137,10 @@ public sealed class NoticeStrip : Form
                 if (s >= 1) Finish();
                 break;
         }
-        Invalidate();
+        // 늘고 줄 때는 매번, 머무를 때는 보이는 것이 바뀐 틱에만 다시 그린다
+        var key = (hover, hoverClose, queue.Count, Width, Height);
+        if (phase != Phase.Hold || key != drawnKey) Invalidate();
+        drawnKey = phase == Phase.Hold ? key : null;
     }
 
     void Finish()

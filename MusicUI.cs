@@ -191,6 +191,8 @@ public sealed class MusicPill : Control
     }
 
     // 랜덤(교차 화살표) / 반복(돌아오는 화살표 + 1). 켜져 있으면 주황, 꺼져 있으면 회색
+    Font? oneFont; // 한 곡 반복 아이콘의 "1". 배율(UI.Z)이 바뀌면 다시 만든다
+
     void DrawModeIcon(Graphics g, int i, float cx, float cy, float u)
     {
         bool on = i == 4 ? info?.Shuffle == true : info?.Repeat == true;
@@ -211,8 +213,8 @@ public sealed class MusicPill : Control
         using (var p = UI.RoundRect(ring, (bt - t) / 2)) g.DrawPath(pen, p);
         g.FillPolygon(b, new[] { new PointF(cx + a * 1.3f, t), new PointF(cx - a * 0.2f, t - a), new PointF(cx - a * 0.2f, t + a) });
         g.FillPolygon(b, new[] { new PointF(cx - a * 1.3f, bt), new PointF(cx + a * 0.2f, bt - a), new PointF(cx + a * 0.2f, bt + a) });
-        using var f = new Font("Segoe UI", 7f * UI.Z, FontStyle.Bold);
-        TextRenderer.DrawText(g, "1", f, new Rectangle((int)(cx - u), (int)(cy - u), (int)(u * 2), (int)(u * 2)), col,
+        if (oneFont == null || oneFont.Size != 7f * UI.Z) { oneFont?.Dispose(); oneFont = new Font("Segoe UI", 7f * UI.Z, FontStyle.Bold); }
+        TextRenderer.DrawText(g, "1", oneFont, new Rectangle((int)(cx - u), (int)(cy - u), (int)(u * 2), (int)(u * 2)), col,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
 
