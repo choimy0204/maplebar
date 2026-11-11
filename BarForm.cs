@@ -76,10 +76,14 @@ public class BarForm : Form
             else
             {
                 var mega = new MegaMenuForm(top.Items, sc, p => Navigate(WithName(p))) { Owner = this };
-                nav = UI.Button(top.Name, "", () => OpenMega(mega, nav), sc);
+                // 주소가 있는 메뉴(유튜브)는 글자를 누르면 바로 그 페이지를 연다. 올리면 펼친 메뉴는 그대로 나온다
+                nav = UI.Button(top.Name, "", top.Path != null
+                    ? () => { HideMega(); Navigate(WithName(top.Path)); }
+                    : () => OpenMega(mega, nav), sc);
                 nav.MouseEnter += (_, _) => OpenMega(mega, nav);
             }
             nav.Margin = new Padding(S(6), 0, S(6), 0);
+            if (top.Name == "유튜브") AddPlayIcon(nav);
             left.Controls.Add(nav);
         }
 
@@ -144,13 +148,36 @@ public class BarForm : Form
     void AddMusicControls()
     {
         musicPill = new MusicPill(sc) { Visible = false, Margin = new Padding(S(4), 0, S(6), 0) };
-        musicPill.TitleClick += () => MusicPicker.Open(this, settings, sc, false);
+        // 제목을 누르면: 브금은 곡 목록, 유튜브 뮤직은 그 창(재생목록 고르기)
+        musicPill.TitleClick += () =>
+        {
+            if (WebWindow.MusicIsYt) WebWindow.ToggleMusicWindow();
+            else MusicPicker.Open(this, settings, sc, false);
+        };
         var menu = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 9.5f * UI.Z), ShowImageMargin = false });
-        menu.Items.Add("인기 TOP 100", null, (_, _) => MusicPicker.Open(this, settings, sc, false));
-        menu.Items.Add("브금 검색", null, (_, _) => MusicPicker.Open(this, settings, sc, true));
-        menu.Items.Add("메애기 창 보기/숨기기", null, (_, _) => WebWindow.ToggleMusicWindow());
+        var top100 = menu.Items.Add("인기 TOP 100", null, (_, _) => MusicPicker.Open(this, settings, sc, false));
+        var search = menu.Items.Add("브금 검색", null, (_, _) => MusicPicker.Open(this, settings, sc, true));
+        var winItem = menu.Items.Add("메애기 창 보기/숨기기", null, (_, _) => WebWindow.ToggleMusicWindow());
+        var lyricsItem = new ToolStripMenuItem("가사 보기");
+        lyricsItem.Click += (_, _) => { settings.MusicLyrics = !settings.MusicLyrics; settings.Save(); WebWindow.MusicRefresh(); UpdateLyrics(lastMusic); };
+        menu.Items.Add(lyricsItem);
+        // 브금 ↔ 유튜브 뮤직 바꾸기 (하나만 켜진다)
+        var swap = menu.Items.Add("", null, (_, _) =>
+        {
+            if (WebWindow.MusicIsYt) MusicPicker.Open(this, settings, sc, false);
+            else WebWindow.EnsureMusic(settings, sc, Music.YtHome, false); // 창은 숨긴 채, 칸만
+        });
         var dockBack = menu.Items.Add("바에 다시 넣기", null, (_, _) => musicDock?.DockBack());
-        menu.Opening += (_, _) => dockBack.Visible = musicDock?.Floating == true;
+        menu.Opening += (_, _) =>
+        {
+            bool yt = WebWindow.MusicIsYt;
+            top100.Visible = search.Visible = !yt;
+            winItem.Text = yt ? "유튜브 뮤직 창 보기/숨기기" : "메애기 창 보기/숨기기";
+            lyricsItem.Visible = yt;
+            lyricsItem.Checked = settings.MusicLyrics;
+            swap.Text = yt ? "메이플 브금으로 바꾸기" : "유튜브 뮤직으로 바꾸기";
+            dockBack.Visible = musicDock?.Floating == true;
+        };
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("뮤직 끄기", null, (_, _) => WebWindow.StopMusic());
         musicPill.ContextMenuStrip = menu;
@@ -168,6 +195,29 @@ public class BarForm : Form
         // 지난번에 꺼내 뒀으면 그 자리에 다시 꺼내 둔다
         if (show && settings.MusicFloat && musicDock?.Floating == false) musicDock.RestoreFloat();
         musicDock?.SetShown(show && Visible);
+        lastMusic = m;
+        UpdateLyrics(m);
+    }
+
+    // ── 유튜브 뮤직 가사: 켜 두면 뮤직 칸 아래에 띄운다. 가사가 없는 곡은 안 띄운다 ──
+    LyricsCard? lyrics;
+    WebWindow.MusicInfo? lastMusic;
+
+    void UpdateLyrics(WebWindow.MusicInfo? m)
+    {
+        if (IsDisposed || musicPill == null) return;
+        var host = musicPill.FindForm();
+        bool want = m is { Yt: true, Lyrics: not null } && settings.MusicLyrics && musicPill.Visible &&
+                    host is { Visible: true } && host.WindowState != FormWindowState.Minimized;
+        if (!want) { if (lyrics?.Visible == true) lyrics.Hide(); return; }
+        lyrics ??= new LyricsCard(sc, () =>
+        {
+            settings.MusicLyrics = false; settings.Save();
+            lyrics?.Hide();
+        });
+        lyrics.Place(musicPill.RectangleToScreen(musicPill.ClientRectangle));
+        lyrics.SetText(m!.Lyrics!, m.LyricLine, m.Time, m.Title);
+        if (!lyrics.Visible) lyrics.Show();
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
@@ -263,6 +313,8 @@ public class BarForm : Form
             // 인기 차트·검색은 바의 곡 목록으로 고른다. 메애기 창은 뒤에 숨어서 재생만 한다.
             if (path == Music.Home) { MusicPicker.Open(this, settings, sc, false); return; }
             if (path == Music.Home + "/search") { MusicPicker.Open(this, settings, sc, true); return; }
+            // 유튜브 뮤직은 창을 숨긴 채 열고 뮤직 칸만 띄운다 (칸을 누르면 창이 뜬다)
+            if (Music.IsYtMusic(path)) { WebWindow.EnsureMusic(settings, sc, path, false); return; }
             WebWindow.EnsureMusic(settings, sc, path, true); // 내 목록(로그인 필요)은 창으로 연다
             return;
         }
@@ -423,6 +475,7 @@ public class BarForm : Form
         NoticeStrip.CloseAll(); // 떠 있던 인벤 알림과 기다리던 알림도 같이 치운다
         Hide();
         musicDock?.SetShown(false);
+        lyrics?.Hide();
         JanusWatch.BarHidden = true;
         if (auto) autoHidden = true; else { userHidden = true; autoHidden = false; }
         if (tray == null) return;
@@ -508,6 +561,7 @@ public class BarForm : Form
         noActivate = false;
         JanusWatch.BarHidden = false;
         musicDock?.SetShown(musicPill?.Visible == true);
+        UpdateLyrics(lastMusic);
         autoHidden = false;
         if (auto) return;
         userHidden = false;
@@ -644,6 +698,29 @@ public class BarForm : Form
         RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
     }
 
+    /// <summary>글자 왼쪽에 빨간 둥근 칸 속 흰 재생 세모를 그린다 (유튜브 메뉴)</summary>
+    void AddPlayIcon(Label nav)
+    {
+        int h = (int)Math.Round(nav.Font.Height * 0.62f), w = (int)Math.Round(h * 1.42f), gap = S(5);
+        var p = nav.Padding;
+        int textLeft = p.Left;
+        nav.Padding = new Padding(p.Left + w + gap, p.Top, p.Right, p.Bottom);
+        nav.Paint += (_, e) =>
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            float x = textLeft, y = p.Top + (nav.Height - p.Top - p.Bottom - h) / 2f;
+            using (var path = UI.RoundRect(new RectangleF(x, y, w, h), h * 0.3f))
+            using (var red = new SolidBrush(Color.FromArgb(255, 0, 0)))
+                g.FillPath(red, path);
+            float cx = x + w / 2f, cy = y + h / 2f, t = h * 0.42f;
+            g.FillPolygon(Brushes.White, new[]
+            {
+                new PointF(cx - t * 0.42f, cy - t / 2f), new PointF(cx - t * 0.42f, cy + t / 2f), new PointF(cx + t * 0.5f, cy),
+            });
+        };
+    }
+
     /// <summary>처음 놓을 자리: 저장된 자리, 없으면 주 화면 위 가운데. 게임 따라가기가 켜져 있으면 게임 창 기준.</summary>
     Point InitialLocation()
     {
@@ -718,6 +795,7 @@ public class BarForm : Form
         if (menusOpen > 0 || !Visible || WindowState == FormWindowState.Minimized || !IsHandleCreated) return;
         SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP | SWP_NOOWNERZORDER);
         musicDock?.RaiseCard();
+        if (lyrics is { Visible: true, IsHandleCreated: true }) SetWindowPos(lyrics.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP | SWP_NOOWNERZORDER);
     }
 
     protected override void OnLocationChanged(EventArgs e)

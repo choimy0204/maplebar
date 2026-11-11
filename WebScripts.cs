@@ -1,7 +1,7 @@
 namespace MapleBar;
 
 /// <summary>웹 창에 넣는 자바스크립트·CSS 글자. WebWindow는 `using static`으로 이름만 불러 쓴다.</summary>
-static class WebScripts
+static partial class WebScripts
 {
     // 재생 바에서 곡 정보를 읽고 버튼(0 이전, 1 재생/일시정지, 2 다음)을 누르는 함수
     public const string MusicScript =

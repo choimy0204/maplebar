@@ -273,20 +273,28 @@ sealed class MusicCard : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.White;
+        BackColor = MusicPill.Paper;
     }
 
     public void Hold(MusicPill pill)
     {
+        pill.Bare = true; // 칸 모양은 그리지 않고 이 창이 곧 칸이 된다
         pill.Margin = Padding.Empty;
         pill.Location = new Point(Pad, Pad);
         ClientSize = new Size(pill.Width + Pad * 2, pill.Height + Pad * 2);
         if (pill.Parent != this) Controls.Add(pill);
     }
-    public void Release(MusicPill pill) { if (pill.Parent == this) Controls.Remove(pill); }
+    public void Release(MusicPill pill) { if (pill.Parent == this) { Controls.Remove(pill); pill.Bare = false; } }
 
     protected override bool ShowWithoutActivation => true;
-    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); UI.RoundCorners(Handle); }
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        UI.RoundCorners(Handle);
+        int border = 0xD2E0EC; // 옅은 베이지 테두리 (0x00BBGGRR)
+        try { DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int)); } catch { }
+    }
     protected override CreateParams CreateParams
     {
         get { var cp = base.CreateParams; cp.ClassStyle |= CS_DROPSHADOW; /* 그림자 */ return cp; }

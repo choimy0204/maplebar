@@ -35,6 +35,7 @@ public partial class WebWindow : Form
     string startUrl { get => startUrlValue; set { startUrlValue = value; kind = KindOf(value); } }
     static SiteKind KindOf(string url) =>
         Webtoon.IsWebtoon(url) ? SiteKind.Webtoon :
+        Music.IsYtMusic(url) ? SiteKind.Music : // 유튜브 뮤직은 유튜브 주소보다 먼저 본다
         YouTube.IsComments(url) ? SiteKind.YouTubeComments :
         YouTube.IsVideo(url) ? SiteKind.YouTubePlayer : YouTube.IsYouTube(url) ? SiteKind.YouTube :
         Coordi.IsCoordi(url) ? SiteKind.Coordi : Music.IsMusic(url) ? SiteKind.Music : SiteKind.Other;
@@ -90,7 +91,8 @@ public partial class WebWindow : Form
     {
         this.settings = settings;
         sc = scale;
-        edge = S(5);
+        yt = Music.IsYtMusic(url);
+        edge = S(9); // 바깥 4는 크기 조절, 안쪽은 잡고 옮기기
         Text = "메이플 바";
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = !Music.IsMusic(url); // 뮤직 창은 화면 밖에 있으므로 작업 표시줄에 안 보이게
@@ -161,6 +163,7 @@ public partial class WebWindow : Form
         {
             // 뮤직 창: 곡 정보를 1초마다 읽어 바에 알린다
             musicTimer.Tick += async (_, _) => await PollMusic();
+            if (yt) musicTimer.Interval = 400; // 가사의 지금 줄을 늦지 않게 따라간다
             musicTimer.Start();
         }
 
@@ -253,6 +256,7 @@ public partial class WebWindow : Form
                 // Esc도 창을 닫는다. 페이지가 먼저 쓴 Esc(팝업 닫기 등)는 건드리지 않는다
                 "addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.defaultPrevented&&!e.isComposing&&!document.fullscreenElement){" +
                 "try{chrome.webview.postMessage('mb:close')}catch(_){}}});");
+            cw.DOMContentLoaded += (_, _) => Lift(); // 새 페이지에도 영상 밝기 보정을 다시 건다
             cw.WebMessageReceived += (_, e) =>
             {
                 string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
@@ -278,6 +282,7 @@ public partial class WebWindow : Form
             }
             else if (kind is SiteKind.YouTube or SiteKind.YouTubePlayer or SiteKind.YouTubeComments) await InitYouTube(cw); // 유튜브는 광고를 막지 않는다
             else if (kind != SiteKind.Music) await BlockAds(cw, env); // 숨김 스크립트 등록이 끝난 뒤에 페이지를 연다
+            else if (yt) await cw.AddScriptToExecuteOnDocumentCreatedAsync(YtMusicScript); // 유튜브 뮤직: 광고는 그대로 둔다
             else
             {
                 await cw.AddScriptToExecuteOnDocumentCreatedAsync(MusicScript);
@@ -410,8 +415,24 @@ public partial class WebWindow : Form
     /// <summary>열린 뮤직 창이 있으면 그 창에서 url을 열고 앞으로 가져온다.</summary>
     public static bool ShowMusic(string url)
     {
-        var w = open.FirstOrDefault(x => x.kind == SiteKind.Music);
+        var w = MusicWin;
         if (w == null) return false;
+        // 브금과 유튜브 뮤직은 하나만: 다른 쪽을 열면 지금 것을 끄고 새로 연다
+        if (w.yt != Music.IsYtMusic(url))
+        {
+            var (st, s) = (w.settings, w.sc);
+            StopMusic();
+            EnsureMusic(st, s, url, true);
+            return true;
+        }
+        if (w.yt)
+        {
+            // 유튜브 뮤직은 다시 읽으면 노래가 끊기니, 홈이 아닌 주소일 때만 옮긴다
+            if (Uri.TryCreate(url, UriKind.Absolute, out var yu) && yu.PathAndQuery.Length > 1) w.web.CoreWebView2?.Navigate(url);
+            if (w.WindowState == FormWindowState.Minimized) w.WindowState = FormWindowState.Normal;
+            w.Unpark(); w.Activate();
+            return true;
+        }
         w.startUrl = url;
         // 페이지를 새로 읽으면 노래가 끊기므로 사이트 안 링크로 옮긴다
         if (w.web.CoreWebView2 != null && Uri.TryCreate(url, UriKind.Absolute, out var u))
@@ -482,10 +503,14 @@ public partial class WebWindow : Form
         base.WndProc(ref m);
         if (m.Msg != 0x84 /*WM_NCHITTEST*/ || (int)m.Result != 1 /*HTCLIENT*/ || WindowState == FormWindowState.Maximized) return;
         var p = PointToClient(new Point((short)((long)m.LParam & 0xFFFF), (short)(((long)m.LParam >> 16) & 0xFFFF)));
-        int g = edge + S(3);
-        bool l = p.X < g, r = p.X >= ClientSize.Width - g, t = p.Y < edge, b = p.Y >= ClientSize.Height - g;
-        int hit = t && l ? 13 : t && r ? 14 : b && l ? 16 : b && r ? 17 : l ? 10 : r ? 11 : t ? 12 : b ? 15 : 0;
-        if (hit != 0) m.Result = (IntPtr)hit;
+        // 테두리: 바깥 얇은 줄은 크기 조절, 그 안쪽은 잡고 옮기기. 모서리는 넓게 크기 조절
+        int W = ClientSize.Width, H = ClientSize.Height, rz = S(4), cz = S(14);
+        bool l = p.X < rz, r = p.X >= W - rz, t = p.Y < rz, b = p.Y >= H - rz;
+        bool cl = p.X < cz, cr = p.X >= W - cz, ct = p.Y < cz, cb = p.Y >= H - cz;
+        bool edgeHit = l || r || t || b;
+        int hit = edgeHit && ct && cl ? 13 : edgeHit && ct && cr ? 14 : edgeHit && cb && cl ? 16 : edgeHit && cb && cr ? 17 :
+                  l ? 10 : r ? 11 : t ? 12 : b ? 15 : 2 /*HTCAPTION: 테두리 안쪽을 잡으면 창이 옮겨진다*/;
+        m.Result = (IntPtr)hit;
     }
 
     // 펼치기: 크게 볼 때의 크기. 화면 밖으로 나가지 않게 맞추고, 접으면 펼치기 전 자리·크기로 돌아간다
@@ -500,7 +525,26 @@ public partial class WebWindow : Form
         alphaBar.Value = pct;
         settings.WinOpacity = pct;
         settings.Save();
+        Lift();
         alphaTip.Show($"투명도 {pct}%", grip, grip.PointToClient(Cursor.Position) + new Size(S(12), S(12)), 900);
+    }
+
+    /// <summary>창을 흐리게 하면 뒤 게임 화면과 섞여 영상이 어둡고 탁해 보인다.
+    /// 흐린 만큼 영상만 밝기·대비·색을 올려 덜 어둡게 보이게 한다 (글자·사진은 그대로).</summary>
+    void Lift()
+    {
+        if (kind == SiteKind.Music) return;
+        double t = 1 - Math.Clamp(Opacity, 0.3, 1); // 0(불투명) ~ 0.7
+        string f = t < 0.01 ? "none" : FormattableString.Invariant(
+            $"brightness({1 + 0.6 * t:0.###}) contrast({1 + 0.35 * t:0.###}) saturate({1 + 0.5 * t:0.###})");
+        try
+        {
+            _ = web.CoreWebView2?.ExecuteScriptAsync(
+                "(()=>{let s=document.getElementById('mbLift');if(!s){s=document.createElement('style');s.id='mbLift';" +
+                "(document.head||document.documentElement).appendChild(s)}" +
+                $"s.textContent='video{{filter:{f}!important}}'}})()");
+        }
+        catch { }
     }
 
     Rectangle? smallBounds;

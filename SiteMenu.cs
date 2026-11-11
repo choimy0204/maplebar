@@ -77,10 +77,13 @@ public static class SiteMenu
             I("코디 분석", Coordi.Base + "/analysis/coordi"), I("룩북", Coordi.Base + "/lookbook"),
         }),
         // 유튜브 (영상·쇼츠는 재생 창 하나에서 연다. 로그인은 사용자가 직접 한다)
-        new("▶ 유튜브", null, new[]
+        new("유튜브", YouTube.Home, new[] // 메뉴 글자만 눌러도 유튜브 홈을 연다
         {
             H("유튜브"),
             I("유튜브 홈", YouTube.Home), I("쇼츠", YouTube.Shorts),
+            // 유튜브 뮤직: 바의 뮤직 칸에서 조종한다 (메이플 브금과 둘 중 하나만 켜진다)
+            H("유튜브 뮤직"),
+            I("유튜브 뮤직 열기", Music.YtHome),
             H("계정"),
             I("구글 로그인", YouTube.LoginUrl),
         }),

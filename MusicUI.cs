@@ -68,7 +68,8 @@ static class Thumbs
 public sealed class MusicPill : Control
 {
     readonly float sc;
-    readonly Font titleFont = new("맑은 고딕", 9.5f, FontStyle.Bold);
+    readonly Font titleFont = new("맑은 고딕", 9f, FontStyle.Bold);
+    readonly Font subFont = new("맑은 고딕", 7.5f);
     readonly Font noteFont = new("Segoe UI Symbol", 11f, FontStyle.Bold);
     readonly ToolTip tip = new();
     WebWindow.MusicInfo? info;
@@ -128,47 +129,59 @@ public sealed class MusicPill : Control
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var box = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
-        using (var path = UI.RoundRect(box, Height / 2f))
-        {
-            using (var b = new SolidBrush(UI.SoftAccent)) g.FillPath(b, path);
-            using (var pen = new Pen(Color.FromArgb(255, 214, 160))) g.DrawPath(pen, path);
-        }
+        using var pill = UI.RoundRect(box, Height / 2f);
+        // 바탕은 따뜻한 흰색, 테두리는 옅게 (가사 카드와 같은 톤). 꺼낸 창 안에서는 창이 곧 칸이라 그리지 않는다
+        if (!bare) using (var b = new SolidBrush(Paper)) g.FillPath(b, pill);
 
-        // ♪ + 제목
         var tr = TitleRect;
-        if (hot == BtnTitle) using (var b = new SolidBrush(Color.FromArgb(40, UI.Accent)))
-            using (var p = UI.RoundRect(new RectangleF(tr.Left - S(2), S(4), tr.Width + S(4), Height - S(10)), S(8))) g.FillPath(b, p);
+        if (hot == BtnTitle) using (var b = new SolidBrush(Color.FromArgb(18, UI.Accent)))
+            using (var p = UI.RoundRect(new RectangleF(tr.Left - S(2), S(3), tr.Width + S(4), Height - S(7)), S(10))) g.FillPath(b, p);
         // 썸네일 (없으면 ♪)
         var thumb = Thumbs.Get(info?.Img, this);
         var tb = new RectangleF(tr.Left + S(2), (Height - S(26)) / 2f, S(26), S(26));
-        if (thumb != null) Thumbs.Draw(g, thumb, tb, S(7));
-        else TextRenderer.DrawText(g, "♪", noteFont, Rectangle.Round(tb), UI.Accent,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
-        var textR = new Rectangle(tr.Left + S(34), 0, tr.Width - S(36), tr.Height);
-        TextRenderer.DrawText(g, info?.Title ?? "곡을 고르세요", titleFont, textR, UI.Text,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
-
-        // 진행 바 (제목 아래 얇은 줄)
-        var bar = new RectangleF(textR.Left, Height - S(10), textR.Width, S(3));
-        using (var b = new SolidBrush(Color.FromArgb(255, 222, 186))) using (var p = UI.RoundRect(bar, bar.Height / 2)) g.FillPath(b, p);
-        double pr = info != null ? Progress(info.Time) : 0;
-        if (pr > 0)
+        if (thumb != null) Thumbs.Draw(g, thumb, tb, S(13)); // 동그랗게
+        else
         {
-            var fill = new RectangleF(bar.Left, bar.Top, Math.Max(bar.Height, (float)(bar.Width * pr)), bar.Height);
-            using var b = new SolidBrush(UI.Accent); using var p = UI.RoundRect(fill, bar.Height / 2); g.FillPath(b, p);
+            using (var b = new SolidBrush(Color.FromArgb(28, UI.Accent))) g.FillEllipse(b, tb);
+            TextRenderer.DrawText(g, "♪", noteFont, Rectangle.Round(tb), UI.Accent,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
         }
+        // 제목 + 가수 (두 줄)
+        var textR = new Rectangle(tr.Left + S(36), 0, tr.Width - S(38), Height);
+        const TextFormatFlags one = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+        if (info == null || string.IsNullOrWhiteSpace(info.Sub))
+            TextRenderer.DrawText(g, string.IsNullOrEmpty(info?.Title) ? "눌러서 곡 고르기" : info.Title, titleFont, textR, Color.FromArgb(45, 40, 36), one);
+        else
+        {
+            int mid = Height / 2;
+            TextRenderer.DrawText(g, info.Title, titleFont, new Rectangle(textR.X, mid - S(15), textR.Width, S(16)), Color.FromArgb(45, 40, 36), one);
+            TextRenderer.DrawText(g, info.Sub, subFont, new Rectangle(textR.X, mid + S(1), textR.Width, S(13)), Color.FromArgb(150, 140, 130), one);
+        }
+
+        // 진행 바: 칸 아래쪽 안에 아주 얇게
+        float inset = bare ? S(8) : Height / 2f;
+        var track = new RectangleF(inset, Height - S(bare ? 2 : 4), Width - inset * 2, Math.Max(1.5f, S(2)));
+        using (var b = new SolidBrush(Color.FromArgb(240, 230, 218))) g.FillRectangle(b, track);
+        double pr = info != null ? Progress(info.Time) : 0;
+        if (pr > 0) using (var b = new SolidBrush(UI.Accent)) g.FillRectangle(b, track.Left, track.Top, (float)(track.Width * pr), track.Height);
+        if (!bare) using (var pen = new Pen(Color.FromArgb(236, 224, 210))) g.DrawPath(pen, pill);
+
+        // 재생 버튼들과 반복·랜덤 사이 옅은 구분선
+        var sr = Btn(BtnShuffle);
+        using (var pen = new Pen(Color.FromArgb(232, 220, 206), Math.Max(1f, S(1))))
+            g.DrawLine(pen, sr.Left, Height / 2f - S(7), sr.Left, Height / 2f + S(7));
 
         // 버튼
         foreach (int i in Order)
         {
             var r = Btn(i);
+            float d = i == BtnPlay ? S(26) : S(24);
+            var circle = new RectangleF(r.Left + (r.Width - d) / 2f, r.Top + (r.Height - d) / 2f, d, d);
             bool on = (i == BtnShuffle && info?.Shuffle == true) || (i == BtnRepeat && info?.Repeat == true);
-            if (on && hot != i)
-                using (var b = new SolidBrush(Color.FromArgb(36, UI.Accent))) g.FillEllipse(b, r.Left + (r.Width - S(26)) / 2f, r.Top + (r.Height - S(26)) / 2f, S(26), S(26));
             if (i == BtnPlay)
-                using (var b = new SolidBrush(hot == BtnPlay ? ControlPaint.Dark(UI.Accent, 0.05f) : UI.Accent)) g.FillEllipse(b, r.Left + (r.Width - S(26)) / 2f, r.Top + (r.Height - S(26)) / 2f, S(26), S(26));
-            else if (hot == i)
-                using (var b = new SolidBrush(Color.FromArgb(50, UI.Accent))) g.FillEllipse(b, r.Left + (r.Width - S(26)) / 2f, r.Top + (r.Height - S(26)) / 2f, S(26), S(26));
+                using (var b = new SolidBrush(hot == BtnPlay ? ControlPaint.Dark(UI.Accent, 0.05f) : UI.Accent)) g.FillEllipse(b, circle);
+            else if (hot == i || on)
+                using (var b = new SolidBrush(Color.FromArgb(hot == i ? 34 : 22, UI.Accent))) g.FillEllipse(b, circle);
             DrawIcon(g, i, r);
         }
     }
@@ -177,7 +190,7 @@ public sealed class MusicPill : Control
     {
         float cx = r.Left + r.Width / 2f, cy = r.Top + r.Height / 2f, u = S(5);
         if (i >= 4) { DrawModeIcon(g, i, cx, cy, u); return; }
-        var col = i == BtnPlay ? Color.White : Color.FromArgb(70, 50, 30);
+        var col = i == BtnPlay ? Color.White : hot == i ? Color.FromArgb(60, 50, 40) : Color.FromArgb(105, 95, 85);
         using var b = new SolidBrush(col);
         if (i == BtnPlay)
         {
@@ -235,6 +248,11 @@ public sealed class MusicPill : Control
     bool ghost;
     /// <summary>true면 자리만 차지하고 그리지 않는다 (다시 넣는 효과가 끝날 때까지).</summary>
     public bool Ghost { get => ghost; set { ghost = value; Invalidate(); } }
+    /// <summary>뮤직 칸 바탕색 (꺼낸 창도 같은 색을 쓴다).</summary>
+    public static readonly Color Paper = Color.FromArgb(255, 252, 248);
+    bool bare;
+    /// <summary>true면 둥근 칸 모양 없이 내용만 그린다 (꺼낸 창 자체가 칸 모양일 때).</summary>
+    public bool Bare { get => bare; set { if (bare != value) { bare = value; Invalidate(); } } }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
@@ -291,7 +309,7 @@ public sealed class MusicPill : Control
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { titleFont.Dispose(); noteFont.Dispose(); tip.Dispose(); oneFont?.Dispose(); }
+        if (disposing) { titleFont.Dispose(); subFont.Dispose(); noteFont.Dispose(); tip.Dispose(); oneFont?.Dispose(); }
         base.Dispose(disposing);
     }
 }

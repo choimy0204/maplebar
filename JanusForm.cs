@@ -70,10 +70,12 @@ sealed class JanusForm : Form
         DoubleBuffered = true;
 
         // 알림 창은 세 줄(야누스·룬 | 버프 | 도핑)로 옆으로 펼쳐 세로를 줄인다
-        int pad = S(18), W = toon ? S(372) : pad * 2 + S(352) * 3 + S(28) * 2, y = S(14);
+        // 웹툰 키 창은 두 칸(웹툰 | 쇼츠)으로 나란히 놓는다
+        int pad = S(18), toonW = S(336), toonGap = S(16);
+        int W = toon ? pad * 2 + toonW * 2 + toonGap : pad * 2 + S(352) * 3 + S(28) * 2, y = S(14);
 
         // 머리: 제목과 닫기. 빈 곳을 끌면 창이 움직인다
-        var title = new Label { Text = toon ? "웹툰 키" : "알림 설정", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
+        var title = new Label { Text = toon ? "웹툰 · 쇼츠 키" : "알림 설정", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
         title.MouseDown += (_, e) => Drag(e);
         MouseDown += (_, e) => Drag(e);
         var close = UI.Button("✕", "닫기", Close, sc);
@@ -84,7 +86,7 @@ sealed class JanusForm : Form
         y += S(34);
         var sub = new Label
         {
-            Text = toon ? "웹툰 창이나 메이플 창에서 누른 키만 읽어요. 게임에는 아무것도 보내지 않아요."
+            Text = toon ? "웹툰·유튜브 창이나 메이플 창에서 누른 키만 읽어요. 게임에는 아무것도 보내지 않아요."
                         : "메이플 창에서 누른 키만 읽어요. 게임에는 아무것도 보내지 않아요.",
             Font = F(9), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(W - pad * 2, 0), Location = new Point(pad, y),
         };
@@ -96,9 +98,12 @@ sealed class JanusForm : Form
 
         if (toon)
         {
-            var toonCard = MakeScrollCard(pad, y, W - pad * 2, out var u, out var d);
+            var toonCard = MakeScrollCard(pad, y, toonW, out var u, out var d);
             upKey = u; downKey = d;
-            y += toonCard.Height + S(10);
+            var shortsCard = MakeShortsCard(pad + toonW + toonGap, y, toonW);
+            int h = Math.Max(toonCard.Height, shortsCard.Height);
+            toonCard.Height = shortsCard.Height = h; // 두 칸 높이를 맞춘다
+            y += h + S(10);
         }
         else
         {
@@ -342,33 +347,12 @@ sealed class JanusForm : Form
     /// <summary>네이버 웹툰 스크롤 키(위·아래)와 속도</summary>
     Card MakeScrollCard(int x, int y, int w, out RoundLabel up, out RoundLabel down)
     {
-        var card = new Card { Location = new Point(x, y), Width = w, Radius = S(12) };
-        Controls.Add(card);
-        int ip = S(14), cy = S(12);
-        card.Controls.Add(new Label { Text = "●", ForeColor = Green, Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) });
-        card.Controls.Add(new Label { Text = "웹툰 키", Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy) });
-        cy += S(38);
-
-        RoundLabel Pill(string label, int which)
-        {
-            card.Controls.Add(RowLabel(label, ip, cy));
-            var pill = new RoundLabel
-            {
-                AutoSize = false, Size = new Size(S(150), S(30)), TextAlign = ContentAlignment.MiddleCenter,
-                Fill = UI.HoverBack, Cursor = Cursors.Hand, Font = F(10, FontStyle.Bold), Radius = S(8),
-            };
-            pill.Location = new Point(w - ip - pill.Width, cy);
-            pill.Click += (_, _) => { capturing = capturing == which ? 0 : which; UpdateKeys(); };
-            card.Controls.Add(pill);
-            cy += S(40);
-            return pill;
-        }
+        var card = KeyCard(x, y, w, Green, "웹툰 키", out int ip, out int cy);
+        RoundLabel Pill(string label, int which) => KeyPill(card, label, which, w, ip, ref cy);
         up = Pill("위로 키", 4);
         down = Pill("아래로 키", 5);
         nextKey = Pill("다음 화 키", 6);
         prevKey = Pill("이전 화 키", 7);
-        shortsNextKey = Pill("쇼츠 다음 키", 10);
-        shortsPrevKey = Pill("쇼츠 이전 키", 11);
 
         // 속도: − 값 +
         card.Controls.Add(RowLabel("속도", ip, cy));
@@ -383,14 +367,59 @@ sealed class JanusForm : Form
         var tip = new Label
         {
             Text = "바 메뉴의 '웹툰'으로 연 창에서, 키를 누르고 있는 동안 부드럽게 쭉 내려가거나 올라가요. 다음 화·이전 화 키는 한 번 누르면 한 화씩 넘어가요. " +
-                   "웹툰 창이나 메이플 창이 앞에 있을 때 동작해요. 유료분은 '네이버 로그인'으로 직접 로그인해서 보세요.\n" +
-                   "쇼츠 키는 바 메뉴의 '유튜브' 재생 창에 쇼츠가 떠 있을 때, 한 번 누르면 다음·이전 쇼츠로 넘어가요. 재생 창이나 메이플 창이 앞에 있을 때 동작해요.",
+                   "웹툰 창이나 메이플 창이 앞에 있을 때 동작해요. 유료분은 '네이버 로그인'으로 직접 로그인해서 보세요.",
             Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy),
         };
         card.Controls.Add(tip);
         cy += tip.PreferredSize.Height + S(12);
         card.Height = cy;
         return card;
+    }
+
+    /// <summary>유튜브 쇼츠 넘기기 키(다음·이전)</summary>
+    Card MakeShortsCard(int x, int y, int w)
+    {
+        var card = KeyCard(x, y, w, Color.FromArgb(235, 51, 51), "쇼츠 키", out int ip, out int cy);
+        shortsNextKey = KeyPill(card, "다음 쇼츠 키", 10, w, ip, ref cy);
+        shortsPrevKey = KeyPill(card, "이전 쇼츠 키", 11, w, ip, ref cy);
+        var tip = new Label
+        {
+            Text = "바 메뉴의 '유튜브' 재생 창에 쇼츠가 떠 있을 때, 한 번 누르면 다음·이전 쇼츠로 넘어가요. " +
+                   "재생 창이나 메이플 창이 앞에 있을 때 동작해요.",
+            Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy),
+        };
+        card.Controls.Add(tip);
+        cy += tip.PreferredSize.Height + S(12);
+        card.Height = cy;
+        return card;
+    }
+
+    /// <summary>키 칸 묶음: 색 점과 굵은 제목이 있는 둥근 카드</summary>
+    Card KeyCard(int x, int y, int w, Color dot, string name, out int ip, out int cy)
+    {
+        var card = new Card { Location = new Point(x, y), Width = w, Radius = S(12) };
+        Controls.Add(card);
+        ip = S(14); cy = S(12);
+        card.Controls.Add(new Label { Text = "●", ForeColor = dot, Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) });
+        card.Controls.Add(new Label { Text = name, Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy) });
+        cy += S(38);
+        return card;
+    }
+
+    /// <summary>이름과 키 칸 한 줄. 키 칸을 누르면 그 키를 받는다.</summary>
+    RoundLabel KeyPill(Card card, string label, int which, int w, int ip, ref int cy)
+    {
+        card.Controls.Add(RowLabel(label, ip, cy));
+        var pill = new RoundLabel
+        {
+            AutoSize = false, Size = new Size(S(150), S(30)), TextAlign = ContentAlignment.MiddleCenter,
+            Fill = UI.HoverBack, Cursor = Cursors.Hand, Font = F(10, FontStyle.Bold), Radius = S(8),
+        };
+        pill.Location = new Point(w - ip - pill.Width, cy);
+        pill.Click += (_, _) => { capturing = capturing == which ? 0 : which; UpdateKeys(); };
+        card.Controls.Add(pill);
+        cy += S(40);
+        return pill;
     }
 
     /// <summary>묶음 제목: 색 막대 · 굵은 이름 · 아래 얇은 선. 차지한 높이를 돌려준다.</summary>

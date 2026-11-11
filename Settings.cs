@@ -40,6 +40,8 @@ public class Settings
     public bool MusicFloat { get; set; }
     public int? MusicX { get; set; }
     public int? MusicY { get; set; }
+    // 유튜브 뮤직 가사 보기 (가사가 없는 곡은 켜 둬도 안 보인다)
+    public bool MusicLyrics { get; set; }
     // 인벤 자유게시판 알림으로 지켜볼 목록 (Inven.Feeds의 Key)
     public List<string> InvenWatch { get; set; } = new();
     // 솔 야누스 알림: 설치 키를 누르면 지속시간을 세고, 꺼지면 게임 화면 가장자리에 보랏빛을 한 바퀴 돌린다

@@ -12,7 +12,14 @@ public partial class WebWindow
 {
     // ── 뮤직: 메애기 창은 숨겨 두고 노래만 재생한다. 바의 작은 컨트롤이 이 창을 조종한다. ──
     public record MusicInfo(string Title, string Sub, string Time, bool Playing, double Volume, string Img,
-        bool Repeat, bool Shuffle, bool Fx);
+        bool Repeat, bool Shuffle, bool Fx, bool Yt = false, string? Lyrics = null, int LyricLine = -1);
+
+    // 유튜브 뮤직 창인지 (아니면 메애기 브금 창)
+    readonly bool yt;
+    /// <summary>지금 켜진 뮤직이 유튜브 뮤직이면 true.</summary>
+    public static bool MusicIsYt => MusicWin?.yt == true;
+    /// <summary>가사 보기를 바꾸면 곡 정보를 바로 다시 읽는다.</summary>
+    public static void MusicRefresh() { var w = MusicWin; if (w != null) _ = w.PollSoon(); }
 
     // 설정의 효과음 켜짐/꺼짐을 페이지에 알려 준다 (새로 열린 페이지에도 적용)
     static string FxScript(bool on) => $"window.mbSetFx&&window.mbSetFx({(on ? "true" : "false")});";
@@ -59,6 +66,8 @@ public partial class WebWindow
     public static WebWindow EnsureMusic(Settings st, float scale, string url, bool show)
     {
         var w = MusicWin;
+        // 브금과 유튜브 뮤직은 하나만 켠다: 다른 쪽이 켜져 있으면 끄고 새로 연다
+        if (w != null && w.yt != Music.IsYtMusic(url)) { StopMusic(); w = null; }
         if (w == null)
         {
             // 처음부터 화면 밖에 투명하게 띄워 둔다 (잠깐 보이지 않게)
@@ -196,7 +205,7 @@ public partial class WebWindow
         if (cw == null || IsDisposed) return;
         try
         {
-            var r = await cw.ExecuteScriptAsync("window.mbState?window.mbState():null");
+            var r = await cw.ExecuteScriptAsync($"window.mbState?window.mbState({(settings.MusicLyrics ? "true" : "false")}):null");
             if (string.IsNullOrEmpty(r) || r == "null") return;
             using var doc = System.Text.Json.JsonDocument.Parse(r);
             var js = doc.RootElement;
@@ -206,11 +215,14 @@ public partial class WebWindow
                 ? js.GetProperty("playing").GetBoolean()
                 : (lastTime != "" && time != lastTime); // 오디오를 못 잡으면 시간이 흐르는지로 판단
             lastTime = time;
-            if (t == "") return;
+            if (t == "" && !yt) return; // 유튜브 뮤직은 곡이 없어도 칸을 띄운다 (눌러서 창을 열게)
             double vol = js.TryGetProperty("vol", out var ve) && ve.ValueKind == System.Text.Json.JsonValueKind.Number ? ve.GetDouble() : 1;
             string img = js.TryGetProperty("img", out var ie) ? ie.GetString() ?? "" : "";
             bool Flag(string k) => js.TryGetProperty(k, out var f) && f.ValueKind == System.Text.Json.JsonValueKind.True;
-            var info = new MusicInfo(t, s, time, playing, vol, img, Flag("rep"), Flag("shuf"), Flag("fx"));
+            string? lyr = js.TryGetProperty("lyr", out var le) && le.ValueKind == System.Text.Json.JsonValueKind.String ? le.GetString() : null;
+            var info = new MusicInfo(t, s, time, playing, vol, img, Flag("rep"), Flag("shuf"), Flag("fx"), yt,
+                string.IsNullOrWhiteSpace(lyr) ? null : lyr,
+                js.TryGetProperty("cur", out var ce) && ce.ValueKind == System.Text.Json.JsonValueKind.Number ? ce.GetInt32() : -1);
             if (info == lastInfo) return;
             lastInfo = info;
             MusicChanged?.Invoke(info);

@@ -18,9 +18,14 @@ public static class Music
 {
     public const string Home = "https://meaegi.com/music";
     /// <summary>메애기 주소 중 코디 페이지를 뺀 나머지 (숨은 뮤직 창 하나가 맡는다)</summary>
-    public static bool IsMusic(string url) => IsMeaegi(url) && !Coordi.IsCoordi(url);
+    public static bool IsMusic(string url) => IsMeaegi(url) && !Coordi.IsCoordi(url) || IsYtMusic(url);
     public static bool IsMeaegi(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("meaegi.com", StringComparison.OrdinalIgnoreCase);
+
+    // 유튜브 뮤직: 메이플 브금과 같은 숨은 뮤직 창 하나를 같이 쓴다 (둘 중 하나만 켜진다)
+    public const string YtHome = "https://music.youtube.com/";
+    public static bool IsYtMusic(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.Equals("music.youtube.com", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>유튜브: 목록 창에서 고르고, 영상·쇼츠는 재생 창 하나에서 본다</summary>
