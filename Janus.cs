@@ -611,9 +611,15 @@ sealed class JanusForm : Form
         if (open == null || open.IsDisposed) open = new JanusForm(st, watch, sc, toon, buff) { Owner = owner };
         if (toon) toonForm = open; else alertForm = open;
         var wa = Screen.FromControl(owner).WorkingArea;
+        // 화면보다 크면 화면에 맞추고 스크롤로 본다
+        if (open.Height > wa.Height || open.Width > wa.Width)
+        {
+            open.AutoScroll = true;
+            open.Size = new Size(Math.Min(open.Width, wa.Width), Math.Min(open.Height, wa.Height));
+        }
         open.Location = new Point(
-            Math.Clamp(owner.Left + (owner.Width - open.Width) / 2, wa.Left, wa.Right - open.Width),
-            Math.Clamp(owner.Bottom + (int)(12 * sc), wa.Top, wa.Bottom - open.Height));
+            Math.Clamp(owner.Left + (owner.Width - open.Width) / 2, wa.Left, Math.Max(wa.Left, wa.Right - open.Width)),
+            Math.Clamp(owner.Bottom + (int)(12 * sc), wa.Top, Math.Max(wa.Top, wa.Bottom - open.Height)));
         if (!open.Visible) open.Show();
         open.Activate();
     }
@@ -721,7 +727,7 @@ sealed class JanusForm : Form
         y += runeCard.Height + S(10);
         int leftEnd = y;
 
-        y = top + Section("버프 · 도핑", Orange, rx, top, colW);
+        y = top + Section("버프", Orange, rx, top, colW);
         var buffTip = new Label
         {
             Text = "버프를 3개까지 따로 셀 수 있어요. 버프 키를 누르고 10초 안에 엔터까지 눌러야 세기 시작해요(칸마다 끌 수 있어요). 다시 쓰면 처음부터 다시 셉니다. 30분은 분홍, 20분은 주황, 10분은 노랑으로 알려 드려요.",
@@ -731,8 +737,15 @@ sealed class JanusForm : Form
         y += buffTip.PreferredSize.Height + S(8);
         for (int i = 0; i < JanusWatch.BuffSlots; i++)
             y += MakeBuffCard(rx, y, colW, i).Height + S(10);
+        int rightEnd = y;
 
-        var dopeCard = MakeCard(rx, y, colW, JanusWatch.DopeMain, "부스트 도핑", st.DopeOn, v => st.DopeOn = v,
+        // 도핑은 더 짧은 줄 아래에 붙여 창이 세로로 너무 길어지지 않게 한다
+        bool dopeLeft = leftEnd <= rightEnd;
+        int dx = dopeLeft ? lx : rx;
+        y = dopeLeft ? leftEnd : rightEnd;
+        y += S(6);
+        y += Section("부스트 도핑", JanusWatch.DopeMain, dx, y, colW);
+        var dopeCard = MakeCard(dx, y, colW, JanusWatch.DopeMain, "부스트 도핑", st.DopeOn, v => st.DopeOn = v,
             "도핑 사용 키", 9, out var dk,
             "지속시간", st.DopeSec, Enumerable.Range(3, 28).Select(i => i * 10).ToArray(), v => v + "초", v => st.DopeSec = v,
             "도핑 키 → 방향키 한 번 → 엔터를 10초 안에 누르면 쓴 것으로 보고, 사용 대기(기본 3초) 뒤부터 세요. 끝나면 빨간색으로 알려 드려요. 다시 쓰면 처음부터 다시 셉니다.",
@@ -741,7 +754,7 @@ sealed class JanusForm : Form
             ("대기 시간", st.DopeDelaySec, Enumerable.Range(1, 10).ToArray(), v => v + "초", v => st.DopeDelaySec = v));
         dopeKey = dk; dopeStatus = ds;
         y += dopeCard.Height + S(10);
-        y = Math.Max(y, leftEnd);
+        y = Math.Max(y, dopeLeft ? rightEnd : leftEnd);
 
         // 두 줄 사이 세로선
         Controls.Add(new Panel { BackColor = Color.FromArgb(225, 225, 230), Bounds = new Rectangle(pad + colW + gap / 2, top + S(4), Math.Max(1, S(1)), y - top - S(14)) });
