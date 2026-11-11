@@ -623,6 +623,9 @@ sealed class JanusForm : Form
         {
             if (k != Keys.Escape)
             {
+                // 한글 입력 상태면 키가 ProcessKey로 온다 → 실제로 누른 키를 찾는다
+                if (k == Keys.ProcessKey) k = RealKey(ref msg);
+                if (k == Keys.ProcessKey) return true; // 못 찾으면 다시 누르게 기다린다
                 int vk = k is Keys.Delete or Keys.Back ? 0 : (int)k;
                 switch (capturing)
                 {
@@ -658,6 +661,19 @@ sealed class JanusForm : Form
     protected override CreateParams CreateParams
     {
         get { var cp = base.CreateParams; cp.ClassStyle |= CS_DROPSHADOW; return cp; } // 그림자
+    }
+
+    [DllImport("imm32.dll")] static extern int ImmGetVirtualKey(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
+
+    /// <summary>한글 입력기가 가로챈 키(ProcessKey)의 실제 키를 찾는다.</summary>
+    static Keys RealKey(ref Message msg)
+    {
+        int vk = ImmGetVirtualKey(msg.HWnd);
+        if (vk is > 0 and < 255 and not 229) return (Keys)vk;
+        uint scan = (uint)((msg.LParam.ToInt64() >> 16) & 0xFF);
+        vk = (int)MapVirtualKey(scan, 1); // 스캔 코드 → 키
+        return vk is > 0 and < 255 and not 229 ? (Keys)vk : Keys.ProcessKey;
     }
 
     protected override void OnHandleCreated(EventArgs e)

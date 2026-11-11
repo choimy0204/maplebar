@@ -640,6 +640,7 @@ public class BarForm : Form
         foldTimer.Tick += (_, _) => FoldTick();
         foldTimer.Start();
         StartInvenWatch();
+        UpdateCheck.StartWatching(); // 켜져 있는 동안 새 버전이 나오면 물어본다
         RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
     }
 

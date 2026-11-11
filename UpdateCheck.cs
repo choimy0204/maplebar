@@ -32,8 +32,32 @@ static class UpdateCheck
         return false;
     }
 
-    /// <summary>설치 파일을 받아(받을 수 있으면 SHA256 확인) 조용히 설치하고, 끝나면 메이플 바를 다시 켠다.</summary>
-    static void Install(string url, string? shaUrl)
+    static System.Windows.Forms.Timer? watchTimer;
+    static Version? asked; // 이번 실행에서 이미 물어본 버전 (아니요를 누르면 다음에 켤 때 업데이트한다)
+
+    /// <summary>켜져 있는 동안 30분마다 새 버전을 확인해, 있으면 오른쪽 아래에 물어본다.</summary>
+    public static void StartWatching()
+    {
+        watchTimer = new System.Windows.Forms.Timer { Interval = 30 * 60 * 1000 };
+        watchTimer.Tick += async (_, _) =>
+        {
+            if (asked != null) return;
+            var latest = await Task.Run(FindLatest);
+            var mine = Norm(typeof(UpdateCheck).Assembly.GetName().Version ?? new Version(0, 0));
+            if (latest == null || Norm(latest.Value.ver) <= mine || asked != null) return;
+            asked = latest.Value.ver;
+            var (_, url, sha) = latest.Value;
+            UpdateToast.Ask(() =>
+            {
+                if (Install(url, sha, running: true)) Application.Exit(); // 꺼져야 설치가 시작된다
+            });
+        };
+        watchTimer.Start();
+    }
+
+    /// <summary>설치 파일을 받아(받을 수 있으면 SHA256 확인) 조용히 설치하고, 끝나면 메이플 바를 다시 켠다.
+    /// 설치를 시작했으면 true.</summary>
+    static bool Install(string url, string? shaUrl, bool running = false)
     {
         string file = Path.Combine(Path.GetTempPath(), "MapleBar-Update", Path.GetFileName(new Uri(url).LocalPath));
         string? error = null;
@@ -88,24 +112,26 @@ static class UpdateCheck
             if (MessageBox.Show($"업데이트를 받지 못했어요.\n({error})\n\n브라우저로 설치 파일을 받을까요?", "메이플 바 업데이트",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                 try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
-            return;
+            return false;
         }
 
         // 메이플 바가 꺼진 뒤 조용히 설치하고, 끝나면 다시 켠다 (설치 창 없이)
         static string Q(string s) => "'" + s.Replace("'", "''") + "'";
-        var script = $"Start-Sleep 1; Start-Process -FilePath {Q(file)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait; " +
+        var script = $"Start-Sleep 2; Start-Process -FilePath {Q(file)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait; " +
                      $"Remove-Item -LiteralPath {Q(file)} -ErrorAction SilentlyContinue; Start-Process -FilePath {Q(Application.ExecutablePath)}";
         try
         {
             Process.Start(new ProcessStartInfo("powershell.exe",
                 "-NoProfile -WindowStyle Hidden -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script)))
             { UseShellExecute = false, CreateNoWindow = true });
-            MessageBox.Show("설치하고 있어요. 1분쯤 뒤에 메이플 바가 다시 켜져요.", "메이플 바 업데이트",
+            if (!running) MessageBox.Show("설치하고 있어요. 1분쯤 뒤에 메이플 바가 다시 켜져요.", "메이플 바 업데이트",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return true;
         }
         catch
         {
             try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); } catch { } // 직접 설치 창으로
+            return false;
         }
     }
 

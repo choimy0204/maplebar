@@ -116,7 +116,8 @@ sealed class JanusWatch
             // 누른 키를 하나씩, 누른 순서와 시각 그대로 처리한다 (2와 엔터가 한꺼번에 와도 둘 다 센다)
             foreach (var p in KeyHook.Drain())
             {
-                int vk = p.Vk;
+                // 훅은 왼쪽·오른쪽 Shift·Ctrl·Alt를 따로 알려 준다 → 설정에 저장된 공통 키로 맞춘다
+                int vk = p.Vk switch { 160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, var v => v };
                 if (vk == 0) continue;
                 int mask = 0;
                 for (int i = 0; i < BuffSlots; i++) if (vk == st.Buffs[i].Key) mask |= 1 << i;
