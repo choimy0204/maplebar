@@ -40,8 +40,10 @@ public sealed class NoticeStrip : Form
     {
         current[lane] = null;
         if (queues[lane].Count == 0 || bar.IsDisposed) return;
-        current[lane] = new NoticeStrip(bar, lane, queues[lane].Dequeue(), sc);
-        current[lane]!.Show(bar);
+        var strip = new NoticeStrip(bar, lane, queues[lane].Dequeue(), sc);
+        current[lane] = strip;
+        // 바가 숨어 있으면 바에 붙이지 않고 따로 띄운다
+        if (strip.hiddenTop != null) strip.Show(); else strip.Show(bar);
     }
 
     readonly int lane;
@@ -78,6 +80,12 @@ public sealed class NoticeStrip : Form
         DoubleBuffered = true;
         Cursor = Cursors.Hand;
         Opacity = 0;
+        // 바가 숨어 있으면 게임 화면(없으면 주 모니터) 위 가운데에 띄운다
+        if (!bar.Visible || bar.WindowState == FormWindowState.Minimized)
+        {
+            var area = Game.Area() ?? Screen.PrimaryScreen!.WorkingArea;
+            hiddenTop = new Point(area.Left + area.Width / 2, area.Top + S(6));
+        }
         Place(0);
         tick.Tick += (_, _) => Step();
         tick.Start();
@@ -89,12 +97,16 @@ public sealed class NoticeStrip : Form
     void Place(double p)
     {
         int w = Math.Max(H, (int)Math.Round(FullW * p));
-        int cx = bar.Left + bar.Width / 2;
+        int cx = hiddenTop?.X ?? bar.Left + bar.Width / 2;
+        int top = hiddenTop?.Y ?? (bar is BarForm b ? b.NoticeTop : bar.Bottom);
         // 위쪽 줄에 떠 있는 알림이 있으면 그 아래에, 없으면 바로 바 아래에
         int row = 0;
         for (int i = 0; i < lane; i++) if (current[i] != null) row++;
-        Bounds = new Rectangle(cx - w / 2, (bar is BarForm b ? b.NoticeTop : bar.Bottom) + S(6) + row * (H + S(6)), w, H);
+        Bounds = new Rectangle(cx - w / 2, top + S(6) + row * (H + S(6)), w, H);
     }
+
+    /// <summary>바가 숨어 있을 때 띄울 위치 (가운데 x, 위 y). 바가 보이면 null이고 바 아래에 붙는다.</summary>
+    Point? hiddenTop;
 
     void Step()
     {

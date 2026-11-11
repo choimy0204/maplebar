@@ -24,6 +24,11 @@ public class Settings
     public bool MusicFx { get; set; } = true;
     // 바: 마우스가 3초 동안 없으면 위로 접는다 (끄면 항상 펼쳐 둔다)
     public bool BarAutoHide { get; set; } = true;
+    // 바를 숨겨도(Ctrl+Alt+M) 야누스·룬·버프·도핑 알림을 띄운다
+    public bool AlertWhenHidden { get; set; } = true;
+    // 알림 소리: 켜기와 크기(%)
+    public bool SoundOn { get; set; } = true;
+    public int SoundVol { get; set; } = 60;
     // 뮤직 칸을 바에서 꺼내 따로 둔 자리 (MusicFloat가 false면 바 안에 있다)
     public bool MusicFloat { get; set; }
     public int? MusicX { get; set; }

@@ -2,7 +2,7 @@
 ; 만들기: 먼저 dotnet publish로 ..\publish\MapleBar.exe를 만든 뒤 이 파일을 ISCC로 컴파일한다.
 
 #define AppName "메이플 바"
-#define AppVer "1.0.4"
+#define AppVer "1.0.5"
 #define AppExe "MapleBar.exe"
 
 [Setup]
@@ -35,7 +35,7 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "바탕화면에 바로가기 만들기"; GroupDescription: "바로가기:"
-Name: "startup"; Description: "Windows를 켤 때 자동으로 실행"; GroupDescription: "시작:"; Flags: unchecked
+; PC 켤 때 자동 실행은 메이플 바 메뉴에서 고른다 (관리자 권한 프로그램이라 시작 프로그램 폴더로는 실행이 막힌다)
 
 [Files]
 ; 한 파일로 묶어 압축하면 켤 때마다 풀어야 해서 느리다. 폴더째 설치해 바로 뜨게 한다
@@ -49,10 +49,17 @@ Type: files; Name: "{app}\MapleBar.pdb"
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\{#AppName} 제거"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
-Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startup
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "지금 메이플 바 실행"; Flags: nowait postinstall skipifsilent shellexec
+
+[UninstallRun]
+; 메이플 바 메뉴에서 켜 둔 자동 실행 등록을 지운다
+Filename: "schtasks.exe"; Parameters: "/Delete /TN MapleBar_AutoStart /F"; Flags: runhidden; RunOnceId: "DelAutoStart"
+
+[UninstallDelete]
+; 예전 버전이 만들던 시작 프로그램 바로가기
+Type: files; Name: "{userstartup}\{#AppName}.lnk"
 
 [Code]
 // 사이트 창은 Microsoft Edge WebView2 런타임이 있어야 뜬다 (Windows 11에는 기본으로 들어 있다)

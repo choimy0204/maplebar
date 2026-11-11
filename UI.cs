@@ -13,8 +13,16 @@ public static class UI
     public static float FitZoom(Screen s, int dpi)
     {
         float logical = s.WorkingArea.Width / (dpi / 96f);
-        return Math.Clamp(logical / 1920f, 0.7f, 1.5f);
+        return Balance(logical / 1920f);
     }
+
+    /// <summary>
+    /// 화면 폭 비율(1920 = 1)을 바·창 크기로 바꾼다. 1920보다 크면 그대로 키우고,
+    /// 작으면 덜 줄인다: 메이플 UI는 해상도를 낮춰도 크기가 그대로라, 바만 정비례로 줄면 글자가 너무 작아진다.
+    /// 1366 → 0.84 · 1280 → 0.82 · 1024 → 0.74 (예전엔 0.71 · 0.67 · 0.53)
+    /// </summary>
+    public static float Balance(float ratio) =>
+        ratio >= 1f ? Math.Min(ratio, 1.5f) : Math.Max(0.7f, 0.45f + 0.55f * ratio);
 
     public static readonly Color Accent = Color.FromArgb(255, 138, 0);
     public static readonly Color Text = Color.FromArgb(31, 31, 31);

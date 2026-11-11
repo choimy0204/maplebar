@@ -60,7 +60,36 @@ static class Game
         return fgPids.Contains(pid);
     }
 
+    /// <summary>이 프로세스가 메이플인지. 모르는 번호면(게임을 막 다시 켰을 수 있다) 목록을 바로 새로 읽는다.</summary>
+    public static bool IsGame(uint pid)
+    {
+        if (pid == 0) return false;
+        if (fgPids.Contains(pid)) return true;
+        if ((DateTime.Now - fgPidsAt).TotalSeconds < 0.5) return false;
+        fgPidsAt = DateTime.Now;
+        var set = new HashSet<uint>();
+        foreach (var p in Process.GetProcessesByName("MapleStory")) { set.Add((uint)p.Id); p.Dispose(); }
+        fgPids = set;
+        return set.Contains(pid);
+    }
+
+    static bool running;
+    static DateTime runningAt;
+
+    /// <summary>메이플스토리 프로세스가 있는지 (최소화돼 있어도 켜진 것으로 본다). 1초마다 다시 본다.</summary>
+    public static bool Running()
+    {
+        if ((DateTime.Now - runningAt).TotalSeconds >= 1)
+        {
+            runningAt = DateTime.Now;
+            var ps = Process.GetProcessesByName("MapleStory");
+            running = ps.Length > 0;
+            foreach (var p in ps) p.Dispose();
+        }
+        return running;
+    }
+
     /// <summary>게임 가로 1920일 때 1배. 바 크기와 글꼴에 곱한다.</summary>
     public static float ZoomFor(Rectangle game, int dpi) =>
-        Math.Clamp(game.Width / 1920f / (dpi / 96f), 0.5f, 1.5f);
+        UI.Balance(game.Width / 1920f / (dpi / 96f));
 }

@@ -8,6 +8,11 @@ namespace MapleBar;
 /// 키보드 상태만 읽고 게임에 아무 입력도 보내지 않는다. 메이플 창을 쓰고 있을 때 누른 키만 센다.</summary>
 sealed class JanusWatch
 {
+    /// <summary>바를 숨겼는지 (BarForm이 넣는다)</summary>
+    public static bool BarHidden;
+    // 바를 숨겼고 "바를 숨겨도 알림 받기"가 꺼져 있으면 알림만 띄우지 않는다 (시간은 계속 센다)
+    bool Mute => BarHidden && !st.AlertWhenHidden;
+
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
 
     readonly Settings st;
@@ -67,6 +72,7 @@ sealed class JanusWatch
     public JanusWatch(Settings st, float sc)
     {
         this.st = st; this.sc = sc;
+        AlertSound.St = st;
         // 꺼져 있는 동안 끝난 야누스는 조용히 지운다. 꺼져 있는 동안 나온 룬은 알림 없이 "나옴"으로 보여 준다
         var now = DateTime.Now;
         if (endsAt is DateTime je && now >= je) ClearJanus(je);
@@ -75,6 +81,7 @@ sealed class JanusWatch
         // 꺼져 있는 동안 버프가 끝난 지 오래면 조용히 지운다 (방금 끝났으면 켜자마자 알린다)
         if (buffEnd is DateTime be && now >= be.AddMinutes(1)) { st.BuffStart = null; st.Save(); }
         if (dopeEnd is DateTime de && now >= de.AddMinutes(1)) { st.DopeStart = null; st.Save(); }
+        KeyHook.Start();
         poll.Tick += (_, _) => Tick();
         poll.Start();
     }
@@ -99,7 +106,20 @@ sealed class JanusWatch
 
     void Tick()
     {
-        // 키를 뗐는지 계속 봐 두어야 다음 누름을 한 번으로 센다
+        if (KeyHook.Active)
+        {
+            // 누른 키를 하나씩, 누른 순서와 시각 그대로 처리한다 (2와 엔터가 한꺼번에 와도 둘 다 센다)
+            foreach (var p in KeyHook.Drain())
+            {
+                int vk = p.Vk;
+                if (vk == 0) continue;
+                Step(p.At, Game.IsGame(p.Pid), vk == st.JanusKey, vk == st.NpcKey, vk == st.BuffKey, vk == 0x0D,
+                    vk == st.DopeKey, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
+            }
+            Step(DateTime.Now, false, false, false, false, false, false, 0); // 시간이 다 됐는지만 본다
+            return;
+        }
+        // 키 알림을 못 받으면: 키를 뗐는지 계속 봐 두어야 다음 누름을 한 번으로 센다
         bool janus = Pressed(st.JanusKey, ref janusDown);
         bool npc = Pressed(st.NpcKey, ref npcDown);
         bool buff = Pressed(st.BuffKey, ref buffDown);
@@ -107,9 +127,11 @@ sealed class JanusWatch
         bool dope = Pressed(st.DopeKey, ref dopeDown);
         int arrows = 0;
         for (int i = 0; i < 4; i++) if (Pressed(Arrows[i], ref arrowDown[i])) arrows++;
+        Step(DateTime.Now, Game.Foreground(), janus, npc, buff, enter, dope, arrows);
+    }
 
-        var now = DateTime.Now;
-        bool inGame = Game.Foreground();
+    void Step(DateTime now, bool inGame, bool janus, bool npc, bool buff, bool enter, bool dope, int arrows)
+    {
         RuneTick(now, inGame, npc, arrows);
         BuffTick(now, inGame, buff, enter);
         DopeTick(now, inGame, dope, arrows, enter);
@@ -147,7 +169,7 @@ sealed class JanusWatch
             if (now >= pickups[i])
             {
                 pickups.RemoveAt(i);
-                JanusAlert.Play(sc, "아이템을 회수하세요", Color.FromArgb(120, 220, 60), Color.FromArgb(225, 255, 200));
+                if (!Mute) JanusAlert.Play(sc, "아이템을 회수하세요", Color.FromArgb(120, 220, 60), Color.FromArgb(225, 255, 200), AlertSound.Kind.Pickup);
             }
 
         if (Endless(st))
@@ -158,7 +180,7 @@ sealed class JanusWatch
         if (endsAt is DateTime end && now >= end)
         {
             ClearJanus(end);
-            JanusAlert.Play(sc);
+            if (!Mute) JanusAlert.Play(sc);
         }
     }
 
@@ -184,7 +206,7 @@ sealed class JanusWatch
     public static void PlayBuff(float sc, int min)
     {
         var (main, light) = BuffColors(min);
-        JanusAlert.Play(sc, $"{min}분 버프가 끝났어요!", main, light);
+        JanusAlert.Play(sc, $"{min}분 버프가 끝났어요!", main, light, AlertSound.Kind.Buff);
     }
 
     void BuffTick(DateTime now, bool inGame, bool buff, bool enter)
@@ -217,7 +239,7 @@ sealed class JanusWatch
         if (buffEnd is DateTime end && now >= end)
         {
             st.BuffStart = null; st.Save();
-            PlayBuff(sc, st.BuffMin);
+            if (!Mute) PlayBuff(sc, st.BuffMin);
         }
     }
 
@@ -230,7 +252,7 @@ sealed class JanusWatch
     public double? DopeWaiting => st.DopeStart is DateTime s && s > DateTime.Now ? (s - DateTime.Now).TotalSeconds : null;
     public void CancelDope() { if (st.DopeStart != null) { st.DopeStart = null; st.Save(); } }
     public static readonly Color DopeMain = Color.FromArgb(235, 40, 50), DopeLight = Color.FromArgb(255, 205, 205);
-    public static void PlayDope(float sc) => JanusAlert.Play(sc, "부스트 도핑이 끝났어요!", DopeMain, DopeLight);
+    public static void PlayDope(float sc) => JanusAlert.Play(sc, "부스트 도핑이 끝났어요!", DopeMain, DopeLight, AlertSound.Kind.Dope);
 
     // 도핑 키 → 방향키 한 번(사용 확인 창에서 '예'로 옮김) → 엔터 순서로 눌러야 쓴 것으로 본다.
     // 방향키를 두 번 이상 누르면 다시 원래 버튼으로 돌아갈 수 있어서 세지 않는다
@@ -273,7 +295,7 @@ sealed class JanusWatch
         if (dopeEnd is DateTime end && now >= end)
         {
             st.DopeStart = null; st.Save();
-            PlayDope(sc);
+            if (!Mute) PlayDope(sc);
         }
     }
 
@@ -309,7 +331,7 @@ sealed class JanusWatch
         if (runeAt is DateTime r && now >= r.AddSeconds(RuneAlertLagSec) && !runeAlerted)
         {
             runeAlerted = true;
-            JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255));
+            if (!Mute) JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255), AlertSound.Kind.Rune);
         }
     }
 
@@ -360,8 +382,10 @@ static class JanusAlert
     static Action? stop;
 
     /// <summary>기본은 솔 야누스(보라). 룬 알림은 글과 색만 바꿔 같은 효과를 쓴다.</summary>
-    public static void Play(float sc, string text = "솔 야누스가 꺼졌어요", Color? main = null, Color? light = null)
+    public static void Play(float sc, string text = "솔 야누스가 꺼졌어요", Color? main = null, Color? light = null,
+        AlertSound.Kind sound = AlertSound.Kind.Janus)
     {
+        AlertSound.Play(sound);
         stop?.Invoke();
         Text = text;
         Main = main ?? Color.FromArgb(150, 80, 255);
@@ -631,6 +655,8 @@ sealed class JanusForm : Form
         Controls.Add(sub);
         y += sub.PreferredSize.Height + S(12);
 
+        if (!toon) y += MakeSoundCard(pad, y, W - pad * 2).Height + S(10);
+
         if (toon)
         {
             var toonCard = MakeScrollCard(pad, y, W - pad * 2, out var u, out var d);
@@ -660,7 +686,7 @@ sealed class JanusForm : Form
             "NPC 대화 키", 3, out var nk,
             "룬 주기", st.RuneMin, Enumerable.Range(1, 60).ToArray(), v => v + "분", v => st.RuneMin = v,
             "평소 15분, 이벤트 땐 10분이에요. NPC 키를 누르고 방향키 4번을 누르면 세기 시작하고, 실패해서 다시 풀면 처음부터 다시 셉니다.",
-            () => JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255)), out var rs);
+            () => JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255), AlertSound.Kind.Rune), out var rs);
         npcKey = nk; runeStatus = rs;
         y += runeCard.Height + S(10);
         }
@@ -698,6 +724,49 @@ sealed class JanusForm : Form
         refresh.Start();
         UpdateKeys();
         UpdateStatus();
+    }
+
+    /// <summary>알림 소리: 켜기 스위치와 소리 크기 (− 값 +). 크기를 바꾸면 그 크기로 한 번 들려준다.</summary>
+    Card MakeSoundCard(int x, int y, int w)
+    {
+        var card = new Card { Location = new Point(x, y), Width = w, Radius = S(12) };
+        Controls.Add(card);
+        int ip = S(14), cy = S(12);
+
+        var dot = new Label { Text = "●", ForeColor = UI.Accent, Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) };
+        var name = new Label { Text = "알림 소리", Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy) };
+        var sw = new Toggle { On = st.SoundOn, Size = new Size(S(40), S(22)) };
+        sw.Location = new Point(w - ip - sw.Width, cy + S(1));
+        card.Controls.AddRange(new Control[] { dot, name, sw });
+        cy += S(38);
+
+        card.Controls.Add(RowLabel("소리 크기", ip, cy));
+        int vol = Math.Clamp((int)Math.Round(st.SoundVol / 10.0) * 10, 10, 100);
+        var shown = new Label { AutoSize = false, Size = new Size(S(64), S(30)), TextAlign = ContentAlignment.MiddleCenter, Font = F(10, FontStyle.Bold), Text = vol + "%" };
+        void Change(int d)
+        {
+            vol = Math.Clamp(vol + d, 10, 100);
+            shown.Text = vol + "%";
+            st.SoundVol = vol; st.Save();
+            AlertSound.Play(AlertSound.Kind.Janus, vol);
+        }
+        var plus = UI.Button("+", "", () => Change(10), sc, back: UI.HoverBack);
+        var minus = UI.Button("−", "", () => Change(-10), sc, back: UI.HoverBack);
+        plus.Font = minus.Font = F(10, FontStyle.Bold);
+        card.Controls.AddRange(new Control[] { minus, shown, plus });
+        int top = cy + (S(30) - plus.PreferredSize.Height) / 2;
+        plus.Location = new Point(w - ip - plus.PreferredSize.Width, top);
+        shown.Location = new Point(plus.Left - shown.Width, cy);
+        minus.Location = new Point(shown.Left - minus.PreferredSize.Width, top);
+        cy += S(38);
+
+        // 끄면 크기 줄을 흐리게 해서 소리가 안 난다는 걸 보여 준다
+        void Dim() { shown.ForeColor = st.SoundOn ? UI.Text : Gray; plus.Enabled = minus.Enabled = st.SoundOn; }
+        sw.Changed += v => { st.SoundOn = v; st.Save(); Dim(); if (v) AlertSound.Play(AlertSound.Kind.Janus); };
+        Dim();
+
+        card.Height = cy;
+        return card;
     }
 
     Card MakeCard(int x, int y, int w, Color color, string title, bool on, Action<bool> setOn,

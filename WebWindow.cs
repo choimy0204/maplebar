@@ -450,8 +450,11 @@ public class WebWindow : Form
         var wa = (bar != null ? Screen.FromControl(bar) : Screen.FromPoint(Cursor.Position)).WorkingArea;
         // 웹툰은 세로로 길게 본다: 폭은 조금 넓게, 높이는 화면 거의 전부
         bool tall = Webtoon.IsWebtoon(url);
-        int w = Math.Min(S(tall ? 460 : 420), wa.Width);
-        int h = tall ? Math.Max(Math.Min(S(560), wa.Height), wa.Height - S(40)) : Math.Min(S(560), wa.Height);
+        // 사이트 글자는 해상도와 상관없이 같은 크기로 나오므로, 창은 90% 아래로는 줄이지 않는다 (좁으면 내용이 답답하다)
+        float ws = Math.Max(sc, DeviceDpi / 96f * 0.9f);
+        int W(int v) => (int)Math.Round(v * ws);
+        int w = Math.Min(W(tall ? 460 : 420), wa.Width);
+        int h = tall ? Math.Max(Math.Min(W(560), wa.Height), wa.Height - S(40)) : Math.Min(W(560), wa.Height);
 
         Point p;
         if (open.Count > 0)

@@ -398,25 +398,97 @@ public class BarForm : Form
 
         cms.Items.Add(new ToolStripSeparator());
         cms.Items.Add("바 숨기기 (Ctrl+Alt+M)", null, (_, _) => HideAll());
+        cms.Items.Add(AlertWhenHiddenItem());
+        cms.Items.Add(AutoStartItem());
         cms.Closed += (_, _) => BeginInvoke(cms.Dispose);
         ShowBelowBar(cms, anchor);
     }
 
-    void HideAll()
+    // 게임에 맞춰 저절로 숨기고 보이기
+    bool userHidden;  // 직접 숨겼으면 게임이 켜져도 저절로 보이지 않는다
+    bool autoHidden;  // 게임이 꺼져서 숨겼다 → 게임이 켜지면 다시 보인다
+    bool keepShown;   // 게임이 꺼진 채로 직접 열었으면 저절로 숨기지 않는다 (게임이 한 번 켜지면 풀린다)
+
+    void HideAll() => HideAll(auto: false);
+
+    void HideAll(bool auto)
     {
         HideMega();
         NoticeStrip.CloseAll(); // 떠 있던 인벤 알림과 기다리던 알림도 같이 치운다
         Hide();
         musicDock?.SetShown(false);
+        JanusWatch.BarHidden = true;
+        if (auto) autoHidden = true; else { userHidden = true; autoHidden = false; }
+        if (tray == null) return;
+        // 처음 숨길 때 한 번만, 다시 여는 방법을 알려 준다
+        if (auto && !autoHintShown)
+        {
+            autoHintShown = true;
+            tray.ShowBalloonTip(4000, "메이플스토리를 기다리는 중",
+                "메이플스토리를 켜면 바가 저절로 나와요. 지금 열려면 Ctrl+Alt+M을 누르세요.", ToolTipIcon.None);
+        }
+        else if (!auto && !hideHintShown)
+        {
+            hideHintShown = true;
+            tray.ShowBalloonTip(4000, "메이플 바를 숨겼어요",
+                "Ctrl+Alt+M을 누르거나, 화면 오른쪽 아래 메이플 바 아이콘을 두 번 누르면 다시 나와요.", ToolTipIcon.None);
+        }
+    }
+    bool hideHintShown, autoHintShown;
+
+    /// <summary>게임이 켜졌는지 보고 바를 저절로 숨기거나 보인다.</summary>
+    void CheckGame()
+    {
+        if (Game.Running())
+        {
+            keepShown = false;
+            if (!Visible && autoHidden && !userHidden) { WindowState = FormWindowState.Normal; ShowAll(auto: true); }
+        }
+        else if (Visible && !keepShown && !dragging && !InUse() && MouseButtons == MouseButtons.None)
+            HideAll(auto: true);
     }
 
-    void ShowAll()
+    // 저절로 보일 때는 게임에서 키보드를 빼앗지 않게, 활성화하지 않고 띄운다
+    bool noActivate;
+    protected override bool ShowWithoutActivation => noActivate;
+
+    // "바를 숨겨도 알림 받기" 체크 메뉴 (바 메뉴와 아이콘 메뉴에 같이 쓴다)
+    ToolStripMenuItem AlertWhenHiddenItem()
+    {
+        var it = new ToolStripMenuItem("바를 숨겨도 알림 받기") { Checked = settings.AlertWhenHidden, CheckOnClick = true };
+        it.ToolTipText = "끄면 바를 숨긴 동안 야누스·룬·버프·도핑·인벤 새 글 알림이 뜨지 않아요";
+        it.CheckedChanged += (_, _) => { settings.AlertWhenHidden = it.Checked; settings.Save(); };
+        return it;
+    }
+
+    // "PC 켤 때 자동 실행" 체크 메뉴 (바 메뉴와 아이콘 메뉴에 같이 쓴다)
+    ToolStripMenuItem AutoStartItem()
+    {
+        var it = new ToolStripMenuItem("PC 켤 때 자동 실행") { Checked = AutoStart.On };
+        it.ToolTipText = "켜 두면 PC를 켤 때 메이플 바가 화면 오른쪽 아래 아이콘으로 시작해요";
+        it.Click += (_, _) =>
+        {
+            bool want = !AutoStart.On;
+            if (AutoStart.Set(want)) it.Checked = want;
+            else MessageBox.Show("자동 실행 설정을 바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", "메이플 바");
+        };
+        return it;
+    }
+
+    void ShowAll(bool auto = false)
     {
         lastActive = DateTime.Now; // 단축키로 불러오면 펼친 채로 시작한다
         shown = 1; ApplyRegion();
         if (peek != null) peek.Visible = false;
+        noActivate = auto;
         Show();
+        noActivate = false;
+        JanusWatch.BarHidden = false;
         musicDock?.SetShown(musicPill?.Visible == true);
+        autoHidden = false;
+        if (auto) return;
+        userHidden = false;
+        keepShown = !Game.Running();
         Activate();
         search.Focus();
         search.SelectAll();
@@ -531,7 +603,30 @@ public class BarForm : Form
         }
         if (settings.GameFollow && Game.Area() is Rectangle game) pos = GameAnchor(game);
         Location = pos;
-        gameTimer.Tick += (_, _) => FollowGame();
+        gameTimer.Tick += (_, _) => { CheckGame(); FollowGame(); };
+        // PC를 켤 때 자동으로 실행됐으면 바를 보이지 않게 띄웠다가 곧바로 아이콘으로 넣는다
+        if (Program.StartHidden) { Opacity = 0; noActivate = true; }
+        Shown += (_, _) =>
+        {
+            if (Program.StartHidden)
+            {
+                Program.StartHidden = false;
+                noActivate = false;
+                autoHintShown = true; // PC를 켤 때는 안내 풍선을 띄우지 않는다
+                HideAll(auto: true);  // 메이플스토리를 켜면 저절로 나온다
+                Opacity = 1;
+            }
+            // 처음 켤 때 게임이 없으면 바로 숨긴다
+            BeginInvoke(CheckGame);
+        };
+        AutoStart.Init();
+        // 메이플 바를 또 실행하면 (숨어 있던) 바를 앞으로 불러온다
+        if (Program.ShowEvent is { } ev)
+            ThreadPool.RegisterWaitForSingleObject(ev, (_, _) =>
+            {
+                if (IsDisposed || !IsHandleCreated) return;
+                try { BeginInvoke(() => { WindowState = FormWindowState.Normal; ShowAll(); }); } catch { }
+            }, null, -1, executeOnlyOnce: false);
         gameTimer.Start();
         janus = new JanusWatch(settings, sc);
         AddTimerChips(janus);
@@ -546,7 +641,8 @@ public class BarForm : Form
         foldTimer.Start();
         inven = new InvenWatcher(settings, (tag, post) =>
         {
-            if (!Visible || WindowState == FormWindowState.Minimized) return; // 바를 숨겨 두면 인벤 알림도 띄우지 않는다
+            // 바를 숨겨도 "바를 숨겨도 알림 받기"가 켜져 있으면 띄운다 (게임 화면 위 가운데에)
+            if ((!Visible || WindowState == FormWindowState.Minimized) && !settings.AlertWhenHidden) return;
             NoticeStrip.Show(this, tag == "새 글" ? 0 : 1, tag, post.Title, post.Category, () => Navigate(post.Url), sc);
         });
         RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
@@ -720,14 +816,47 @@ public class BarForm : Form
     {
         base.OnHandleCreated(e);
         RegisterHotKey(Handle, HotkeyId, MOD_CONTROL | MOD_ALT, (uint)Keys.M);
+        MakeTray();
+    }
+
+    // 작업 표시줄 오른쪽 아래(알림 영역) 아이콘: 두 번 누르면 바를 열거나 숨긴다 (Ctrl+Alt+M과 같다)
+    NotifyIcon? tray;
+
+    void MakeTray()
+    {
+        if (tray != null) return;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("바 열기 / 숨기기 (Ctrl+Alt+M)", null, (_, _) => ToggleBar());
+        menu.Items.Add(AlertWhenHiddenItem());
+        // 바 메뉴에서 바꾼 값도 맞게 보이도록 열 때마다 체크를 다시 맞춘다
+        menu.Items.Add(AutoStartItem());
+        menu.Opening += (_, _) =>
+        {
+            if (menu.Items[1] is ToolStripMenuItem a) a.Checked = settings.AlertWhenHidden;
+            if (menu.Items[2] is ToolStripMenuItem s) s.Checked = AutoStart.On;
+        };
+        menu.Items.Add("메이플 바 끄기", null, (_, _) => Close());
+        tray = new NotifyIcon
+        {
+            Icon = Icon ?? SystemIcons.Application,
+            Text = "메이플 바 · 두 번 누르면 열기/숨기기",
+            ContextMenuStrip = menu,
+            Visible = true,
+        };
+        tray.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleBar(); };
+    }
+
+    void ToggleBar()
+    {
+        if (Visible && WindowState != FormWindowState.Minimized) HideAll();
+        else { WindowState = FormWindowState.Normal; ShowAll(); }
     }
 
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == 0x0312 /*WM_HOTKEY*/ && m.WParam == (IntPtr)HotkeyId)
         {
-            if (Visible && WindowState != FormWindowState.Minimized) HideAll();
-            else { WindowState = FormWindowState.Normal; ShowAll(); }
+            ToggleBar();
             return;
         }
         base.WndProc(ref m);
@@ -740,6 +869,7 @@ public class BarForm : Form
         settings.BarCX = Left + Width / 2;
         settings.Save();
         UnregisterHotKey(Handle, HotkeyId);
+        if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
         base.OnFormClosing(e);
     }
 
