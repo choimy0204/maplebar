@@ -4,11 +4,12 @@ using System.Text.RegularExpressions;
 
 namespace MapleBar;
 
-/// <summary>켤 때 GitHub의 dist 폴더에 더 새 설치 파일이 있는지 본다.
+/// <summary>켤 때 GitHub 최신 릴리스(와 예전 dist 폴더)에 더 새 설치 파일이 있는지 본다.
 /// 있으면 업데이트해야 켤 수 있다. 확인에 실패하면(인터넷 끊김 등) 막지 않고 그냥 켠다.</summary>
 static class UpdateCheck
 {
-    const string ListUrl = "https://api.github.com/repos/choimy0204/maplebar/contents/dist";
+    const string ReleaseUrl = "https://api.github.com/repos/choimy0204/maplebar/releases/latest";
+    const string ListUrl ="https://api.github.com/repos/choimy0204/maplebar/contents/dist";
     static readonly Regex SetupName = new(@"^MapleBar-Setup-(\d+(?:\.\d+){1,3})\.exe$", RegexOptions.IgnoreCase);
 
     /// <summary>켜도 되면 true. 새 버전이 있으면 안내하고 false.</summary>
@@ -38,18 +39,33 @@ static class UpdateCheck
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("MapleBar");
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            var json = http.GetStringAsync(ListUrl).GetAwaiter().GetResult();
-            using var doc = JsonDocument.Parse(json);
             (Version ver, string url)? best = null;
-            foreach (var f in doc.RootElement.EnumerateArray())
+            void Take(string? name, string? url)
             {
-                var name = f.TryGetProperty("name", out var n) ? n.GetString() : null;
-                var url = f.TryGetProperty("download_url", out var d) ? d.GetString() : null;
-                if (name == null || url == null) continue;
+                if (name == null || url == null) return;
                 var m = SetupName.Match(name);
-                if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) continue;
+                if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return;
                 if (best == null || Norm(v) > Norm(best.Value.ver)) best = (v, url);
             }
+            // 깃허브가 직접 만든 최신 릴리스의 설치 파일
+            try
+            {
+                using var rel = JsonDocument.Parse(http.GetStringAsync(ReleaseUrl).GetAwaiter().GetResult());
+                if (rel.RootElement.TryGetProperty("assets", out var assets))
+                    foreach (var a in assets.EnumerateArray())
+                        Take(a.TryGetProperty("name", out var n) ? n.GetString() : null,
+                             a.TryGetProperty("browser_download_url", out var d) ? d.GetString() : null);
+            }
+            catch { }
+            // 예전 방식: 저장소 dist 폴더
+            try
+            {
+                using var doc = JsonDocument.Parse(http.GetStringAsync(ListUrl).GetAwaiter().GetResult());
+                foreach (var f in doc.RootElement.EnumerateArray())
+                    Take(f.TryGetProperty("name", out var n) ? n.GetString() : null,
+                         f.TryGetProperty("download_url", out var d) ? d.GetString() : null);
+            }
+            catch { }
             return best;
         }
         catch { return null; } // 인터넷 끊김, GitHub 응답 없음, 요청 한도 초과 등: 막지 않는다
