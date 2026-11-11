@@ -85,7 +85,7 @@ public static class SiteMenu
             I("유튜브 뮤직", Music.YtHome),
             I("구글 로그인", YouTube.LoginUrl),
             H("실시간 방송"),
-            I("SOOP", Live.Soop), I("치지직", Live.Chzzk),
+            I("SOOP", Live.Soop), I("치지직", Live.Chzzk), I("넥슨 라이브", Live.Nexon),
         }),
         // 메애기 메이플 뮤직 (사이트의 플레이어로 듣는다. 창 하나를 같이 쓴다)
         new("🎵 뮤직", null, new[]

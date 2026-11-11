@@ -11,7 +11,8 @@ public partial class WebWindow
     const string LiveCatchScript =
         "(()=>{const ok=u=>/^play\\.(sooplive\\.(com|co\\.kr)|afreecatv\\.com)$/.test(u.hostname)&&u.pathname.length>1||" +
         "/^vod\\.(sooplive\\.(com|co\\.kr)|afreecatv\\.com)$/.test(u.hostname)&&u.pathname.startsWith('/player/')||" +
-        "u.hostname==='chzzk.naver.com'&&/^\\/(live|video)\\/[^/]+\\/?$/.test(u.pathname);" +
+        "u.hostname==='chzzk.naver.com'&&/^\\/(live|video)\\/[^/]+\\/?$/.test(u.pathname)||" +
+        "u.hostname==='live.nexon.com'&&/^\\/(lives|replays)\\/[^/]+\\/?$/.test(u.pathname);" +
         "addEventListener('click',e=>{if(e.button!==0||e.ctrlKey||e.shiftKey||e.metaKey||e.altKey)return;" +
         "const a=e.composedPath().find(n=>n&&n.tagName==='A'&&n.href);if(!a)return;let u;try{u=new URL(a.href,location.href)}catch(_){return}" +
         "if(!ok(u))return;e.preventDefault();e.stopImmediatePropagation();try{chrome.webview.postMessage('mb:live:'+u.href)}catch(_){}},true)})();";
@@ -27,6 +28,17 @@ public partial class WebWindow
         html.mblv [data-mbside]{position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:auto!important;width:340px!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;z-index:2147483646!important;transform:none!important;display:block!important}
         html.mblv [data-mbside] #chatbox{position:absolute!important;inset:0!important;width:auto!important;height:auto!important;max-height:none!important}
         html.mblv [data-mbside] .chatting-item-wrap{flex:1 1 auto!important;height:auto!important;max-height:none!important;min-height:0!important}
+        html.mblv.mbnxp [data-mbbox]{top:32px!important}
+        html.mblv.mbnxp video[data-mbmain]{height:calc(100% - 36px)!important}
+        html.mblv.mbnxp [class*="MiniController_root"]{opacity:1!important;visibility:visible!important}
+        html.mblv.mbnxp [class*="MiniController_root"]:not([class*="MiniController_entered"]) [class*="MiniController_middle"]{opacity:0!important;pointer-events:none!important}
+        html.mblv.mbnxp [class*="MiniController_top"]{top:auto!important;bottom:7px!important;left:auto!important;right:10px!important;width:auto!important;height:22px!important;padding:0!important;background:none!important;justify-content:flex-start!important;opacity:1!important;visibility:visible!important;transform:none!important;pointer-events:auto!important;z-index:3!important}
+        html.mblv.mbnxp [class*="MiniController_bottom"]{top:auto!important;bottom:0!important;height:36px!important;opacity:1!important;visibility:visible!important;transform:none!important;background:#111!important;pointer-events:auto!important}
+        html.mblv.mbnxp [class*="MiniController_bottom"] [class*="ProgressBar_root"]{position:absolute!important;left:10px!important;right:206px!important;width:auto!important;top:15px!important;margin:0!important}
+        html.mblv.mbnxp [class*="MiniController_actions"]{display:none!important}
+        html.mblv.mbnxp [class*="SheetPortal_root"]:has([class*="TextButtonGroup_root"]){display:block!important;position:fixed!important;left:auto!important;right:10px!important;top:auto!important;bottom:44px!important;width:240px!important;height:auto!important;z-index:20!important;background:none!important}
+        html.mblv.mbnxp [class*="SheetPortal_root"] [class*="BottomSheet_root"]:has([class*="ChatBottomSheet"],[class*="ReplayChatPanel"]){display:none!important}
+        html.mblv.mbnxp [class*="SheetPortal_root"] [class*="SheetPortal_inner"],html.mblv.mbnxp [class*="SheetPortal_root"] [class*="SheetPortal_slot"],html.mblv.mbnxp [class*="SheetPortal_root"] [class*="BottomSheetSlot_root"],html.mblv.mbnxp [class*="SheetPortal_root"] [class*="BottomSheet_root"]{position:static!important;width:auto!important;height:auto!important;transform:none!important;inset:auto!important;max-height:none!important}
         html.mblv.mbnoch [data-mbside]{display:none!important}
         html.mblv.mbnoch [data-mbbox]{right:0!important}
         html:not(.mblv):not(.mbshow){background:#000!important}
@@ -41,18 +53,22 @@ public partial class WebWindow
         const skip=()=>{if(location.hostname!=='chzzk.naver.com')return;for(const b of deep('button'))if((b.textContent||'').replace(/\s/g,'').includes('설치없이')){b.click();break}};
         let main=null,box=null;
         const unmark=()=>deep('[data-mbbox],[data-mbfill],[data-mbmain],[data-mbhide]').forEach(e=>{for(const k of ['data-mbbox','data-mbfill','data-mbmain','data-mbhide'])e.removeAttribute(k)});
-        const tick=()=>{const r=document.documentElement;if(!r)return;add();skip();
-        if(main&&main.isConnected&&box&&box.isConnected&&area(main)>10000){}else{
+        const tick=()=>{const r=document.documentElement;if(!r)return;add();skip();        if(main&&main.isConnected&&box&&box.isConnected&&area(main)>10000){}else{
         r.classList.remove('mblv');unmark();main=pick();box=null;if(!main)return;
         const sp=document.getElementById('player');
-        if(sp&&sp.contains(main))box=sp;else{const va=area(main);box=main;for(let e=up(main);e&&e!==document.body;e=up(e)){if(area(e)>va*1.6+4000)break;box=e}}
+        // 넥슨 라이브는 처음에 영상이 페이지만큼 커서 크기로 찾으면 페이지 전체를 잡는다. 영상 칸을 이름으로 찾는다
+        const nb=location.hostname==='live.nexon.com'?main.closest('[class*="Content_root"]'):null;
+        if(sp&&sp.contains(main))box=sp;else if(nb)box=nb;else{const va=area(main);box=main;for(let e=up(main);e&&e!==document.body;e=up(e)){if(area(e)>va*1.6+4000)break;box=e}}
         while(box.getRootNode() instanceof ShadowRoot)box=box.getRootNode().host;
         for(let e=main;e&&e!==box;e=up(e)){e.setAttribute('data-mbfill','');const rn=e.getRootNode();if(rn instanceof ShadowRoot&&!rn.getElementById('mbLv')){const s=document.createElement('style');s.id='mbLv';s.textContent='[data-mbfill]{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;margin:0!important}video[data-mbmain]{object-fit:contain!important}';rn.appendChild(s)}}
         main.setAttribute('data-mbmain','');box.setAttribute('data-mbbox','');
         setTimeout(()=>dispatchEvent(new Event('resize')),300);setTimeout(()=>dispatchEvent(new Event('resize')),1500)}
         r.classList.add('mblv');
+        // 넥슨 라이브는 볼륨 줄이 영상 위쪽에 있어서, 마우스를 올리면 뜨는 제목 줄에 가리지 않게 한 줄 내린다
+        if(location.hostname==='live.nexon.com')r.classList.add('mbnxp');
         // SOOP은 채팅도 같은 창 오른쪽에 둔다 (채팅 창을 따로 열면 재생 창이 멈춘다)
-        const ch=/(^|\.)(sooplive\.(com|co\.kr)|afreecatv\.com)$/.test(location.hostname)?document.getElementById('chatting_area'):null;
+        const soop=/(^|\.)(sooplive\.(com|co\.kr)|afreecatv\.com)$/.test(location.hostname);
+        const ch=soop?document.getElementById('chatting_area'):null;
         if(ch){if(!ch.hasAttribute('data-mbside')){document.querySelectorAll('[data-mbside]').forEach(e=>e.removeAttribute('data-mbside'));ch.setAttribute('data-mbside','');setTimeout(()=>dispatchEvent(new Event('resize')),300)}
         for(let e=ch;e;e=e.parentElement)e.removeAttribute('data-mbhide');r.classList.add('mbside');
         // 화면 모드면 채팅이 영상 위에 겹쳐 나오므로 풀고, 채팅이 닫혀 있으면 연다 (3초에 한 번, 최대 6번)
@@ -78,7 +94,9 @@ public partial class WebWindow
         html.mbch [data-mbhide]{display:none!important}
         html.mbch [data-mbchat]{position:fixed!important;left:0!important;top:0!important;right:0!important;bottom:0!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;z-index:2147483646!important;transform:none!important}
         html.mbch #chatting_area #chatbox{position:absolute!important;inset:0!important;width:auto!important;height:auto!important;max-height:none!important}
-        html.mbch #chatting_area .chatting-item-wrap{flex:1 1 auto!important;height:auto!important;max-height:none!important;min-height:0!important}`;
+        html.mbch #chatting_area .chatting-item-wrap{flex:1 1 auto!important;height:auto!important;max-height:none!important;min-height:0!important}
+        html.mbch [data-mbchat] [class*="SheetPortal_inner"],html.mbch [data-mbchat] [class*="SheetPortal_slot"],html.mbch [data-mbchat] [class*="BottomSheetSlot_root"],html.mbch [data-mbchat] [class*="BottomSheet_root"],html.mbch [data-mbchat] [class*="BottomSheet_inner"]{position:absolute!important;inset:0!important;width:auto!important;height:auto!important;max-height:none!important;transform:none!important;margin:0!important;border-radius:0!important}
+        html.mbch [data-mbchat] [class*="BottomSheet_header__close"]{display:none!important}`;
         const add=()=>{if(document.getElementById('mbCh'))return;const s=document.createElement('style');s.id='mbCh';s.textContent=css;(document.head||document.documentElement).appendChild(s)};
         const stop=()=>document.querySelectorAll('video,audio').forEach(v=>{try{v.muted=true;if(!v.paused)v.pause()}catch(e){}});
         document.addEventListener('play',e=>{try{e.target.muted=true;e.target.pause()}catch(_){}},true);
@@ -93,7 +111,13 @@ public partial class WebWindow
         while(e.parentElement&&e.parentElement!==root){const p=e.parentElement;if(inp&&p.contains(inp))break;if((p.textContent||'').length>(e.textContent||'').length+150)break;e=p}
         if(!(inp&&e.contains(inp)))e.setAttribute('data-mbhide','')}};
         let cur=null;const tick=()=>{const r=document.documentElement;if(!r)return;add();stop();zz();if(location.hostname==='chzzk.naver.com')r.classList.add('mbch');
-        let el=null;for(const s of SEL){el=document.querySelector(s);if(el)break}
+        // 넥슨 라이브: 좁은 창에서는 채팅이 아래에서 올라오는 창에 들어 있다. 닫혀 있으면 '채팅 다시보기'로 연다 (2초에 한 번)
+        // 다시보기 채팅은 영상 시간에 맞춰 나오므로, 재생 창의 시간(__mbt)으로 멈춘 영상의 자리만 옮긴다
+        let el=null;if(location.hostname==='live.nexon.com'){
+        if(typeof window.__mbt==='number')for(const v of document.querySelectorAll('video'))if(Math.abs(v.currentTime-window.__mbt)>2)try{v.currentTime=window.__mbt}catch(e){}
+        el=document.querySelector('[class*="SheetPortal_root"]');const now=Date.now();
+        if(el&&!el.querySelector('[class*="ChatBottomSheet"]')&&!(window.__mbjc>now)){const b=document.querySelector('[class*="JoinChat_trigger"]');if(b){b.click();window.__mbjc=now+2000}}}
+        else for(const s of SEL){el=document.querySelector(s);if(el)break}
         if(!el){if(location.hostname!=='chzzk.naver.com')r.classList.remove('mbch');return}
         if(el!==cur){cur=el;document.querySelectorAll('[data-mbhide],[data-mbchat]').forEach(e=>{e.removeAttribute('data-mbhide');e.removeAttribute('data-mbchat')});
         el.setAttribute('data-mbchat','');
@@ -124,6 +148,23 @@ public partial class WebWindow
         {
             await cw.AddScriptToExecuteOnDocumentCreatedAsync(LiveVideoOnlyScript);
             cw.SourceChanged += (_, _) => SyncChat();
+            // 넥슨 라이브 다시보기: 채팅 창이 영상과 같은 시간의 채팅을 보이게 1초마다 재생 시간을 넘긴다
+            var sync = new System.Windows.Forms.Timer { Interval = 1000 };
+            sync.Tick += async (_, _) =>
+            {
+                if (ChatWindow() is not { } c || c.web.CoreWebView2 == null) return;
+                var src = web.Source;
+                if (src == null || !Live.IsNexon(src.ToString()) || !src.AbsolutePath.StartsWith("/replays/", StringComparison.OrdinalIgnoreCase)) return;
+                try
+                {
+                    var t = await cw.ExecuteScriptAsync("(()=>{const v=document.querySelector('video[data-mbmain]')||document.querySelector('video');return v?Math.floor(v.currentTime):-1})()");
+                    if (double.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s) && s >= 0)
+                        await c.web.CoreWebView2.ExecuteScriptAsync("window.__mbt=" + s.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+                catch { }
+            };
+            sync.Start();
+            FormClosed += (_, _) => sync.Dispose();
             return;
         }
         if (kind == SiteKind.LiveChat)

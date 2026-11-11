@@ -80,11 +80,15 @@ public static class Live
 {
     public const string Soop = "https://www.sooplive.co.kr/";
     public const string Chzzk = "https://chzzk.naver.com/";
+    public const string Nexon = "https://live.nexon.com/";
     static bool On(Uri u, string host) =>
         u.Host.Equals(host, StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase);
     public static bool IsLive(string? url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) &&
-        (On(u, "sooplive.co.kr") || On(u, "sooplive.com") || On(u, "afreecatv.com") || On(u, "chzzk.naver.com"));
+        (On(u, "sooplive.co.kr") || On(u, "sooplive.com") || On(u, "afreecatv.com") || On(u, "chzzk.naver.com") || IsNexon(u));
+    static bool IsNexon(Uri u) => u.Host.Equals("live.nexon.com", StringComparison.OrdinalIgnoreCase);
+    /// <summary>넥슨 라이브 주소인가 (재생 창은 크기 고정, 채팅은 따로 창으로 연다)</summary>
+    public static bool IsNexon(string? url) => Uri.TryCreate(url, UriKind.Absolute, out var u) && IsNexon(u);
 
     static string[] Parts(Uri u) => u.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
     static bool SoopPlay(Uri u) =>
@@ -102,6 +106,8 @@ public static class Live
         if (SoopVod(u)) return true;
         if (On(u, "chzzk.naver.com"))
             return p.Length == 2 && (p[0].Equals("live", StringComparison.OrdinalIgnoreCase) || p[0].Equals("video", StringComparison.OrdinalIgnoreCase));
+        if (IsNexon(u)) // 넥슨 라이브: 방송(/lives/번호)·다시보기(/replays/번호)
+            return p.Length == 2 && (p[0].Equals("lives", StringComparison.OrdinalIgnoreCase) || p[0].Equals("replays", StringComparison.OrdinalIgnoreCase));
         return false;
     }
 

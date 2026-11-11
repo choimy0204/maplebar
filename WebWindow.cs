@@ -152,6 +152,16 @@ public partial class WebWindow : Form
             growTip.SetToolTip(grow, smallBounds != null ? "원래 크기로" : "크게 보기");
         };
         grip.Controls.Add(grow); grow.BringToFront();
+        // 넥슨 라이브 재생 창은 크기를 고정한다 (크게 보기 버튼도 숨긴다)
+        web.SourceChanged += (_, _) =>
+        {
+            bool fix = FixedSize;
+            grow.Visible = !fix;
+            if (!fix || WindowState != FormWindowState.Normal) return;
+            smallBounds = null;
+            var nb = NextBounds(web.Source!.ToString());
+            if (Size != nb.Size) Size = nb.Size;
+        };
         // 펼치기 버튼 왼쪽: 투명도 슬라이드 바
         var gap2 = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
         grip.Controls.Add(gap2); gap2.BringToFront();
@@ -209,8 +219,12 @@ public partial class WebWindow : Form
         if (KindOf(url) is SiteKind.YouTubePlayer or SiteKind.LivePlayer) { var ps = PlayerSize(YouTube.IsShorts(url), wa); w = ps.Width; h = ps.Height; }
         // SOOP 재생 창은 영상과 채팅을 같이 보이므로 넓게 연다 (사용자가 맞춘 1018×515)
         if (KindOf(url) == SiteKind.LivePlayer && Uri.TryCreate(url, UriKind.Absolute, out var lu)
-            && (lu.Host.EndsWith("sooplive.com") || lu.Host.EndsWith("sooplive.co.kr") || lu.Host.EndsWith("afreecatv.com")))
-        { float d = DeviceDpi / 96f; w = Math.Min((int)Math.Round(1018 * d), wa.Width); h = Math.Min((int)Math.Round(515 * d), wa.Height); }
+            && (lu.Host == "live.nexon.com" || lu.Host.EndsWith("sooplive.com") || lu.Host.EndsWith("sooplive.co.kr") || lu.Host.EndsWith("afreecatv.com")))
+        {
+            // 넥슨 라이브: 위 제목 줄 32 + 영상(1000×563) + 아래 재생 바 36 + 테두리
+            float d = DeviceDpi / 96f; int bh = lu.Host == "live.nexon.com" ? 649 : 515;
+            w = Math.Min((int)Math.Round(1018 * d), wa.Width); h = Math.Min((int)Math.Round(bh * d), wa.Height);
+        }
         // 방송은 영상과 채팅이 옆으로 놓이니 가로로 넓게 연다
         if (KindOf(url) == SiteKind.Live) { w = Math.Min(W(800), wa.Width); h = Math.Min(W(500), wa.Height); }
 
@@ -471,8 +485,12 @@ public partial class WebWindow : Form
         SendMessage(Handle, 0xA1 /*WM_NCLBUTTONDOWN*/, (IntPtr)2 /*HTCAPTION*/, IntPtr.Zero);
     }
 
+    /// <summary>넥슨 라이브 재생 창: 페이지가 창 넓이에 따라 모양이 크게 바뀌어서, 알맞은 크기로 고정한다</summary>
+    bool FixedSize => kind == SiteKind.LivePlayer && Live.IsNexon(web.Source?.ToString() ?? startUrl);
+
     void ToggleMax()
     {
+        if (FixedSize) return;
         if (WindowState == FormWindowState.Maximized) { WindowState = FormWindowState.Normal; Padding = new Padding(edge); }
         else
         {
@@ -516,6 +534,7 @@ public partial class WebWindow : Form
         int W = ClientSize.Width, H = ClientSize.Height, rz = S(4), cz = S(14);
         bool l = p.X < rz, r = p.X >= W - rz, t = p.Y < rz, b = p.Y >= H - rz;
         bool cl = p.X < cz, cr = p.X >= W - cz, ct = p.Y < cz, cb = p.Y >= H - cz;
+        if (FixedSize) { m.Result = (IntPtr)2; return; } // 크기 고정: 테두리를 잡아도 옮기기만 한다
         bool edgeHit = l || r || t || b;
         int hit = edgeHit && ct && cl ? 13 : edgeHit && ct && cr ? 14 : edgeHit && cb && cl ? 16 : edgeHit && cb && cr ? 17 :
                   l ? 10 : r ? 11 : t ? 12 : b ? 15 : 2 /*HTCAPTION: 테두리 안쪽을 잡으면 창이 옮겨진다*/;
@@ -561,6 +580,7 @@ public partial class WebWindow : Form
     bool Expanded => smallBounds != null || WindowState == FormWindowState.Maximized;
     void ToggleBig()
     {
+        if (FixedSize) return;
         if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
         if (smallBounds is Rectangle r) { Bounds = r; smallBounds = null; return; }
         smallBounds = Bounds;

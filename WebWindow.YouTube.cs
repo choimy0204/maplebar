@@ -150,7 +150,7 @@ public partial class WebWindow
 
     void ToggleComments()
     {
-        // SOOP은 채팅 창을 따로 열면 재생 창이 멈춘다: 같은 창 안에서 채팅 칸만 켜고 끈다
+        // SOOP은 같은 창 안에서 채팅 칸만 켜고 끈다 (채팅 창을 따로 열면 재생 창이 멈춘다)
         var host = web.Source?.Host ?? "";
         if (kind == SiteKind.LivePlayer && (host.EndsWith("sooplive.com") || host.EndsWith("sooplive.co.kr") || host.EndsWith("afreecatv.com")))
         {
