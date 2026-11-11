@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>메이플 바 패치 노트</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* 레이아웃: 위에 짧은 소개와 다운로드, 그 아래 버전별 카드가 시간 순서 역순으로 이어지는 한 줄 목록 */
+:root {
+  --bg: #f6f4f1;
+  --panel: #ffffff;
+  --ink: #1d2230;
+  --muted: #5d6475;
+  --line: #e2ded8;
+  --accent: #d9622b;
+  --accent-soft: #fbe7dc;
+  --new: #2f7d5b;
+  --new-soft: #dff1e8;
+  --fix: #3f63b5;
+  --fix-soft: #e2e9f8;
+  --font-display: "Do Hyeon", "Noto Sans KR", sans-serif;
+  --font-body: "Noto Sans KR", "Malgun Gothic", "맑은 고딕", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171d; --panel: #1e2129; --ink: #eceef3; --muted: #a2a8b6; --line: #2e323d;
+    --accent: #f08a52; --accent-soft: #3a2519; --new: #6cc79c; --new-soft: #1b3229;
+    --fix: #8fa9ec; --fix-soft: #1f2840; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171d; --panel: #1e2129; --ink: #eceef3; --muted: #a2a8b6; --line: #2e323d;
+  --accent: #f08a52; --accent-soft: #3a2519; --new: #6cc79c; --new-soft: #1b3229;
+  --fix: #8fa9ec; --fix-soft: #1f2840; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.7;
+  word-break: keep-all; overflow-wrap: anywhere;
+}
+.wrap {
+  max-width: 760px; margin: 0 auto;
+  padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+}
+header { display: grid; gap: 14px; }
+.eyebrow { font-family: var(--font-mono); font-size: 13px; color: var(--accent); letter-spacing: .06em; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(36px, 8vw, 52px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lead { margin: 0; color: var(--muted); max-width: 34em; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 10px;
+  font-weight: 700; text-decoration: none; font-size: 15px; border: 1px solid var(--line); color: var(--ink); background: var(--panel);
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:focus-visible, .jump a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.jump { display: flex; flex-wrap: wrap; gap: 8px; }
+.jump a {
+  font-family: var(--font-mono); font-size: 13px; text-decoration: none; color: var(--ink);
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+}
+.note {
+  background: var(--accent-soft); border-radius: 12px; padding: 16px 18px; display: grid; gap: 6px;
+}
+.note h2 { font-size: 16px; margin: 0; }
+.note ul { margin: 0; padding-left: 1.2em; }
+.release { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 20px; display: grid; gap: 14px; scroll-margin-top: 16px; }
+.rhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.ver { font-family: var(--font-display); font-size: 30px; line-height: 1; }
+.date { font-family: var(--font-mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.latest { font-size: 12px; font-weight: 700; color: #fff; background: var(--accent); padding: 2px 8px; border-radius: 999px; }
+.title { margin: 0; font-weight: 700; font-size: 18px; width: 100%; }
+.group { display: grid; gap: 6px; }
+.tag { justify-self: start; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 6px; letter-spacing: .03em; }
+.tag.new { color: var(--new); background: var(--new-soft); }
+.tag.fix { color: var(--fix); background: var(--fix-soft); }
+.tag.etc { color: var(--muted); background: var(--bg); }
+ul.items { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+ul.items li strong { font-weight: 700; }
+ul.items ul { margin: 4px 0 0; padding-left: 1.1em; color: var(--muted); display: grid; gap: 2px; }
+kbd {
+  font-family: var(--font-mono); font-size: 13px; padding: 1px 6px; border-radius: 5px;
+  border: 1px solid var(--line); background: var(--bg); white-space: nowrap;
+}
+footer { color: var(--muted); font-size: 14px; display: grid; gap: 4px; }
+footer a, .note a { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">MAPLE BAR · PATCH NOTES</div>
+    <h1>메이플 바 패치 노트</h1>
+    <p class="lead">재획하면서 자주 쓰는 알림과 사이트를 메이플 화면 위에 모아 보여 주는 프로그램이에요. 버전마다 무엇이 바뀌었는지 정리했어요.</p>
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/choimy0204/maplebar/releases/latest">최신 버전 받기</a>
+      <a class="btn" href="https://github.com/choimy0204/maplebar">코드 보기 (깃허브)</a>
+    </div>
+    <nav class="jump" aria-label="버전 바로 가기">
+      <a href="#v108">1.0.8</a><a href="#v107">1.0.7</a><a href="#v106">1.0.6</a><a href="#v105">1.0.5</a>
+    </nav>
+  </header>
+
+  <section class="note">
+    <h2>업데이트하는 방법</h2>
+    <ul>
+      <li><strong>1.0.8부터</strong>: 켤 때 새 버전 안내가 뜨면 [예]만 누르세요. 알아서 설치하고 다시 켜져요.</li>
+      <li><strong>1.0.7 이하</strong>: 이번 한 번만 <a href="https://github.com/choimy0204/maplebar/releases/latest">최신 버전</a>을 받아 설치해 주세요.</li>
+      <li>설치할 때 "Windows의 PC 보호" 창이 뜨면 [추가 정보] → [실행]을 누르세요.</li>
+    </ul>
+  </section>
+
+  <article class="release" id="v108">
+    <div class="rhead">
+      <span class="ver">1.0.8</span><span class="date">2026.11.11</span><span class="latest">최신</span>
+      <p class="title">앱 안에서 바로 업데이트</p>
+    </div>
+    <div class="group">
+      <span class="tag new">새 기능</span>
+      <ul class="items">
+        <li><strong>[예]만 누르면 업데이트돼요</strong>
+          <ul>
+            <li>새 버전이 나오면 켤 때 안내 창이 떠요</li>
+            <li>[예]를 누르면 받는 과정이 막대로 보여요</li>
+            <li>받은 파일이 원본과 같은지 확인한 뒤에만 설치해요</li>
+            <li>설치 창 없이 조용히 설치하고, 1분쯤 뒤 메이플 바가 다시 켜져요</li>
+          </ul>
+        </li>
+        <li><strong>받기에 실패하면</strong> 브라우저로 설치 파일을 받을지 물어봐요</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="release" id="v107">
+    <div class="rhead">
+      <span class="ver">1.0.7</span><span class="date">2026.11.11</span>
+      <p class="title">유튜브 창</p>
+    </div>
+    <div class="group">
+      <span class="tag new">새 기능</span>
+      <ul class="items">
+        <li><strong>유튜브를 메이플 바 안에서 봐요</strong>
+          <ul>
+            <li>목록 창에서 영상이나 쇼츠를 고르면 영상만 있는 창으로 떠요</li>
+            <li>창 크기는 마음대로 바꿀 수 있어요</li>
+            <li>마우스를 창 위쪽에 올리면 제목 줄이 나와요 (옮기기·닫기)</li>
+          </ul>
+        </li>
+        <li><strong>쇼츠 다음·이전 키</strong>
+          <ul>
+            <li>웹툰 설정 창에서 같이 정해요</li>
+            <li>게임을 하는 중에도 키로 넘길 수 있어요</li>
+          </ul>
+        </li>
+        <li><strong>댓글 창</strong>
+          <ul>
+            <li>[댓글] 버튼을 누르면 댓글만 따로 창으로 보여요</li>
+            <li>쇼츠를 넘기면 댓글도 같이 넘어가요</li>
+            <li>영상 창과 댓글 창 중 하나를 닫으면 둘 다 닫혀요</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+    <div class="group">
+      <span class="tag fix">바뀐 점</span>
+      <ul class="items">
+        <li>알림 설정 창을 3칸으로 넓혀서 작은 화면에서도 아래가 잘리지 않아요</li>
+        <li>속도와 안정성을 높였어요 (보이는 변화는 없어요)</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="release" id="v106">
+    <div class="rhead">
+      <span class="ver">1.0.6</span><span class="date">2026.11.11</span>
+      <p class="title">시계와 버프 3칸</p>
+    </div>
+    <div class="group">
+      <span class="tag new">새 기능</span>
+      <ul class="items">
+        <li><strong>시계가 추가됐어요</strong> (테두리 있는 굵은 숫자라 게임 화면 위에서도 잘 보여요)</li>
+        <li><strong>버프 알림을 3개까지 따로 써요</strong>
+          <ul>
+            <li>기본은 30분, 20분, 10분이에요</li>
+            <li>칸마다 켜기/끄기, 키, 시간, 이름을 정할 수 있어요</li>
+            <li>칸마다 "키 + <kbd>Enter</kbd>"로 셀지도 고를 수 있어요</li>
+            <li>예전 버프 설정은 처음 켤 때 첫 칸으로 옮겨져요</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+    <div class="group">
+      <span class="tag fix">바뀐 점</span>
+      <ul class="items">
+        <li>알림 설정을 넓은 창 하나로 합쳤어요 (솔 야누스·룬 / 버프·도핑)</li>
+        <li>창이 화면보다 크면 화면에 맞추고 스크롤로 보여요</li>
+        <li>설치 파일을 깃허브가 공개된 코드로 직접 만들어요. 파일 확인용 SHA256 값도 함께 올라가요</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="release" id="v105">
+    <div class="rhead">
+      <span class="ver">1.0.5</span><span class="date">2026.11.10</span>
+      <p class="title">도핑 알림, 트레이 아이콘, 자동 실행</p>
+    </div>
+    <div class="group">
+      <span class="tag new">알림</span>
+      <ul class="items">
+        <li><strong>부스트 도핑 알림</strong>
+          <ul>
+            <li>도핑 키 → 방향키 한 번 → <kbd>Enter</kbd> 순서로 누르면 쓴 것으로 보고 시간을 세요</li>
+            <li>끝나면 빨간색 알림으로 알려 줘요</li>
+            <li>사용 대기 시간(기본 3초)은 켜고 끄거나 바꿀 수 있어요</li>
+          </ul>
+        </li>
+        <li><strong>모든 모니터에 알림</strong>: 야누스, 아이템 회수, 룬, 버프 알림이 모든 모니터에 떠요</li>
+        <li><strong>알림 소리</strong>: 소리를 켜고 끄고, 크기를 조절할 수 있어요</li>
+        <li><strong>바를 숨겨도 알림</strong>: 숨기거나 최소화해도 야누스·룬·버프·도핑 알림이 떠요 (메뉴에서 끌 수 있어요)</li>
+        <li>인벤 새 글 알림은 게임 화면 위 가운데에 떠요</li>
+        <li>바를 숨겨 둔 동안에도 키를 누르면 시간을 세요. 다시 꺼내면 남은 시간이 그대로 보여요</li>
+      </ul>
+    </div>
+    <div class="group">
+      <span class="tag new">켜기 · 숨기기</span>
+      <ul class="items">
+        <li><strong>트레이 아이콘</strong>: 화면 오른쪽 아래 아이콘을 두 번 누르면 바를 열고 숨겨요 (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>과 같아요)</li>
+        <li><strong>게임에 맞춰 보이기</strong>: 게임을 켜면 바가 나타나고, 끄면 숨어요. 나타날 때 게임 키 입력을 빼앗지 않아요</li>
+        <li><strong>PC 켤 때 자동 실행</strong>: 메뉴에서 켜고 끄며, 켜 두면 아이콘으로 조용히 시작해요</li>
+        <li>이미 켜져 있을 때 다시 실행하면 숨어 있던 바가 앞으로 나와요</li>
+        <li>바를 처음 숨길 때 다시 여는 방법을 한 번 알려 줘요</li>
+      </ul>
+    </div>
+    <div class="group">
+      <span class="tag fix">바뀐 점</span>
+      <ul class="items">
+        <li>키를 빠르게 연달아 눌러도 놓치지 않아요. "버프 키 + <kbd>Enter</kbd>"를 더 정확하게 알아들어요</li>
+        <li>낮은 해상도에서 바와 글자가 너무 작아지지 않아요</li>
+        <li>사이트 창이 너무 작아지지 않게 최소 크기를 정했어요</li>
+        <li>새 버전이 나오면 알려 줘요</li>
+        <li>프로그램을 지울 때 자동 실행 설정도 함께 지워져요</li>
+      </ul>
+    </div>
+  </article>
+
+  <footer>
+    <span>메이플 바는 게임에 키 입력을 보내지 않아요. 게임 창 위치와 키 누름만 읽어요.</span>
+    <span>코드는 모두 <a href="https://github.com/choimy0204/maplebar">깃허브</a>에 공개돼 있어요. 의견은 인벤 글 댓글로 남겨 주세요.</span>
+  </footer>
+</div>
+
+</body>
+</html>
