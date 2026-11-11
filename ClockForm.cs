@@ -3,6 +3,8 @@ using System.Drawing.Text;
 using System.Globalization;
 using System.Runtime.InteropServices;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>
@@ -23,7 +25,7 @@ sealed class ClockForm : Form
     string drawnKey = "";
     bool hover, menuOpen;
 
-    int S(float v) => (int)Math.Round(v * sc);
+    int S(float v) => UI.Scale(v, sc);
     int M => S(14); // 그림자 여백
 
     public ClockForm(Settings st, float sc)
@@ -247,7 +249,7 @@ sealed class ClockForm : Form
     void KeepTop()
     {
         if (menuOpen || !IsHandleCreated || !Visible) return;
-        SetWindowPos(Handle, (IntPtr)(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+        SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP | SWP_NOOWNERZORDER);
     }
 
     // ── 끌어서 옮기기 ──
@@ -307,7 +309,7 @@ sealed class ClockForm : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x80000 /*LAYERED*/ | 0x80 /*TOOLWINDOW*/ | 0x08000000 /*NOACTIVATE*/ | 0x08 /*TOPMOST*/;
+            cp.ExStyle |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
             return cp;
         }
     }
@@ -329,9 +331,7 @@ sealed class ClockForm : Form
     [DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, IntPtr psize, IntPtr hdcSrc, IntPtr pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
     [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
     [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
-    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
 }

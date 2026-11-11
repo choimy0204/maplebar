@@ -1,3 +1,5 @@
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>메뉴에 마우스를 올리면 바 아래로 넓게 펼쳐지는 메뉴 (사이트의 드롭다운과 같은 모양).</summary>
@@ -6,7 +8,7 @@ public class MegaMenuForm : Form
     const int MaxRows = 6; // 구역 안에서 한 칸에 넣는 최대 항목 수 (넘치면 옆 칸으로)
     readonly float sc;
     readonly FlowLayoutPanel groups;
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
 
     public MegaMenuForm(MenuEntry[] items, float scale, Action<string> onPick)
     {
@@ -162,7 +164,7 @@ public class MegaMenuForm : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ClassStyle |= 0x20000; // 그림자
+            cp.ClassStyle |= CS_DROPSHADOW; // 그림자
             return cp;
         }
     }

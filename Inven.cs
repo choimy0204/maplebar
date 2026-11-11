@@ -9,6 +9,8 @@ public record InvenPost(long Id, string Title, string Category, string Url);
 public static class Inven
 {
     public const string Board = "https://m.inven.co.kr/board/maple/5974";
+    /// <summary>모바일 화면을 받으려고 쓰는 브라우저 이름 (알림 확인 요청과 인벤·웹툰 창이 같이 쓴다).</summary>
+    public const string MobileUA = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
     public static string LoginUrl => "https://member.inven.co.kr/user/scorpio/mlogin?url=" + Uri.EscapeDataString(Board);
 
     /// <summary>알림을 받을 수 있는 목록: 설정 키, 메뉴 이름, 알림 꼬리표, 목록 주소 뒤에 붙는 값.</summary>
@@ -27,8 +29,7 @@ public static class Inven
     static HttpClient MakeClient()
     {
         var c = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        c.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36");
+        c.DefaultRequestHeaders.UserAgent.ParseAdd(MobileUA);
         return c;
     }
 

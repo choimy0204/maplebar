@@ -9,6 +9,8 @@ public static class UI
     /// <summary>모니터 해상도에 맞춘 배율. 가로 1920(배율 100% 기준)이면 1, 더 좁거나 넓으면 그만큼 줄이거나 키운다.
     /// 크기(S)와 글꼴 크기에 같이 곱한다.</summary>
     public static float Z = 1f;
+    /// <summary>배율을 곱해 반올림한 픽셀 수. 창마다 있는 S()가 이걸 부른다.</summary>
+    public static int Scale(float v, float sc) => (int)Math.Round(v * sc);
 
     public static float FitZoom(Screen s, int dpi)
     {

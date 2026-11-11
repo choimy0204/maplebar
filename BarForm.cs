@@ -1,6 +1,8 @@
 ﻿using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>화면 맨 위에 항상 떠 있는 메이플 바.</summary>
@@ -11,7 +13,6 @@ public class BarForm : Form
     [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mod, uint vk);
     [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h);
-    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
 
     const int HotkeyId = 1;
     const uint MOD_ALT = 1, MOD_CONTROL = 2;
@@ -23,7 +24,7 @@ public class BarForm : Form
     readonly Label recentChip;
     readonly float sc;
 
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
 
     public BarForm()
     {
@@ -283,9 +284,10 @@ public class BarForm : Form
         {
             var n = name;
             var mi = new ToolStripMenuItem(n);
-            mi.Click += (_, _) => { search.Text = n; Search(SiteMenu.InfoPath); };
+            EventHandler openInfo = (_, _) => { search.Text = n; Search(SiteMenu.InfoPath); };
+            mi.Click += openInfo;
             var info = new ToolStripMenuItem("캐릭터정보");
-            info.Click += (_, _) => { search.Text = n; Search(SiteMenu.InfoPath); };
+            info.Click += openInfo;
             var boss = new ToolStripMenuItem("보스컷");
             boss.Click += (_, _) => { search.Text = n; Search(SiteMenu.BossCutPath); };
             mi.DropDownItems.Add(info);
@@ -677,15 +679,13 @@ public class BarForm : Form
     }
 
     // 다른 '항상 위' 창(사이트 창, 다른 프로그램)이 바를 덮지 않게 계속 맨 위로 올린다
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     readonly System.Windows.Forms.Timer keepTop = new() { Interval = 500 };
     InvenWatcher? inven;
 
     void StayOnTop()
     {
         if (menusOpen > 0 || !Visible || WindowState == FormWindowState.Minimized || !IsHandleCreated) return;
-        const uint NOSIZE = 1, NOMOVE = 2, NOACTIVATE = 0x10, NOOWNERZORDER = 0x200;
-        SetWindowPos(Handle, new IntPtr(-1) /*HWND_TOPMOST*/, 0, 0, 0, 0, NOSIZE | NOMOVE | NOACTIVATE | NOOWNERZORDER);
+        SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP | SWP_NOOWNERZORDER);
         musicDock?.RaiseCard();
     }
 
@@ -835,7 +835,7 @@ public class BarForm : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ClassStyle |= 0x20000; // CS_DROPSHADOW: 그림자
+            cp.ClassStyle |= CS_DROPSHADOW; // 그림자
             return cp;
         }
     }

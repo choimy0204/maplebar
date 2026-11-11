@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>
@@ -65,7 +67,7 @@ public sealed class NoticeStrip : Form
     double holdLeft = HoldMs;
     long lastMs;
     bool hover, hoverClose, done;
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
     int H => S(36);
     int FullW => Math.Max(bar.Width, S(420));
 
@@ -230,8 +232,8 @@ public sealed class NoticeStrip : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x80 | 0x08000000 | 0x08; // 작업 표시줄에 안 나오고, 눌러도 포커스를 뺏지 않고, 항상 위
-            cp.ClassStyle |= 0x20000;        // 그림자
+            cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST; // 작업 표시줄에 안 나오고, 눌러도 포커스를 뺏지 않고, 항상 위
+            cp.ClassStyle |= CS_DROPSHADOW;        // 그림자
             return cp;
         }
     }

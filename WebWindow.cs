@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>
@@ -337,7 +339,7 @@ public class WebWindow : Form
         }
         catch { }
     }
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
 
     public WebWindow(string url, Settings settings, float scale)
     {
@@ -438,7 +440,6 @@ public class WebWindow : Form
         startUrl = url;
         open.Add(this);
         _ = InitAsync(url);
-        CloseKeys.Track(this);
         if (Webtoon.IsWebtoon(url)) scrollTimer.Start();
     }
 
@@ -536,7 +537,7 @@ public class WebWindow : Form
             }
             // 인벤은 작은 창에 맞는 모바일 화면으로 보이게 한다
             if (Inven.IsInven(startUrl) || Webtoon.IsWebtoon(startUrl))
-                cw.Settings.UserAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
+                cw.Settings.UserAgent = Inven.MobileUA;
             // 새 창 링크: 사이트 안이면 또 새 창으로, 바깥이면 기본 브라우저로
             cw.NewWindowRequested += (_, e) =>
             {
@@ -731,7 +732,6 @@ public class WebWindow : Form
     }
 
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     static bool KeyIsDown(int vk) => vk != 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     static void ScrollTick()
@@ -770,14 +770,13 @@ public class WebWindow : Form
         catch { }
     }
 
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     /// <summary>웹툰 창들을 포커스는 그대로 둔 채 맨 위로 올린다.</summary>
     static void RaiseWebtoons()
     {
         foreach (var w in open.ToList())
             if (!w.IsDisposed && w.IsHandleCreated && w.Visible && Webtoon.IsWebtoon(w.startUrl))
-                SetWindowPos(w.Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010); // TOPMOST, NOSIZE|NOMOVE|NOACTIVATE
+                SetWindowPos(w.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP);
     }
 
     protected override void OnShown(EventArgs e)
@@ -832,8 +831,8 @@ public class WebWindow : Form
         {
             var cp = base.CreateParams;
             cp.Style |= 0x20000;       // 작업 표시줄 클릭으로 최소화
-            cp.ClassStyle |= 0x20000;  // 그림자
-            if (Music.IsMusic(startUrl)) cp.ExStyle |= 0x80; // 뮤직 창은 Alt+Tab에도 안 나오게
+            cp.ClassStyle |= CS_DROPSHADOW;  // 그림자
+            if (Music.IsMusic(startUrl)) cp.ExStyle |= WS_EX_TOOLWINDOW; // 뮤직 창은 Alt+Tab에도 안 나오게
             return cp;
         }
     }

@@ -34,7 +34,7 @@ sealed class TimerChip : Control
         Size = new Size(S(84), S(28));
     }
 
-    int S(float v) => (int)Math.Round(v * sc);
+    int S(float v) => UI.Scale(v, sc);
 
     /// <summary>남은 초(없으면 숨김)를 넣는다. 보이고 숨김이 바뀌면 true.</summary>
     public bool SetTime(double? sec, bool ready = false)

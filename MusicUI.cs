@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>
@@ -82,7 +84,7 @@ public sealed class MusicPill : Control
         Size = new Size(S(392), S(36));
     }
 
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
     // 버튼 순서(왼→오): 랜덤(4) 이전(0) 재생(1) 다음(2) 반복(5)
     static readonly int[] Order = { 0, 1, 2, 4, 5 }; // 이전·재생·다음 · 랜덤·한 곡 반복
     Rectangle Btn(int i)
@@ -296,7 +298,7 @@ public sealed class VolumeDial : Form
     double value = 1;
     bool dragging;
     int outside; // 마우스가 밖에 있던 횟수
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
     double beforeMute = 0.5; // 음소거 전 소리 크기
     PointF Center => new(Width / 2f, S(24));
     float Radius => S(66);
@@ -351,13 +353,11 @@ public sealed class VolumeDial : Form
         if (host != null && Owner != host) Owner = host;
         if (!Visible) Show();
         // 맨 위로만 올리고 포커스는 가져가지 않는다 (가져가면 열려 있던 곡 목록이 닫힌다)
-        else SetWindowPos(Handle, (IntPtr)(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+        else SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP);
         watch.Start();
         Invalidate();
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     public void SetValue(double v) { if (!dragging && Visible) { value = Math.Clamp(v, 0, 1); Invalidate(); } }
 
@@ -486,8 +486,8 @@ public sealed class VolumeDial : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x80 | 0x08000000; // 작업 표시줄에 안 나오고 포커스를 뺏지 않게
-            cp.ClassStyle |= 0x20000;        // 그림자
+            cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE; // 작업 표시줄에 안 나오고 포커스를 뺏지 않게
+            cp.ClassStyle |= CS_DROPSHADOW;        // 그림자
             return cp;
         }
     }
@@ -524,7 +524,7 @@ public sealed class MusicPicker : Form
     List<WebWindow.Song> songs = new();
     bool searchTab;
     int hover = -1, loadId;
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
 
     MusicPicker(Form bar, Settings st, float sc)
     {
@@ -679,8 +679,8 @@ public sealed class MusicPicker : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x80;          // 작업 표시줄에 안 나오게
-            cp.ClassStyle |= 0x20000;    // 그림자
+            cp.ExStyle |= WS_EX_TOOLWINDOW;          // 작업 표시줄에 안 나오게
+            cp.ClassStyle |= CS_DROPSHADOW;    // 그림자
             return cp;
         }
     }

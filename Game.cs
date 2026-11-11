@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>메이플스토리 게임 창의 화면 영역(테두리·제목줄을 뺀 게임 화면)을 찾는다.
@@ -9,7 +11,6 @@ static class Game
 {
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out RECT r);
@@ -41,7 +42,6 @@ static class Game
         return best;
     }
 
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     static HashSet<uint> fgPids = new();
     static DateTime fgPidsAt;
 

@@ -2,6 +2,8 @@
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>솔 야누스 키와 룬(NPC 키 + 방향키 4번)을 보고 남은 시간을 센다. 다 되면 보랏빛 알림을 띄운다.
@@ -25,7 +27,9 @@ sealed class JanusWatch
     const double IgnoreSec = 50;     // 첫 설치 후 이 시간 안에 누른 건 추가 설치로 보고 무시
     /// <summary>끝나지 않는 경우는 세지도 알리지도 않는다.
     /// 루나 익스텐션 + 30레벨(120초), 또는 5석펫에서 지속시간이 게더링 주기(90초) 이상일 때.</summary>
-    public static bool Endless(Settings st) => st.PetOn ? st.JanusSec >= GatherSec : st.LunaExt && st.JanusSec >= 120;
+    public static bool Endless(Settings st) => Endless(st, st.JanusSec);
+    /// <summary>지속시간을 sec초로 했을 때 끝나지 않는지 (설정 창의 '무한대' 표시도 이걸 쓴다).</summary>
+    public static bool Endless(Settings st, int sec) => st.PetOn ? sec >= GatherSec : st.LunaExt && sec >= 120;
 
     // 5석펫: 게더링은 쿨타임 90초. 야누스가 있고 쿨이 돌았으면 바로 쓰고, 그 뒤로 90초마다 쓴다.
     // 게더링마다 남은 시간에 지속시간을 더하고 최대 300초. 설치 때 쿨이 돌아 있으면 20레벨은 160초로 시작한다.
@@ -273,6 +277,7 @@ sealed class JanusWatch
     public void CancelDope() { if (st.DopeStart != null) { st.DopeStart = null; st.Save(); } }
     public static readonly Color DopeMain = Color.FromArgb(235, 40, 50), DopeLight = Color.FromArgb(255, 205, 205);
     public static void PlayDope(float sc) => JanusAlert.Play(sc, "부스트 도핑이 끝났어요!", DopeMain, DopeLight, AlertSound.Kind.Dope);
+    public static void PlayRune(float sc) => JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255), AlertSound.Kind.Rune);
 
     // 도핑 키 → 방향키 한 번(사용 확인 창에서 '예'로 옮김) → 엔터 순서로 눌러야 쓴 것으로 본다.
     // 방향키를 두 번 이상 누르면 다시 원래 버튼으로 돌아갈 수 있어서 세지 않는다
@@ -351,7 +356,7 @@ sealed class JanusWatch
         if (runeAt is DateTime r && now >= r.AddSeconds(RuneAlertLagSec) && !runeAlerted)
         {
             runeAlerted = true;
-            if (!Mute) JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255), AlertSound.Kind.Rune);
+            if (!Mute) PlayRune(sc);
         }
     }
 
@@ -647,13 +652,12 @@ sealed class JanusForm : Form
     readonly System.Windows.Forms.Timer refresh = new() { Interval = 250 };
     int capturing; // 1 = 솔 야누스 키, 3 = NPC 대화 키, 4 = 웹툰 위로, 5 = 웹툰 아래로 키를 받는 중
 
-    int S(float v) => (int)Math.Round(v * sc);
+    int S(float v) => UI.Scale(v, sc);
     static Font F(float size, FontStyle style = FontStyle.Regular) => new("맑은 고딕", size * UI.Z, style);
 
     JanusForm(Settings st, JanusWatch watch, float sc, bool toon, bool buff)
     {
         this.st = st; this.watch = watch; this.sc = sc; this.toon = toon;
-        CloseKeys.Track(this);
         Text = toon ? "웹툰 키" : "알림 설정";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
@@ -703,7 +707,7 @@ sealed class JanusForm : Form
         y = top + Section("솔 야누스 · 룬", Purple, lx, top, colW);
         var janusCard = MakeCard(lx, y, colW, Purple, "솔 야누스", st.JanusOn, v => st.JanusOn = v,
             "솔 야누스 키", 1, out var jk,
-            "지속시간", st.JanusSec, new[] { 60, 70, 80, 120 }, v => (st.PetOn ? v >= 90 : v >= 120 && st.LunaExt) ? "무한대" : v + "초", v => st.JanusSec = v,
+            "지속시간", st.JanusSec, new[] { 60, 70, 80, 120 }, v => JanusWatch.Endless(st, v) ? "무한대" : v + "초", v => st.JanusSec = v,
             "1레벨 60초 · 10레벨 70초 · 20레벨 80초 · 30레벨 120초(루나 익스텐션이 있으면 무한대)\n" +
             "첫 설치 후 50초 안에 더 설치한 건 세지 않아요. 루나 익스텐션이 없으면 다시 깔아도 갱신하지 않고 첫 설치만 세요.\n" +
             "5석펫을 켜면 설치 때 한 번, 그 뒤 90초마다 게더링으로 지속시간만큼 더해서(최대 300초) 실제로 꺼질 때 알려 드려요. 20레벨은 약 12분, 10레벨은 약 5분 50초 유지돼요.\n" +
@@ -722,7 +726,7 @@ sealed class JanusForm : Form
             "NPC 대화 키", 3, out var nk,
             "룬 주기", st.RuneMin, Enumerable.Range(1, 60).ToArray(), v => v + "분", v => st.RuneMin = v,
             "평소 15분, 이벤트 땐 10분이에요. NPC 키를 누르고 방향키 4번을 누르면 세기 시작하고, 실패해서 다시 풀면 처음부터 다시 셉니다.",
-            () => JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255), AlertSound.Kind.Rune), out var rs);
+            () => JanusWatch.PlayRune(sc), out var rs);
         npcKey = nk; runeStatus = rs;
         y += runeCard.Height + S(10);
         int leftEnd = y;
@@ -1229,7 +1233,7 @@ sealed class JanusForm : Form
 
     protected override CreateParams CreateParams
     {
-        get { var cp = base.CreateParams; cp.ClassStyle |= 0x20000; return cp; } // 그림자
+        get { var cp = base.CreateParams; cp.ClassStyle |= CS_DROPSHADOW; return cp; } // 그림자
     }
 
     protected override void OnHandleCreated(EventArgs e)

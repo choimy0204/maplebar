@@ -2,6 +2,8 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
+using static MapleBar.Native;
+
 namespace MapleBar;
 
 /// <summary>
@@ -34,7 +36,7 @@ sealed class MusicDock
     (PointF P, PointF V, float R)[] splash = Array.Empty<(PointF, PointF, float)>();
 
     const int SnapMs = 520, SpringMs = 170, DockMs = 320;
-    int S(int v) => (int)Math.Round(v * sc);
+    int S(int v) => UI.Scale(v, sc);
     float Pull => S(70);
 
     public bool Floating => card != null;
@@ -241,10 +243,8 @@ sealed class MusicDock
     public void RaiseCard()
     {
         if (card is not { Visible: true, IsHandleCreated: true }) return;
-        SetWindowPos(card.Handle, (IntPtr)(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+        SetWindowPos(card.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP);
     }
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     /// <summary>뮤직이 켜지고 꺼질 때, 바를 숨기고 다시 열 때 꺼내 둔 칸도 같이 숨기고 보인다.</summary>
     public void SetShown(bool show)
@@ -297,7 +297,7 @@ sealed class MusicDock
         DrawDrop(g, c, rDrop, rDrop * (1 + 0.12f * t), 255);
     }
 
-    int S(float v) => (int)Math.Round(v * sc);
+    int S(float v) => UI.Scale(v, sc);
 
     void DrawSnap(Graphics g, PointF c, float p, double ms)
     {
@@ -504,7 +504,7 @@ sealed class MusicCard : Form
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); UI.RoundCorners(Handle); }
     protected override CreateParams CreateParams
     {
-        get { var cp = base.CreateParams; cp.ClassStyle |= 0x20000; /* 그림자 */ return cp; }
+        get { var cp = base.CreateParams; cp.ClassStyle |= CS_DROPSHADOW; /* 그림자 */ return cp; }
     }
 }
 
@@ -524,7 +524,7 @@ sealed class Splash : Form
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= 0x80000 /*LAYERED*/ | 0x20 /*TRANSPARENT*/ | 0x80 /*TOOLWINDOW*/ | 0x08000000 /*NOACTIVATE*/;
+            cp.ExStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
             return cp;
         }
     }
@@ -533,7 +533,7 @@ sealed class Splash : Form
     {
         if (!Visible) { Show(); TopMost = true; } // 내용을 올리기 전이라 아직 보이지 않는다
         // 바보다 위에 그린다 (바를 눌러 바가 앞으로 와도)
-        SetWindowPos(Handle, (IntPtr)(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+        SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP);
         IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen), hb = IntPtr.Zero, old = IntPtr.Zero;
         try
         {
@@ -569,10 +569,8 @@ sealed class Splash : Form
     [StructLayout(LayoutKind.Sequential, Pack = 1)] struct BLENDFUNCTION { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }
     [DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
     [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
-    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
     [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
-    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
 }
