@@ -79,7 +79,8 @@ sealed class JanusWatch
         lastInstall = st.JanusStart;
         runeAlerted = runeAt is DateTime re && now >= re.AddSeconds(RuneAlertLagSec);
         // 꺼져 있는 동안 버프가 끝난 지 오래면 조용히 지운다 (방금 끝났으면 켜자마자 알린다)
-        if (buffEnd is DateTime be && now >= be.AddMinutes(1)) { st.BuffStart = null; st.Save(); }
+        for (int i = 0; i < BuffSlots; i++)
+            if (BuffEnd(i) is DateTime be && now >= be.AddMinutes(1)) { st.Buffs[i].Start = null; st.Save(); }
         if (dopeEnd is DateTime de && now >= de.AddMinutes(1)) { st.DopeStart = null; st.Save(); }
         KeyHook.Start();
         poll.Tick += (_, _) => Tick();
@@ -113,16 +114,19 @@ sealed class JanusWatch
             {
                 int vk = p.Vk;
                 if (vk == 0) continue;
-                Step(p.At, Game.IsGame(p.Pid), vk == st.JanusKey, vk == st.NpcKey, vk == st.BuffKey, vk == 0x0D,
+                int mask = 0;
+                for (int i = 0; i < BuffSlots; i++) if (vk == st.Buffs[i].Key) mask |= 1 << i;
+                Step(p.At, Game.IsGame(p.Pid), vk == st.JanusKey, vk == st.NpcKey, mask, vk == 0x0D,
                     vk == st.DopeKey, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
             }
-            Step(DateTime.Now, false, false, false, false, false, false, 0); // 시간이 다 됐는지만 본다
+            Step(DateTime.Now, false, false, false, 0, false, false, 0); // 시간이 다 됐는지만 본다
             return;
         }
         // 키 알림을 못 받으면: 키를 뗐는지 계속 봐 두어야 다음 누름을 한 번으로 센다
         bool janus = Pressed(st.JanusKey, ref janusDown);
         bool npc = Pressed(st.NpcKey, ref npcDown);
-        bool buff = Pressed(st.BuffKey, ref buffDown);
+        int buff = 0;
+        for (int i = 0; i < BuffSlots; i++) if (Pressed(st.Buffs[i].Key, ref buffDown[i])) buff |= 1 << i;
         bool enter = Pressed(0x0D, ref enterDown);
         bool dope = Pressed(st.DopeKey, ref dopeDown);
         int arrows = 0;
@@ -130,7 +134,7 @@ sealed class JanusWatch
         Step(DateTime.Now, Game.Foreground(), janus, npc, buff, enter, dope, arrows);
     }
 
-    void Step(DateTime now, bool inGame, bool janus, bool npc, bool buff, bool enter, bool dope, int arrows)
+    void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, bool dope, int arrows)
     {
         RuneTick(now, inGame, npc, arrows);
         BuffTick(now, inGame, buff, enter);
@@ -187,59 +191,75 @@ sealed class JanusWatch
     /// <summary>바의 칩을 눌렀을 때: 세던 시간을 지운다.</summary>
     public void CancelJanus() => ClearJanus(DateTime.Now);
     public void CancelRune() { npcAt = null; if (st.RuneStart != null) { st.RuneStart = null; st.Save(); } }
-    public void CancelBuff() { if (st.BuffStart != null) { st.BuffStart = null; st.Save(); } }
+    public void CancelBuff(int i) { if (st.Buffs[i].Start != null) { st.Buffs[i].Start = null; st.Save(); } }
 
-    // 버프: 버프 키를 누르고 10초 안에 엔터까지 누르면(사용 확인) 그때부터 BuffMin분을 센다. 다시 쓰면 처음부터 다시 센다
-    bool buffDown, enterDown;
-    DateTime? buffKeyAt;             // 버프 키를 누른 시각 (엔터를 기다리는 중)
+    // 버프 3칸: 칸마다 버프 키를 누르고 10초 안에 엔터까지 누르면(사용 확인) 그때부터 그 칸의 시간을 센다.
+    // 다시 쓰면 처음부터 다시 센다. 키를 엔터로 정한 칸은 키 하나로 바로 센다
+    public const int BuffSlots = 3;
+    readonly bool[] buffDown = new bool[BuffSlots];
+    bool enterDown;
+    readonly DateTime?[] buffKeyAt = new DateTime?[BuffSlots]; // 버프 키를 누른 시각 (엔터를 기다리는 중)
     const double BuffEnterSec = 10;
+    /// <summary>마지막으로 인식한 버프 칸 (설정 창의 "인식됨" 표시용)</summary>
+    public int LastBuff { get; private set; } = -1;
     /// <summary>버프 키를 눌러 엔터를 기다리는 중인지 (설정 창 표시용)</summary>
-    public bool BuffWaitingEnter => buffKeyAt is DateTime t && (DateTime.Now - t).TotalSeconds <= BuffEnterSec;
-    DateTime? buffEnd => st.BuffStart is DateTime s ? s.AddMinutes(st.BuffMin) : null;
+    public bool BuffWaitingEnter(int i) => buffKeyAt[i] is DateTime t && (DateTime.Now - t).TotalSeconds <= BuffEnterSec;
+    DateTime? BuffEnd(int i) => st.Buffs[i].Start is DateTime s ? s.AddMinutes(st.Buffs[i].Min) : null;
     /// <summary>버프가 끝날 때까지 남은 초. 세고 있지 않으면 null.</summary>
-    public double? BuffRemaining => buffEnd is DateTime e ? Math.Max(0, (e - DateTime.Now).TotalSeconds) : null;
-    public int BuffMin => st.BuffMin;
-    /// <summary>20분은 주황, 10분은 노랑</summary>
-    public static (Color main, Color light) BuffColors(int min) => min >= 20
+    public double? BuffRemaining(int i) => BuffEnd(i) is DateTime e ? Math.Max(0, (e - DateTime.Now).TotalSeconds) : null;
+    public int BuffMin(int i) => st.Buffs[i].Min;
+    /// <summary>30분은 분홍, 20분은 주황, 10분은 노랑</summary>
+    public static (Color main, Color light) BuffColors(int min) => min >= 30
+        ? (Color.FromArgb(235, 70, 140), Color.FromArgb(255, 212, 232))
+        : min >= 20
         ? (Color.FromArgb(255, 140, 0), Color.FromArgb(255, 222, 180))
         : (Color.FromArgb(245, 205, 0), Color.FromArgb(255, 246, 185));
-    public static void PlayBuff(float sc, int min)
+    /// <summary>버프가 끝났다고 알린다. 이름을 정해 두었으면 그 이름으로 알린다.</summary>
+    public static void PlayBuff(float sc, int min, string? name = null)
     {
         var (main, light) = BuffColors(min);
-        JanusAlert.Play(sc, $"{min}분 버프가 끝났어요!", main, light, AlertSound.Kind.Buff);
+        string text = string.IsNullOrWhiteSpace(name) ? $"{min}분 버프가 끝났어요!" : $"{name.Trim()} 끝났어요!";
+        JanusAlert.Play(sc, text, main, light, AlertSound.Kind.Buff);
     }
 
-    void BuffTick(DateTime now, bool inGame, bool buff, bool enter)
+    void BuffTick(DateTime now, bool inGame, int buff, bool enter)
     {
-        if (!st.BuffOn || st.BuffKey == 0)
+        // 엔터가 아닌 다른 버프 키를 새로 눌렀으면, 엔터를 기다리던 다른 칸은 쓰지 않은 것으로 본다
+        int otherKey = 0;
+        for (int i = 0; i < BuffSlots; i++)
+            if ((buff >> i & 1) != 0 && st.Buffs[i].Key != 0x0D && st.Buffs[i].WaitEnter) otherKey = st.Buffs[i].Key;
+
+        for (int i = 0; i < BuffSlots; i++)
         {
-            buffKeyAt = null;
-            if (st.BuffStart != null) { st.BuffStart = null; st.Save(); }
-            return;
-        }
-        if (buff && inGame) { buffKeyAt = now; LastKey = now; LastKind = "버프 키"; }
-        else if (enter && inGame && st.BuffKey != 0x0D && buffKeyAt is DateTime k)
-        {
-            buffKeyAt = null;
-            if ((now - k).TotalSeconds <= BuffEnterSec)
+            var b = st.Buffs[i];
+            if (!b.On || b.Key == 0)
             {
-                st.BuffStart = now; st.Save();
-                LastKey = now; LastKind = "버프";
-                return;
+                buffKeyAt[i] = null;
+                if (b.Start != null) { b.Start = null; st.Save(); }
+                continue;
+            }
+            bool hit = (buff >> i & 1) != 0 && inGame;
+            // 엔터를 기다리지 않는 칸, 또는 키가 엔터인 칸은 키 하나로 바로 센다
+            if (hit && (b.Key == 0x0D || !b.WaitEnter)) Start(i);
+            else if (hit) { buffKeyAt[i] = now; LastKey = now; LastKind = "버프 키"; LastBuff = i; }
+            else if (inGame && otherKey != 0 && otherKey != b.Key) buffKeyAt[i] = null;
+            else if (enter && inGame && buffKeyAt[i] is DateTime k)
+            {
+                buffKeyAt[i] = null;
+                if ((now - k).TotalSeconds <= BuffEnterSec) Start(i);
+            }
+            if (BuffEnd(i) is DateTime end && now >= end)
+            {
+                b.Start = null; st.Save();
+                if (!Mute) PlayBuff(sc, b.Min, b.Name);
             }
         }
-        // 버프 키를 엔터로 정했으면 키 하나로 바로 센다
-        if (buff && inGame && st.BuffKey == 0x0D)
+
+        void Start(int i)
         {
-            buffKeyAt = null;
-            st.BuffStart = now; st.Save();
-            LastKey = now; LastKind = "버프";
-            return;
-        }
-        if (buffEnd is DateTime end && now >= end)
-        {
-            st.BuffStart = null; st.Save();
-            if (!Mute) PlayBuff(sc, st.BuffMin);
+            buffKeyAt[i] = null;
+            st.Buffs[i].Start = now; st.Save();
+            LastKey = now; LastKind = "버프"; LastBuff = i;
         }
     }
 
@@ -582,13 +602,14 @@ static class JanusAlert
 /// <summary>솔 야누스 · 룬 알림 설정 창. 바와 같은 흰 바탕, 둥근 카드, 주황 스위치를 쓴다.</summary>
 sealed class JanusForm : Form
 {
-    static JanusForm? alertForm, toonForm, buffForm;
+    static JanusForm? alertForm, toonForm;
 
     public static void Open(Form owner, Settings st, JanusWatch watch, float sc, bool toon = false, bool buff = false)
     {
-        var open = toon ? toonForm : buff ? buffForm : alertForm;
+        // 야누스·룬·버프·도핑은 한 창에 있다
+        var open = toon ? toonForm : alertForm;
         if (open == null || open.IsDisposed) open = new JanusForm(st, watch, sc, toon, buff) { Owner = owner };
-        if (toon) toonForm = open; else if (buff) buffForm = open; else alertForm = open;
+        if (toon) toonForm = open; else alertForm = open;
         var wa = Screen.FromControl(owner).WorkingArea;
         open.Location = new Point(
             Math.Clamp(owner.Left + (owner.Width - open.Width) / 2, wa.Left, wa.Right - open.Width),
@@ -608,8 +629,12 @@ sealed class JanusForm : Form
     // 알림 창에는 야누스·룬 칸만, 웹툰 키 창에는 웹툰 칸만 있다 (없는 칸은 null)
     readonly bool toon;
     readonly RoundLabel? janusKey, npcKey, upKey, downKey;
-    RoundLabel? nextKey, prevKey, buffKey, dopeKey;
-    Label? buffStatus, dopeStatus;
+    RoundLabel? nextKey, prevKey, dopeKey;
+    Label? dopeStatus;
+    // 버프 칸마다: 키 칸, 상태 줄 (버프 창이 아니면 비어 있다)
+    readonly RoundLabel?[] buffKeys = new RoundLabel?[JanusWatch.BuffSlots];
+    readonly Label?[] buffStatus = new Label?[JanusWatch.BuffSlots];
+    Action<bool>? editingName; // 버프 이름 칸을 고치는 중이면 끝내는 함수 (true = 저장)
     static readonly Color Orange = Color.FromArgb(255, 140, 0);
     static readonly Color Green = Color.FromArgb(0, 190, 90);
     readonly Label? janusStatus, runeStatus;
@@ -623,7 +648,7 @@ sealed class JanusForm : Form
     {
         this.st = st; this.watch = watch; this.sc = sc; this.toon = toon;
         CloseKeys.Track(this);
-        Text = toon ? "웹툰 키" : buff ? "버프 알림" : "솔 야누스 · 룬 알림";
+        Text = toon ? "웹툰 키" : "알림 설정";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
@@ -633,10 +658,11 @@ sealed class JanusForm : Form
         Font = F(10);
         DoubleBuffered = true;
 
-        int W = S(372), pad = S(18), y = S(14);
+        // 알림 창은 두 줄(야누스·룬 | 버프·도핑)이라 넓게
+        int pad = S(18), W = toon ? S(372) : pad * 2 + S(352) * 2 + S(28), y = S(14);
 
         // 머리: 제목과 닫기. 빈 곳을 끌면 창이 움직인다
-        var title = new Label { Text = toon ? "웹툰 키" : buff ? "버프" : "알림", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
+        var title = new Label { Text = toon ? "웹툰 키" : "알림 설정", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
         title.MouseDown += (_, e) => Drag(e);
         MouseDown += (_, e) => Drag(e);
         var close = UI.Button("✕", "닫기", Close, sc);
@@ -663,9 +689,13 @@ sealed class JanusForm : Form
             upKey = u; downKey = d;
             y += toonCard.Height + S(10);
         }
-        else if (!buff)
+        else
         {
-        var janusCard = MakeCard(pad, y, W - pad * 2, Purple, "솔 야누스", st.JanusOn, v => st.JanusOn = v,
+        // 왼쪽 줄: 솔 야누스 · 룬 / 오른쪽 줄: 버프 · 도핑. 제목과 세로선으로 나눈다
+        int colW = S(352), gap = S(28);
+        int lx = pad, rx = pad + colW + gap, top = y;
+        y = top + Section("솔 야누스 · 룬", Purple, lx, top, colW);
+        var janusCard = MakeCard(lx, y, colW, Purple, "솔 야누스", st.JanusOn, v => st.JanusOn = v,
             "솔 야누스 키", 1, out var jk,
             "지속시간", st.JanusSec, new[] { 60, 70, 80, 120 }, v => (st.PetOn ? v >= 90 : v >= 120 && st.LunaExt) ? "무한대" : v + "초", v => st.JanusSec = v,
             "1레벨 60초 · 10레벨 70초 · 20레벨 80초 · 30레벨 120초(루나 익스텐션이 있으면 무한대)\n" +
@@ -682,25 +712,27 @@ sealed class JanusForm : Form
         janusKey = jk; janusStatus = js;
         y += janusCard.Height + S(10);
 
-        var runeCard = MakeCard(pad, y, W - pad * 2, Blue, "룬", st.RuneOn, v => st.RuneOn = v,
+        var runeCard = MakeCard(lx, y, colW, Blue, "룬", st.RuneOn, v => st.RuneOn = v,
             "NPC 대화 키", 3, out var nk,
             "룬 주기", st.RuneMin, Enumerable.Range(1, 60).ToArray(), v => v + "분", v => st.RuneMin = v,
             "평소 15분, 이벤트 땐 10분이에요. NPC 키를 누르고 방향키 4번을 누르면 세기 시작하고, 실패해서 다시 풀면 처음부터 다시 셉니다.",
             () => JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255), AlertSound.Kind.Rune), out var rs);
         npcKey = nk; runeStatus = rs;
         y += runeCard.Height + S(10);
-        }
-        else
-        {
-        var buffCard = MakeCard(pad, y, W - pad * 2, Orange, "버프", st.BuffOn, v => st.BuffOn = v,
-            "버프 사용 키", 8, out var bk,
-            "버프 시간", st.BuffMin, new[] { 10, 20 }, v => v + "분", v => { st.BuffMin = v; UpdateStatus(); },
-            "버프 키를 누르고 10초 안에 엔터까지 눌러야 세기 시작해요. 20분 버프는 주황색, 10분 버프는 노란색으로 알려 드려요. 다시 쓰면 처음부터 다시 셉니다.",
-            () => JanusWatch.PlayBuff(sc, st.BuffMin), out var bs);
-        buffKey = bk; buffStatus = bs;
-        y += buffCard.Height + S(10);
+        int leftEnd = y;
 
-        var dopeCard = MakeCard(pad, y, W - pad * 2, JanusWatch.DopeMain, "부스트 도핑", st.DopeOn, v => st.DopeOn = v,
+        y = top + Section("버프 · 도핑", Orange, rx, top, colW);
+        var buffTip = new Label
+        {
+            Text = "버프를 3개까지 따로 셀 수 있어요. 버프 키를 누르고 10초 안에 엔터까지 눌러야 세기 시작해요(칸마다 끌 수 있어요). 다시 쓰면 처음부터 다시 셉니다. 30분은 분홍, 20분은 주황, 10분은 노랑으로 알려 드려요.",
+            Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(colW, 0), Location = new Point(rx, y),
+        };
+        Controls.Add(buffTip);
+        y += buffTip.PreferredSize.Height + S(8);
+        for (int i = 0; i < JanusWatch.BuffSlots; i++)
+            y += MakeBuffCard(rx, y, colW, i).Height + S(10);
+
+        var dopeCard = MakeCard(rx, y, colW, JanusWatch.DopeMain, "부스트 도핑", st.DopeOn, v => st.DopeOn = v,
             "도핑 사용 키", 9, out var dk,
             "지속시간", st.DopeSec, Enumerable.Range(3, 28).Select(i => i * 10).ToArray(), v => v + "초", v => st.DopeSec = v,
             "도핑 키 → 방향키 한 번 → 엔터를 10초 안에 누르면 쓴 것으로 보고, 사용 대기(기본 3초) 뒤부터 세요. 끝나면 빨간색으로 알려 드려요. 다시 쓰면 처음부터 다시 셉니다.",
@@ -709,6 +741,10 @@ sealed class JanusForm : Form
             ("대기 시간", st.DopeDelaySec, Enumerable.Range(1, 10).ToArray(), v => v + "초", v => st.DopeDelaySec = v));
         dopeKey = dk; dopeStatus = ds;
         y += dopeCard.Height + S(10);
+        y = Math.Max(y, leftEnd);
+
+        // 두 줄 사이 세로선
+        Controls.Add(new Panel { BackColor = Color.FromArgb(225, 225, 230), Bounds = new Rectangle(pad + colW + gap / 2, top + S(4), Math.Max(1, S(1)), y - top - S(14)) });
         }
 
         var foot = new Label
@@ -738,9 +774,13 @@ sealed class JanusForm : Form
         var sw = new Toggle { On = st.SoundOn, Size = new Size(S(40), S(22)) };
         sw.Location = new Point(w - ip - sw.Width, cy + S(1));
         card.Controls.AddRange(new Control[] { dot, name, sw });
-        cy += S(38);
+        // 넓은 창에서는 한 줄에: 이름 … 소리 크기 − 값 + · 스위치
+        bool wide = w > S(500);
+        int right = wide ? sw.Left - S(18) : w - ip;
+        if (wide) cy -= S(4); else cy += S(38);
 
-        card.Controls.Add(RowLabel("소리 크기", ip, cy));
+        var volLbl = RowLabel("소리 크기", ip, cy);
+        card.Controls.Add(volLbl);
         int vol = Math.Clamp((int)Math.Round(st.SoundVol / 10.0) * 10, 10, 100);
         var shown = new Label { AutoSize = false, Size = new Size(S(64), S(30)), TextAlign = ContentAlignment.MiddleCenter, Font = F(10, FontStyle.Bold), Text = vol + "%" };
         void Change(int d)
@@ -755,9 +795,10 @@ sealed class JanusForm : Form
         plus.Font = minus.Font = F(10, FontStyle.Bold);
         card.Controls.AddRange(new Control[] { minus, shown, plus });
         int top = cy + (S(30) - plus.PreferredSize.Height) / 2;
-        plus.Location = new Point(w - ip - plus.PreferredSize.Width, top);
+        plus.Location = new Point(right - plus.PreferredSize.Width, top);
         shown.Location = new Point(plus.Left - shown.Width, cy);
         minus.Location = new Point(shown.Left - minus.PreferredSize.Width, top);
+        if (wide) volLbl.Left = minus.Left - volLbl.PreferredWidth - S(8);
         cy += S(38);
 
         // 끄면 크기 줄을 흐리게 해서 소리가 안 난다는 걸 보여 준다
@@ -935,6 +976,135 @@ sealed class JanusForm : Form
         return card;
     }
 
+    /// <summary>묶음 제목: 색 막대 · 굵은 이름 · 아래 얇은 선. 차지한 높이를 돌려준다.</summary>
+    int Section(string text, Color color, int x, int y, int w)
+    {
+        var bar = new Panel { BackColor = color, Bounds = new Rectangle(x, y + S(3), S(4), S(18)) };
+        var lbl = new Label { Text = text, Font = F(11.5f, FontStyle.Bold), ForeColor = UI.Text, AutoSize = true, Location = new Point(x + S(10), y) };
+        var line = new Panel { BackColor = Color.FromArgb(70, color), Bounds = new Rectangle(x, y + S(28), w, Math.Max(1, S(1))) };
+        lbl.MouseDown += (_, e) => Drag(e);
+        Controls.AddRange(new Control[] { bar, lbl, line });
+        return S(38);
+    }
+
+    /// <summary>버프 상태 글씨 색 (노란 글씨는 흰 바탕에서 잘 안 보여서 조금 진하게)</summary>
+    static Color BuffText(int min) => min >= 20 ? JanusWatch.BuffColors(min).main : Color.FromArgb(205, 160, 0);
+
+    /// <summary>버프 한 칸: 이름·켜기 / 키·시간(10·20·30분) / 남은 시간·미리 보기</summary>
+    Card MakeBuffCard(int x, int y, int w, int i)
+    {
+        var b = st.Buffs[i];
+        var card = new Card { Location = new Point(x, y), Width = w, Radius = S(12) };
+        Controls.Add(card);
+        int ip = S(14), cy = S(12);
+
+        var dot = new Label { Text = "●", Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) };
+        // 이름: 누르면 그 자리에서 바꾼다 (비우면 기본 이름 "버프 1")
+        string Shown() => string.IsNullOrWhiteSpace(b.Name) ? $"버프 {i + 1}" : b.Name.Trim();
+        var name = new Label { Text = Shown(), Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy), Cursor = Cursors.IBeam };
+        var pen = new Label { Text = "✎", Font = F(9), ForeColor = Gray, AutoSize = true, Cursor = Cursors.Hand };
+        var sw = new Toggle { On = b.On, Size = new Size(S(40), S(22)) };
+        sw.Location = new Point(w - ip - sw.Width, cy + S(1));
+        sw.Changed += v => { b.On = v; st.Save(); UpdateStatus(); };
+        void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
+        PlacePen();
+        var box = new TextBox
+        {
+            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false, BorderStyle = BorderStyle.FixedSingle,
+            Location = new Point(ip + S(16), cy - S(1)), Width = sw.Left - ip - S(16) - S(10),
+            PlaceholderText = $"버프 {i + 1}",
+        };
+        bool done = false;
+        void Edit()
+        {
+            done = false;
+            box.Text = b.Name ?? "";
+            name.Visible = pen.Visible = false;
+            box.Visible = true; box.Focus(); box.SelectAll();
+        }
+        void Finish(bool keep)
+        {
+            if (done) return;
+            done = true;
+            if (keep) { b.Name = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim(); st.Save(); }
+            name.Text = Shown(); PlacePen();
+            box.Visible = false; name.Visible = pen.Visible = true;
+            editingName = null;
+        }
+        name.Click += (_, _) => Edit();
+        pen.Click += (_, _) => Edit();
+        box.Enter += (_, _) => editingName = Finish;
+        box.Leave += (_, _) => Finish(true);
+        card.Controls.AddRange(new Control[] { dot, name, pen, box, sw });
+        cy += S(38);
+
+        // 키 칸 (왼쪽) · 시간 − 값 + (오른쪽)
+        var keyLbl = RowLabel("키", ip, cy);
+        card.Controls.Add(keyLbl);
+        var pill = new RoundLabel
+        {
+            AutoSize = false, Size = new Size(S(112), S(30)), TextAlign = ContentAlignment.MiddleCenter,
+            Fill = UI.HoverBack, Cursor = Cursors.Hand, Font = F(10, FontStyle.Bold), Radius = S(8),
+            Location = new Point(ip + S(26), cy),
+        };
+        int which = 20 + i;
+        pill.Click += (_, _) => { capturing = capturing == which ? 0 : which; UpdateKeys(); };
+        card.Controls.Add(pill);
+        buffKeys[i] = pill;
+
+        int[] options = { 10, 20, 30 };
+        int idx = Array.IndexOf(options, b.Min);
+        if (idx < 0) { idx = 2; b.Min = 30; st.Save(); }
+        var shown = new Label { AutoSize = false, Size = new Size(S(56), S(30)), TextAlign = ContentAlignment.MiddleCenter, Font = F(10, FontStyle.Bold) };
+        RoundLabel? look = null;
+        void Paint()
+        {
+            var c = JanusWatch.BuffColors(b.Min).main;
+            shown.Text = b.Min + "분";
+            dot.ForeColor = c;
+            if (look != null) { look.ForeColor = c; look.Fill = Color.FromArgb(24, c); }
+        }
+        void Change(int d)
+        {
+            idx = Math.Clamp(idx + d, 0, options.Length - 1);
+            b.Min = options[idx]; st.Save();
+            Paint(); UpdateStatus();
+        }
+        var plus = UI.Button("+", "", () => Change(1), sc, back: UI.HoverBack);
+        var minus = UI.Button("−", "", () => Change(-1), sc, back: UI.HoverBack);
+        plus.Font = minus.Font = F(10, FontStyle.Bold);
+        card.Controls.AddRange(new Control[] { minus, shown, plus });
+        int top = cy + (S(30) - plus.PreferredSize.Height) / 2;
+        plus.Location = new Point(w - ip - plus.PreferredSize.Width, top);
+        shown.Location = new Point(plus.Left - shown.Width, cy);
+        minus.Location = new Point(shown.Left - minus.PreferredSize.Width, top);
+        cy += S(40);
+
+        // 엔터 기다리기: 켜면 키 다음 엔터까지 눌러야 세고, 끄면 키만 눌러도 센다
+        card.Controls.Add(RowLabel("키 다음 엔터까지 눌러야 세기", ip, cy - S(2)));
+        var waitSw = new Toggle { On = b.WaitEnter, Size = new Size(S(40), S(22)) };
+        waitSw.Location = new Point(w - ip - waitSw.Width, cy + S(2));
+        waitSw.Changed += v => { b.WaitEnter = v; st.Save(); UpdateStatus(); };
+        card.Controls.Add(waitSw);
+        cy += S(34);
+
+        // 상태 줄: 남은 시간 · 미리 보기
+        var c0 = JanusWatch.BuffColors(b.Min).main;
+        look = UI.Button("미리 보기", "", () => JanusWatch.PlayBuff(sc, b.Min, b.Name), sc, fore: c0, back: Color.FromArgb(24, c0));
+        look.Font = F(9, FontStyle.Bold);
+        card.Controls.Add(look);
+        look.Location = new Point(w - ip - look.PreferredSize.Width, cy);
+        var status = new Label { AutoSize = false, Font = F(9.5f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft,
+            Location = new Point(ip, cy), Size = new Size(look.Left - ip - S(6), look.PreferredSize.Height) };
+        card.Controls.Add(status);
+        buffStatus[i] = status;
+        cy += look.PreferredSize.Height + S(12);
+        Paint();
+
+        card.Height = cy;
+        return card;
+    }
+
     Label RowLabel(string text, int x, int y) =>
         new() { Text = text, AutoSize = true, ForeColor = Color.FromArgb(80, 80, 80), Location = new Point(x, y + S(5)) };
 
@@ -946,7 +1116,7 @@ sealed class JanusForm : Form
         Style(downKey, 5, st.WebtoonDownKey);
         Style(nextKey, 6, st.WebtoonNextKey);
         Style(prevKey, 7, st.WebtoonPrevKey);
-        Style(buffKey, 8, st.BuffKey);
+        for (int i = 0; i < JanusWatch.BuffSlots; i++) Style(buffKeys[i], 20 + i, st.Buffs[i].Key);
         Style(dopeKey, 9, st.DopeKey);
     }
 
@@ -982,14 +1152,18 @@ sealed class JanusForm : Form
             else l.ForeColor = l == janusStatus ? Purple : Blue;
         }
 
-        if (buffStatus == null) return;
-        if (!st.BuffOn) buffStatus.Text = "꺼져 있어요";
-        else if (st.BuffKey == 0) buffStatus.Text = "버프 사용 키를 정해 주세요";
-        else if (watch.BuffWaitingEnter) buffStatus.Text = "버프 키 인식됨 · 엔터를 누르면 세기 시작해요";
-        else if (watch.BuffRemaining is double br) buffStatus.Text = $"남은 시간 {(int)br / 60}:{(int)br % 60:00}" + (recent && watch.LastKind == "버프" ? " · 인식됨" : "");
-        else buffStatus.Text = "버프 키 다음 엔터를 누르면 세기 시작해요";
-        // 노란 글씨는 흰 바탕에서 잘 안 보여서 조금 진하게
-        buffStatus.ForeColor = !st.BuffOn ? Gray : st.BuffMin >= 20 ? Orange : Color.FromArgb(205, 160, 0);
+        for (int i = 0; i < JanusWatch.BuffSlots; i++)
+        {
+            var bl = buffStatus[i];
+            if (bl == null) return;
+            var b = st.Buffs[i];
+            if (!b.On) bl.Text = "꺼져 있어요";
+            else if (b.Key == 0) bl.Text = "버프 키를 정해 주세요";
+            else if (watch.BuffWaitingEnter(i)) bl.Text = "키 인식됨 · 엔터를 누르세요";
+            else if (watch.BuffRemaining(i) is double br) bl.Text = $"남은 시간 {(int)br / 60}:{(int)br % 60:00}" + (recent && watch.LastKind == "버프" && watch.LastBuff == i ? " · 인식됨" : "");
+            else bl.Text = b.WaitEnter && b.Key != 0x0D ? "키 다음 엔터를 기다려요" : "버프 키를 기다려요";
+            bl.ForeColor = b.On ? BuffText(b.Min) : Gray;
+        }
 
         if (dopeStatus == null) return;
         if (!st.DopeOn) dopeStatus.Text = "꺼져 있어요";
@@ -1019,7 +1193,7 @@ sealed class JanusForm : Form
                     case 5: st.WebtoonDownKey = vk; break;
                     case 6: st.WebtoonNextKey = vk; break;
                     case 7: st.WebtoonPrevKey = vk; break;
-                    case 8: st.BuffKey = vk; break;
+                    case >= 20 and < 20 + JanusWatch.BuffSlots: st.Buffs[capturing - 20].Key = vk; break;
                     case 9: st.DopeKey = vk; break;
                 }
                 st.Save();
@@ -1027,6 +1201,13 @@ sealed class JanusForm : Form
             capturing = 0;
             UpdateKeys();
             UpdateStatus();
+            return true;
+        }
+        // 버프 이름을 고치는 중: 엔터는 저장, Esc는 취소
+        if (editingName is Action<bool> fin && k is Keys.Enter or Keys.Escape)
+        {
+            fin(k == Keys.Enter);
+            ActiveControl = null;
             return true;
         }
         if (k == Keys.Escape || keyData == (Keys.Control | Keys.W)) { Close(); return true; }

@@ -26,6 +26,13 @@ public class Settings
     public bool BarAutoHide { get; set; } = true;
     // 바를 숨겨도(Ctrl+Alt+M) 야누스·룬·버프·도핑 알림을 띄운다
     public bool AlertWhenHidden { get; set; } = true;
+    // 시계: 켜기, 초·날짜·24시간 보기, 게임 창 안에서의 자리(비율, 없으면 오른쪽 위)
+    public bool ClockOn { get; set; } = true;
+    public bool ClockSeconds { get; set; } = true;
+    public bool ClockDate { get; set; } = true;
+    public bool Clock24 { get; set; } = false;
+    public double? ClockFX { get; set; }
+    public double? ClockFY { get; set; }
     // 알림 소리: 켜기와 크기(%)
     public bool SoundOn { get; set; } = true;
     public int SoundVol { get; set; } = 60;
@@ -51,11 +58,13 @@ public class Settings
     // 껐다 켜도 이어서 세도록 시작 시각을 남긴다 (끝 = 시작 + 지속시간)
     public DateTime? JanusStart { get; set; }
     public DateTime? RuneStart { get; set; }
-    // 버프 알림: 버프 키를 누르고 20분(주황) 또는 10분(노랑) 뒤에 알린다. 시작 시각을 남겨 껐다 켜도 이어서 센다
+    // 예전 버프 하나짜리 설정. 처음 켤 때 아래 버프 칸으로 옮기고 비운다
     public bool BuffOn { get; set; }
     public int BuffKey { get; set; }
     public int BuffMin { get; set; } = 20;
     public DateTime? BuffStart { get; set; }
+    // 버프 3칸: 칸마다 켜기·키·시간(10/20/30분)·시작 시각. 시작 시각을 남겨 껐다 켜도 이어서 센다
+    public List<BuffSlot> Buffs { get; set; } = new();
     // 부스트 도핑: 키를 누르면 100초를 세고 빨간색으로 알린다
     public bool DopeOn { get; set; }
     public int DopeKey { get; set; }
@@ -82,10 +91,27 @@ public class Settings
         try
         {
             if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new();
+                return FixBuffs(JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new());
         }
         catch { }
-        return new();
+        return FixBuffs(new());
+    }
+
+    /// <summary>버프 칸을 3개로 맞춘다 (기본 30·20·10분). 예전 버프 하나짜리 설정은 같은 시간 칸으로 옮긴다.</summary>
+    static Settings FixBuffs(Settings s)
+    {
+        bool fresh = s.Buffs.Count == 0;
+        int[] mins = { 30, 20, 10 };
+        while (s.Buffs.Count < 3) s.Buffs.Add(new BuffSlot { Min = mins[s.Buffs.Count] });
+        if (s.Buffs.Count > 3) s.Buffs.RemoveRange(3, s.Buffs.Count - 3);
+        if (fresh && (s.BuffOn || s.BuffKey != 0 || s.BuffStart != null))
+        {
+            var b = s.Buffs.FirstOrDefault(x => x.Min == s.BuffMin) ?? s.Buffs[0];
+            b.On = s.BuffOn; b.Key = s.BuffKey; b.Min = s.BuffMin; b.Start = s.BuffStart;
+            s.BuffOn = false; s.BuffKey = 0; s.BuffStart = null;
+            s.Save();
+        }
+        return s;
     }
 
     public void Save()
@@ -105,4 +131,15 @@ public class Settings
         Recent.Insert(0, name);
         if (Recent.Count > 10) Recent.RemoveRange(10, Recent.Count - 10);
     }
+}
+
+/// <summary>버프 알림 한 칸</summary>
+public class BuffSlot
+{
+    public bool On { get; set; }
+    public int Key { get; set; }
+    public int Min { get; set; } = 30;
+    public DateTime? Start { get; set; }
+    public bool WaitEnter { get; set; } = true; // 키 다음 엔터까지 눌러야 센다 (끄면 키만 눌러도 센다)
+    public string? Name { get; set; } // 비어 있으면 "버프 1" 같은 기본 이름
 }

@@ -384,9 +384,9 @@ public class BarForm : Form
         }
         cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
         cms.Items.Add(new ToolStripSeparator());
-        cms.Items.Add("솔 야누스 · 룬 알림 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
-        cms.Items.Add("버프 알림 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, buff: true); });
+        cms.Items.Add("알림 설정 (야누스·룬·버프)…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
         cms.Items.Add("웹툰 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
+        cms.Items.Add(ClockItem());
         // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
         bool keepOpen = false;
         cms.ItemClicked += (_, e) => keepOpen = (e.ClickedItem?.Tag as string) == WatchTag;
@@ -462,6 +462,23 @@ public class BarForm : Form
     }
 
     // "PC 켤 때 자동 실행" 체크 메뉴 (바 메뉴와 아이콘 메뉴에 같이 쓴다)
+    ToolStripMenuItem ClockItem()
+    {
+        var it = new ToolStripMenuItem("게임 화면에 시계 보기") { Checked = settings.ClockOn };
+        it.ToolTipText = "시계는 끌어서 옮기고, 오른쪽 버튼으로 초·날짜를 고를 수 있어요";
+        it.Click += (_, _) => { settings.ClockOn = !settings.ClockOn; settings.Save(); SyncClock(); };
+        return it;
+    }
+
+    // 시계는 게임이 화면에 있거나 바가 보일 때 띄운다 (바를 숨겨도 게임 중엔 보인다)
+    void SyncClock()
+    {
+        if (clock == null) return;
+        var game = settings.ClockOn ? Game.Area() : null;
+        bool want = settings.ClockOn && (game != null || (Visible && WindowState != FormWindowState.Minimized && Opacity > 0));
+        clock.Sync(want, game);
+    }
+
     ToolStripMenuItem AutoStartItem()
     {
         var it = new ToolStripMenuItem("PC 켤 때 자동 실행") { Checked = AutoStart.On };
@@ -556,6 +573,7 @@ public class BarForm : Form
     }
 
     JanusWatch? janus; // 솔 야누스·룬 알림 (키 상태만 읽는다)
+    ClockForm? clock; // 게임 화면 위 시계
     readonly System.Windows.Forms.Timer chipTimer = new() { Interval = 250 };
 
     // 타이머가 도는 동안 바 오른쪽 앞에 아이콘과 남은 시간을 띄운다
@@ -566,11 +584,17 @@ public class BarForm : Form
         // 칩을 누르면 그 타이머를 취소한다 (설정은 톱니 메뉴에서)
         janusChip.Click += (_, _) => { w.CancelJanus(); if (janusChip.SetTime(null)) LayoutBar(); };
         runeChip.Click += (_, _) => { w.CancelRune(); if (runeChip.SetTime(null)) LayoutBar(); };
-        var buffChip = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
-        buffChip.Click += (_, _) => { w.CancelBuff(); if (buffChip.SetTime(null)) LayoutBar(); };
+        // 버프 칸마다 칩 하나
+        var buffChips = new TimerChip[JanusWatch.BuffSlots];
+        for (int i = 0; i < buffChips.Length; i++)
+        {
+            int slot = i;
+            var bc = buffChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+            bc.Click += (_, _) => { w.CancelBuff(slot); if (bc.SetTime(null)) LayoutBar(); };
+        }
         var dopeChip = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.DopeMain };
         dopeChip.Click += (_, _) => { w.CancelDope(); if (dopeChip.SetTime(null)) LayoutBar(); };
-        foreach (var c in new[] { runeChip, janusChip, buffChip, dopeChip })
+        foreach (var c in new[] { runeChip, janusChip }.Concat(buffChips).Append(dopeChip))
         {
             right.Controls.Add(c);
             right.Controls.SetChildIndex(c, 0);
@@ -579,8 +603,11 @@ public class BarForm : Form
         {
             bool changed = janusChip.SetTime(w.Remaining);
             changed |= runeChip.SetTime(w.RuneRemaining, w.RuneReady);
-            buffChip.BuffTint = JanusWatch.BuffColors(w.BuffMin).main;
-            changed |= buffChip.SetTime(w.BuffRemaining);
+            for (int i = 0; i < buffChips.Length; i++)
+            {
+                buffChips[i].BuffTint = JanusWatch.BuffColors(w.BuffMin(i)).main;
+                changed |= buffChips[i].SetTime(w.BuffRemaining(i));
+            }
             changed |= dopeChip.SetTime(w.DopeRemaining);
             if (changed) LayoutBar();
         };
@@ -603,7 +630,7 @@ public class BarForm : Form
         }
         if (settings.GameFollow && Game.Area() is Rectangle game) pos = GameAnchor(game);
         Location = pos;
-        gameTimer.Tick += (_, _) => { CheckGame(); FollowGame(); };
+        gameTimer.Tick += (_, _) => { CheckGame(); FollowGame(); SyncClock(); };
         // PC를 켤 때 자동으로 실행됐으면 바를 보이지 않게 띄웠다가 곧바로 아이콘으로 넣는다
         if (Program.StartHidden) { Opacity = 0; noActivate = true; }
         Shown += (_, _) =>
@@ -630,6 +657,7 @@ public class BarForm : Form
         gameTimer.Start();
         janus = new JanusWatch(settings, sc);
         AddTimerChips(janus);
+        clock = new ClockForm(settings, sc);
         search.Focus();
         keepTop.Tick += (_, _) => StayOnTop();
         keepTop.Start();
@@ -870,6 +898,7 @@ public class BarForm : Form
         settings.Save();
         UnregisterHotKey(Handle, HotkeyId);
         if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
+        clock?.Close(); clock = null;
         base.OnFormClosing(e);
     }
 
