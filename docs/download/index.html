@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>메이플 바 받기</title>
+<style>
+  :root { --bg:#faf7f2; --ink:#2b2420; --muted:#7a6f66; --accent:#d9622b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1d1916; --ink:#f1ebe4; --muted:#a99d92; } }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink);
+         font:16px/1.6 "Noto Sans KR","맑은 고딕",sans-serif; text-align:center; padding:0 16px; }
+  h1 { font-size:22px; margin:0 0 8px; }
+  p { margin:4px 0; color:var(--muted); }
+  a { color:var(--accent); font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+  <h1>메이플 바 설치 파일을 받는 중이에요…</h1>
+  <p id="msg">잠시 뒤 다운로드가 시작돼요.</p>
+  <p>시작되지 않으면 <a id="link" href="https://github.com/choimy0204/maplebar/releases/latest">여기</a>를 눌러 주세요.</p>
+  <p><a href="../">패치 노트 보기</a></p>
+</main>
+<script>
+// 깃허브 최신 릴리스에서 설치 파일을 찾아 바로 받는다. 못 찾으면 최신 릴리스 페이지로 보낸다.
+(function () {
+  var fallback = "https://github.com/choimy0204/maplebar/releases/latest";
+  fetch("https://api.github.com/repos/choimy0204/maplebar/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      var a = rel && rel.assets && rel.assets.find(function (x) { return /^MapleBar-Setup-[\d.]+\.exe$/i.test(x.name); });
+      var url = a ? a.browser_download_url : fallback;
+      document.getElementById("link").href = url;
+      if (a) document.getElementById("msg").textContent = a.name + " · 잠시 뒤 다운로드가 시작돼요.";
+      location.href = url;
+    })
+    .catch(function () { location.href = fallback; });
+})();
+</script>
+</body>
+</html>
