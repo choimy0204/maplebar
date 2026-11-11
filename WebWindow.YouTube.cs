@@ -38,7 +38,9 @@ public partial class WebWindow
         html.mbs #shorts-player video{object-fit:contain!important}`;
         const add=()=>{if(document.getElementById('mbVid'))return;const s=document.createElement('style');s.id='mbVid';s.textContent=css;(document.head||document.documentElement).appendChild(s)};
         let last='',navAt=0,userAt=0;const tick=()=>{const r=document.documentElement;if(!r)return;add();const p=location.pathname,w=p==='/watch',s=p.startsWith('/shorts');
-        r.classList.toggle('mbv',w);r.classList.toggle('mbs',s);const k=p+location.search;if(k!==last){last=k;navAt=Date.now();setTimeout(()=>dispatchEvent(new Event('resize')),300);setTimeout(()=>dispatchEvent(new Event('resize')),1500)}};
+        r.classList.toggle('mbv',w);r.classList.toggle('mbs',s);
+        if(s){const sp=document.getElementById('shorts-player');for(let e=sp&&sp.parentElement;e&&e!==document.body;e=e.parentElement){const t=e.style;t.setProperty('transform','none','important');t.setProperty('filter','none','important');t.setProperty('contain','none','important');t.setProperty('will-change','auto','important');t.setProperty('perspective','none','important')}}
+        const k=p+location.search;if(k!==last){last=k;navAt=Date.now();setTimeout(()=>dispatchEvent(new Event('resize')),300);setTimeout(()=>dispatchEvent(new Event('resize')),1500)}};
         tick();document.addEventListener('DOMContentLoaded',tick);addEventListener('yt-navigate-finish',tick);setInterval(tick,700);
         addEventListener('pointerdown',()=>userAt=Date.now(),true);addEventListener('keydown',e=>{if(!/^Arrow/.test(e.key))userAt=Date.now()},true);
         let lt=-1,same=0;setInterval(()=>{if(!location.pathname.startsWith('/shorts'))return;
