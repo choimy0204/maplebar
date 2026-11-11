@@ -78,6 +78,9 @@ public class Settings
     public int WebtoonSpeed { get; set; } = 900;
     public int WebtoonNextKey { get; set; } // 다음 화
     public int WebtoonPrevKey { get; set; } // 이전 화
+    // 유튜브 재생 창의 쇼츠: 한 번 누르면 다음·이전 쇼츠로
+    public int ShortsNextKey { get; set; }
+    public int ShortsPrevKey { get; set; }
 
     static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar");

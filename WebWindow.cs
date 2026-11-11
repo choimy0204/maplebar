@@ -28,13 +28,16 @@ public partial class WebWindow : Form
     readonly Settings settings;
     readonly TitleStrip grip;
     // 어떤 사이트 창인지: 주소를 바꿀 때마다 한 번 정해 두고, 매번 주소를 다시 풀지 않는다
-    enum SiteKind { Other, Webtoon, Music, Coordi }
+    enum SiteKind { Other, Webtoon, Music, Coordi, YouTube, YouTubePlayer, YouTubeComments }
     string startUrlValue = "";
     SiteKind kind;
     /// <summary>창이 연(또는 이어서 열) 주소. 바꾸면 kind도 같이 바뀐다.</summary>
     string startUrl { get => startUrlValue; set { startUrlValue = value; kind = KindOf(value); } }
     static SiteKind KindOf(string url) =>
-        Webtoon.IsWebtoon(url) ? SiteKind.Webtoon : Coordi.IsCoordi(url) ? SiteKind.Coordi : Music.IsMusic(url) ? SiteKind.Music : SiteKind.Other;
+        Webtoon.IsWebtoon(url) ? SiteKind.Webtoon :
+        YouTube.IsComments(url) ? SiteKind.YouTubeComments :
+        YouTube.IsVideo(url) ? SiteKind.YouTubePlayer : YouTube.IsYouTube(url) ? SiteKind.YouTube :
+        Coordi.IsCoordi(url) ? SiteKind.Coordi : Music.IsMusic(url) ? SiteKind.Music : SiteKind.Other;
 
     /// <summary>"아델 | 캐릭터정보 - 환산주스탯"을 닉네임·페이지로 나눠 그리는 제목 줄.</summary>
     sealed class TitleStrip : Panel
@@ -153,6 +156,7 @@ public partial class WebWindow : Form
         alphaBar.Changed += v => SetAlpha(v);
         new ToolTip().SetToolTip(alphaBar, "투명도");
         grip.Controls.Add(alphaBar); alphaBar.BringToFront();
+        if (KindOf(url) == SiteKind.YouTubePlayer) { AddCommentsButton(); StartBare(); }
         if (Music.IsMusic(url))
         {
             // 뮤직 창: 곡 정보를 1초마다 읽어 바에 알린다
@@ -198,6 +202,7 @@ public partial class WebWindow : Form
         int W(int v) => (int)Math.Round(v * ws);
         int w = Math.Min(W(tall ? 460 : 420), wa.Width);
         int h = tall ? Math.Max(Math.Min(W(560), wa.Height), wa.Height - S(40)) : Math.Min(W(560), wa.Height);
+        if (KindOf(url) == SiteKind.YouTubePlayer) { var ps = PlayerSize(YouTube.IsShorts(url), wa); w = ps.Width; h = ps.Height; }
 
         Point p;
         if (open.Count > 0)
@@ -271,6 +276,7 @@ public partial class WebWindow : Form
                     "n.style.setProperty('display','none','important');el.dataset.mbPromo='1';break}}}}catch(e){}};" +
                     "setInterval(promo,700)})();");
             }
+            else if (kind is SiteKind.YouTube or SiteKind.YouTubePlayer or SiteKind.YouTubeComments) await InitYouTube(cw); // 유튜브는 광고를 막지 않는다
             else if (kind != SiteKind.Music) await BlockAds(cw, env); // 숨김 스크립트 등록이 끝난 뒤에 페이지를 연다
             else
             {
@@ -293,7 +299,8 @@ public partial class WebWindow : Form
                     return;
                 }
                 if (Music.IsMusic(e.Uri) && ShowMusic(e.Uri)) return;
-                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
+                if (YouTube.IsVideo(e.Uri)) { ShowYouTube(e.Uri, settings, sc); return; }
+                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri) || YouTube.IsYouTube(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
                 else OpenExternal(e.Uri);
             };
             cw.DocumentTitleChanged += (_, _) => { Text = cw.DocumentTitle; grip.Invalidate(); };

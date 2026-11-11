@@ -266,6 +266,8 @@ public class BarForm : Form
             WebWindow.EnsureMusic(settings, sc, path, true); // 내 목록(로그인 필요)은 창으로 연다
             return;
         }
+        // 유튜브 영상·쇼츠는 재생 창 하나에서 바꿔 가며 본다
+        if (YouTube.IsVideo(path)) { WebWindow.ShowYouTube(path, settings, sc); return; }
         try { new WebWindow(path.StartsWith("http") ? path : SiteMenu.Base + path, settings, sc).Show(); }
         catch (Exception ex)
         {

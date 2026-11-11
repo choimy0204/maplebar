@@ -76,6 +76,14 @@ public static class SiteMenu
             I("드레스룸", Coordi.Base + "/dressing-room"), I("드레스룸 v2", Coordi.Base + "/dressing-room/v2"),
             I("코디 분석", Coordi.Base + "/analysis/coordi"), I("룩북", Coordi.Base + "/lookbook"),
         }),
+        // 유튜브 (영상·쇼츠는 재생 창 하나에서 연다. 로그인은 사용자가 직접 한다)
+        new("▶ 유튜브", null, new[]
+        {
+            H("유튜브"),
+            I("유튜브 홈", YouTube.Home), I("쇼츠", YouTube.Shorts),
+            H("계정"),
+            I("구글 로그인", YouTube.LoginUrl),
+        }),
         // 메애기 메이플 뮤직 (사이트의 플레이어로 듣는다. 창 하나를 같이 쓴다)
         new("🎵 뮤직", null, new[]
         {

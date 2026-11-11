@@ -4,7 +4,7 @@
 #define AppName "메이플 바"
 ; 깃허브 빌드는 /DAppVer=로 버전을 넘긴다
 #ifndef AppVer
-#define AppVer "1.0.6"
+#define AppVer "1.0.7"
 #endif
 #define AppExe "MapleBar.exe"
 

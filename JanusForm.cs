@@ -41,7 +41,7 @@ sealed class JanusForm : Form
     // 알림 창에는 야누스·룬 칸만, 웹툰 키 창에는 웹툰 칸만 있다 (없는 칸은 null)
     readonly bool toon;
     readonly RoundLabel? janusKey, npcKey, upKey, downKey;
-    RoundLabel? nextKey, prevKey, dopeKey;
+    RoundLabel? nextKey, prevKey, dopeKey, shortsNextKey, shortsPrevKey;
     Label? dopeStatus;
     // 버프 칸마다: 키 칸, 상태 줄 (버프 창이 아니면 비어 있다)
     readonly RoundLabel?[] buffKeys = new RoundLabel?[JanusWatch.BuffSlots];
@@ -69,8 +69,8 @@ sealed class JanusForm : Form
         Font = F(10);
         DoubleBuffered = true;
 
-        // 알림 창은 두 줄(야누스·룬 | 버프·도핑)이라 넓게
-        int pad = S(18), W = toon ? S(372) : pad * 2 + S(352) * 2 + S(28), y = S(14);
+        // 알림 창은 세 줄(야누스·룬 | 버프 | 도핑)로 옆으로 펼쳐 세로를 줄인다
+        int pad = S(18), W = toon ? S(372) : pad * 2 + S(352) * 3 + S(28) * 2, y = S(14);
 
         // 머리: 제목과 닫기. 빈 곳을 끌면 창이 움직인다
         var title = new Label { Text = toon ? "웹툰 키" : "알림 설정", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
@@ -151,12 +151,9 @@ sealed class JanusForm : Form
             y += MakeBuffCard(rx, y, colW, i).Height + S(10);
         int rightEnd = y;
 
-        // 도핑은 더 짧은 줄 아래에 붙여 창이 세로로 너무 길어지지 않게 한다
-        bool dopeLeft = leftEnd <= rightEnd;
-        int dx = dopeLeft ? lx : rx;
-        y = dopeLeft ? leftEnd : rightEnd;
-        y += S(6);
-        y += Section("부스트 도핑", JanusWatch.DopeMain, dx, y, colW);
+        // 도핑은 세 번째 줄에 둔다
+        int dx = rx + colW + gap;
+        y = top + Section("부스트 도핑", JanusWatch.DopeMain, dx, top, colW);
         var dopeCard = MakeCard(dx, y, colW, new CardSpec
         {
             Color = JanusWatch.DopeMain, Title = "부스트 도핑", On = st.DopeOn, SetOn = v => st.DopeOn = v,
@@ -169,10 +166,11 @@ sealed class JanusForm : Form
         }, out var dk, out var ds);
         dopeKey = dk; dopeStatus = ds;
         y += dopeCard.Height + S(10);
-        y = Math.Max(y, dopeLeft ? rightEnd : leftEnd);
+        y = Math.Max(y, Math.Max(leftEnd, rightEnd));
 
-        // 두 줄 사이 세로선
-        Controls.Add(new Panel { BackColor = Color.FromArgb(225, 225, 230), Bounds = new Rectangle(pad + colW + gap / 2, top + S(4), Math.Max(1, S(1)), y - top - S(14)) });
+        // 줄 사이 세로선
+        for (int c = 1; c <= 2; c++)
+            Controls.Add(new Panel { BackColor = Color.FromArgb(225, 225, 230), Bounds = new Rectangle(pad + colW * c + gap * (c - 1) + gap / 2, top + S(4), Math.Max(1, S(1)), y - top - S(14)) });
         }
 
         var foot = new Label
@@ -369,6 +367,8 @@ sealed class JanusForm : Form
         down = Pill("아래로 키", 5);
         nextKey = Pill("다음 화 키", 6);
         prevKey = Pill("이전 화 키", 7);
+        shortsNextKey = Pill("쇼츠 다음 키", 10);
+        shortsPrevKey = Pill("쇼츠 이전 키", 11);
 
         // 속도: − 값 +
         card.Controls.Add(RowLabel("속도", ip, cy));
@@ -383,7 +383,8 @@ sealed class JanusForm : Form
         var tip = new Label
         {
             Text = "바 메뉴의 '웹툰'으로 연 창에서, 키를 누르고 있는 동안 부드럽게 쭉 내려가거나 올라가요. 다음 화·이전 화 키는 한 번 누르면 한 화씩 넘어가요. " +
-                   "웹툰 창이나 메이플 창이 앞에 있을 때 동작해요. 유료분은 '네이버 로그인'으로 직접 로그인해서 보세요.",
+                   "웹툰 창이나 메이플 창이 앞에 있을 때 동작해요. 유료분은 '네이버 로그인'으로 직접 로그인해서 보세요.\n" +
+                   "쇼츠 키는 바 메뉴의 '유튜브' 재생 창에 쇼츠가 떠 있을 때, 한 번 누르면 다음·이전 쇼츠로 넘어가요. 재생 창이나 메이플 창이 앞에 있을 때 동작해요.",
             Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy),
         };
         card.Controls.Add(tip);
@@ -552,6 +553,8 @@ sealed class JanusForm : Form
         Style(downKey, 5, st.WebtoonDownKey);
         Style(nextKey, 6, st.WebtoonNextKey);
         Style(prevKey, 7, st.WebtoonPrevKey);
+        Style(shortsNextKey, 10, st.ShortsNextKey);
+        Style(shortsPrevKey, 11, st.ShortsPrevKey);
         for (int i = 0; i < JanusWatch.BuffSlots; i++) Style(buffKeys[i], 20 + i, st.Buffs[i].Key);
         Style(dopeKey, 9, st.DopeKey);
     }
@@ -629,6 +632,8 @@ sealed class JanusForm : Form
                     case 5: st.WebtoonDownKey = vk; break;
                     case 6: st.WebtoonNextKey = vk; break;
                     case 7: st.WebtoonPrevKey = vk; break;
+                    case 10: st.ShortsNextKey = vk; break;
+                    case 11: st.ShortsPrevKey = vk; break;
                     case >= 20 and < 20 + JanusWatch.BuffSlots: st.Buffs[capturing - 20].Key = vk; break;
                     case 9: st.DopeKey = vk; break;
                 }
