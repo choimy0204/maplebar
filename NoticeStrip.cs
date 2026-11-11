@@ -220,6 +220,7 @@ public sealed class NoticeStrip : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         tick.Dispose();
+        tagFont.Dispose(); titleFont.Dispose(); subFont.Dispose();
         base.OnFormClosed(e);
     }
 

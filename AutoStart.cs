@@ -16,7 +16,8 @@ static class AutoStart
     public const string Arg = "--startup";
 
     /// <summary>등록돼 있는지 (켤 때 한 번 확인하고, 바꿀 때마다 맞춘다)</summary>
-    public static bool On { get; private set; }
+    static volatile bool on; // 백그라운드 스레드에서 바꾸고 화면 스레드에서 읽는다
+    public static bool On { get => on; private set => on = value; }
 
     static string Exe => Environment.ProcessPath ?? Application.ExecutablePath;
 
@@ -62,7 +63,8 @@ static class AutoStart
 
     static bool Register()
     {
-        string user = WindowsIdentity.GetCurrent().Name;
+        string user;
+        using (var me = WindowsIdentity.GetCurrent()) user = me.Name;
         string xml = $"""
             <?xml version="1.0" encoding="UTF-16"?>
             <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -110,9 +112,12 @@ static class AutoStart
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var errTask = p.StandardError.ReadToEndAsync();
-        string output = p.StandardOutput.ReadToEnd();
+        // 출력도 따로 읽어서, schtasks가 멈춰도 10초 뒤에는 돌아온다
+        var outTask = p.StandardOutput.ReadToEndAsync();
+        if (!p.WaitForExit(10000)) { try { p.Kill(); } catch { } outTask.Wait(1000); return (-1, Done(outTask)); }
+        outTask.Wait(5000);
         errTask.Wait(5000);
-        if (!p.WaitForExit(10000)) { try { p.Kill(); } catch { } return (-1, output); }
-        return (p.ExitCode, output);
+        return (p.ExitCode, Done(outTask));
+        static string Done(Task<string> t) => t.IsCompletedSuccessfully ? t.Result : "";
     }
 }

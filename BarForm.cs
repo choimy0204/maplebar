@@ -309,13 +309,15 @@ public class BarForm : Form
     int menusOpen; // 바의 메뉴가 열려 있는 동안은 바를 맨 위로 올리지 않는다 (메뉴가 바 뒤로 숨지 않게)
 
     /// <summary>메뉴를 바 아래에 조금 띄워서 연다.</summary>
+    // 바 아래 메뉴는 열 때마다 글꼴까지 새로 만드니, 닫히면 둘 다 치운다
+    static void DisposeMenu(ContextMenuStrip cms) { var f = cms.Font; cms.Dispose(); f.Dispose(); }
     void ShowBelowBar(ContextMenuStrip cms, Control anchor)
     {
         // 열린 메뉴의 버튼을 다시 누르면: 누르는 순간 메뉴가 먼저 닫히므로, 여기서 다시 열지 않고 끝낸다
         if (closedByAnchor == anchor && Environment.TickCount64 - closedAt < 800)
         {
             closedByAnchor = null;
-            BeginInvoke(cms.Dispose);
+            BeginInvoke(() => DisposeMenu(cms));
             return;
         }
         cms.Opened += (_, _) => menusOpen++;
@@ -325,6 +327,7 @@ public class BarForm : Form
             bool onAnchor = anchor.ClientRectangle.Contains(anchor.PointToClient(Cursor.Position));
             closedByAnchor = e.CloseReason == ToolStripDropDownCloseReason.AppClicked && onAnchor ? anchor : null;
             closedAt = Environment.TickCount64;
+            BeginInvoke(() => DisposeMenu(cms));
         };
         // 화면 오른쪽을 넘으면 윈도우가 알아서 안쪽으로 옮긴다
         cms.Show(new Point(anchor.PointToScreen(Point.Empty).X, Bottom + S(8)));
@@ -402,7 +405,6 @@ public class BarForm : Form
         cms.Items.Add("바 숨기기 (Ctrl+Alt+M)", null, (_, _) => HideAll());
         cms.Items.Add(AlertWhenHiddenItem());
         cms.Items.Add(AutoStartItem());
-        cms.Closed += (_, _) => BeginInvoke(cms.Dispose);
         ShowBelowBar(cms, anchor);
     }
 
@@ -710,7 +712,9 @@ public class BarForm : Form
             ? CreateRoundRectRgn(PeekRect.Left, 0, PeekRect.Right + 1, PeekH + 1, PeekH, PeekH)
             : CreateRoundRectRgn(0, 0, Width + 1, h + 1, S(14), S(14));
         if (peek != null) peek.Bounds = PeekRect;
+        var oldRegion = Region;
         Region = Region.FromHrgn(rgn);
+        oldRegion?.Dispose(); // 창은 새 모양을 쓰므로 지난 모양은 치운다
         DeleteObject(rgn);
     }
 

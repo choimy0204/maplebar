@@ -161,6 +161,7 @@ sealed class MusicDock
         overAt = -1;
         tick.Stop();
         fx.Hide();
+        fxBmp?.Dispose(); fxBmp = null; // 다음 효과 때 다시 만든다 (창은 그림을 복사해 갔다)
     }
 
     // ── 떨어져 나오기 ──

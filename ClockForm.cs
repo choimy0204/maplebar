@@ -320,6 +320,7 @@ sealed class ClockForm : Form
         {
             tick.Dispose(); bmp?.Dispose();
             bigFont.Dispose(); smallFont.Dispose(); secFont.Dispose(); dateFont.Dispose();
+            var menuFont = ContextMenuStrip?.Font; ContextMenuStrip?.Dispose(); menuFont?.Dispose(); // 폼이 메뉴를 대신 치워 주지 않는다
         }
         base.Dispose(disposing);
     }

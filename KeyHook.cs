@@ -20,7 +20,8 @@ static class KeyHook
     static HookProc? proc; // 가비지 수집으로 사라지지 않게 잡아 둔다
 
     /// <summary>윈도우에서 키 알림을 받고 있는지. 아니면 예전처럼 들여다보는 방식을 쓴다.</summary>
-    public static bool Active { get; private set; }
+    static volatile bool active; // 키 스레드에서 바꾸고 화면 스레드에서 읽는다
+    public static bool Active { get => active; private set => active = value; }
 
     public static void Start()
     {
@@ -31,7 +32,8 @@ static class KeyHook
             proc = Callback;
             hook = SetWindowsHookEx(13 /* WH_KEYBOARD_LL */, proc, GetModuleHandle(null), 0);
             Active = hook != IntPtr.Zero;
-            ready.Set();
+            // 2초 안에 못 오면 부른 쪽은 이미 기다림을 끝내고 ready를 치웠다
+            try { ready.Set(); } catch (ObjectDisposedException) { }
             if (!Active) return;
             // 알림은 이 스레드의 메시지 줄로 온다. 화면 스레드가 바빠도 여기서는 바로 받는다
             while (GetMessage(out _, IntPtr.Zero, 0, 0) > 0) { }

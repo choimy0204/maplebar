@@ -55,7 +55,8 @@ static class Thumbs
         float w = img.Width * s, h = img.Height * s;
         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
         g.DrawImage(img, r.Left + (r.Width - w) / 2, r.Top + (r.Height - h) / 2, w, h);
-        g.Clip = old;
+        g.Clip = old; // Graphics가 복사해 가므로 원래 것은 치운다
+        old.Dispose();
     }
 }
 
@@ -284,6 +285,12 @@ public sealed class MusicPill : Control
         else if (h == 5) WebWindow.MusicMode("rep");
         else if (h == 3) TitleClick?.Invoke();
     }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { titleFont.Dispose(); noteFont.Dispose(); tip.Dispose(); oneFont?.Dispose(); }
+        base.Dispose(disposing);
+    }
 }
 
 /// <summary>
@@ -493,6 +500,12 @@ public sealed class VolumeDial : Form
             return cp;
         }
     }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { watch.Dispose(); pctFont.Dispose(); capFont.Dispose(); }
+        base.Dispose(disposing);
+    }
 }
 
 /// <summary>바 아래에 뜨는 곡 목록: 인기 TOP 100 / 검색. 곡을 누르면 숨은 메애기 창에서 재생한다.</summary>
@@ -577,7 +590,7 @@ public sealed class MusicPicker : Form
             int i = list.IndexFromPoint(e.Location);
             if (i < 0 || i >= songs.Count) return;
             list.SelectedIndex = i;
-            await WebWindow.MusicPlayAsync(i);
+            try { await WebWindow.MusicPlayAsync(i); } catch { } // async void라 예외가 새면 앱이 꺼진다
         };
         list.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) Hide(); };
 
@@ -685,5 +698,14 @@ public sealed class MusicPicker : Form
             cp.ClassStyle |= CS_DROPSHADOW;    // 그림자
             return cp;
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        // 글꼴은 자식 컨트롤이 치워지고 나서 치운다
+        Font[] fonts = disposing ? new[] { box.Font, list.Font, status.Font } : Array.Empty<Font>();
+        base.Dispose(disposing);
+        foreach (var f in fonts) f.Dispose();
+        if (disposing) { bold.Dispose(); small.Dispose(); }
     }
 }
