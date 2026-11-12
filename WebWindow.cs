@@ -282,6 +282,8 @@ public partial class WebWindow : Form
             {
                 string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
                 if (m == "mb:close" && !IsDisposed) BeginInvoke(() => { if (!IsDisposed) Close(); });
+                // 브금 랜덤 재생이 고른 곡이 지금 화면에 없으면 앱이 찾아서 튼다
+                else if (m != null && m.StartsWith("mb:play:") && kind == SiteKind.Music && !yt && !IsDisposed) _ = PlayFromPage(m[8..]);
             };
             // 숨은 뮤직 창은 화면에 안 보이니 광고를 건드리지 않는다
             if (kind == SiteKind.Webtoon) await cw.AddScriptToExecuteOnDocumentCreatedAsync(ScrollScript);

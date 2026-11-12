@@ -152,7 +152,7 @@ public class BarForm : Form
         musicPill.TitleClick += () =>
         {
             if (WebWindow.MusicIsYt) WebWindow.ToggleMusicWindow();
-            else MusicPicker.Open(this, settings, sc, false);
+            else MusicPicker.Toggle(this, settings, sc);
         };
         var menu = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 9.5f * UI.Z), ShowImageMargin = false });
         var top100 = menu.Items.Add("인기 TOP 100", null, (_, _) => MusicPicker.Open(this, settings, sc, false));
@@ -184,6 +184,18 @@ public class BarForm : Form
         right.Controls.Add(musicPill);
         musicDock = new MusicDock(this, right, musicPill, settings, sc, LayoutBar, () => new Rectangle(Left, Top, Width, Math.Max(S(10), VisibleBottom - Top)));
         WebWindow.MusicChanged += OnMusicChanged;
+        // 칸이 들어오고 나가거나 폭·화면 배율이 바뀌면 바 폭을 다시 맞춘다 (가운데에 빈칸이 남지 않게)
+        EventHandler fit = (_, _) =>
+        {
+            if (fitPending || !IsHandleCreated || IsDisposed) return;
+            fitPending = true;
+            BeginInvoke(() => { fitPending = false; if (!IsDisposed) LayoutBar(); });
+        };
+        left.Layout += (s, e) => fit(s, e);
+        right.Layout += (s, e) => fit(s, e);
+        Resize += fit;
+        // 바를 다시 만들었을 때: 멈춰 있는 곡은 알림이 안 오니 지금 곡을 바로 보여 준다
+        Shown += (_, _) => { if (WebWindow.CurrentMusic is { } cm) OnMusicChanged(cm); };
     }
 
     void OnMusicChanged(WebWindow.MusicInfo? m)
@@ -620,6 +632,7 @@ public class BarForm : Form
         if (p != Location) Location = p;
     }
 
+    bool fitPending;
     void LayoutBar()
     {
         int rowH = ClientSize.Height - Padding.Vertical;
@@ -695,7 +708,7 @@ public class BarForm : Form
         foldTimer.Start();
         StartInvenWatch();
         UpdateCheck.StartWatching(); // 켜져 있는 동안 새 버전이 나오면 물어본다
-        RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
+        if (!Program.Rebuilt) RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
     }
 
     /// <summary>글자 왼쪽에 빨간 둥근 칸 속 흰 재생 세모를 그린다 (유튜브 메뉴)</summary>
@@ -757,11 +770,13 @@ public class BarForm : Form
         };
     }
 
+    RegisteredWaitHandle? showWait;
+
     void ListenForSecondLaunch()
     {
         // 메이플 바를 또 실행하면 (숨어 있던) 바를 앞으로 불러온다
         if (Program.ShowEvent is { } ev)
-            ThreadPool.RegisterWaitForSingleObject(ev, (_, _) =>
+            showWait = ThreadPool.RegisterWaitForSingleObject(ev, (_, _) =>
             {
                 if (IsDisposed || !IsHandleCreated) return;
                 try { BeginInvoke(() => { WindowState = FormWindowState.Normal; ShowAll(); }); } catch { }
@@ -1014,6 +1029,24 @@ public class BarForm : Form
         if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
         clock?.Close(); clock = null;
         base.OnFormClosing(e);
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        // 바를 다시 만들 때 옛 바의 일이 계속 돌지 않게 멈춘다
+        showWait?.Unregister(null);
+        foreach (var t in new[] { gameTimer, chipTimer, keepTop, foldTimer, megaTimer }) t.Stop();
+        janus?.Stop();
+        inven?.Stop();
+        lyrics?.Close(); lyrics = null;
+        // 바에 딸린 작은 창(뮤직 카드·곡 목록·소리 조절 등)은 닫는다. 사이트 창·뮤직 창은 그대로 둔다
+        if (Program.RestartRequested)
+        {
+            NoticeStrip.CloseAll();
+            foreach (var f in Application.OpenForms.Cast<Form>().ToList())
+                if (f != this && f is not WebWindow && f is not UpdateWindow && f.Owner is not WebWindow) f.Close();
+        }
+        base.OnFormClosed(e);
     }
 
     void PaintSearchBorder(object? sender, PaintEventArgs e)

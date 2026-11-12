@@ -5,7 +5,11 @@ static partial class WebScripts
 {
     // 재생 바에서 곡 정보를 읽고 버튼(0 이전, 1 재생/일시정지, 2 다음)을 누르는 함수
     public const string MusicScript =
-        "(()=>{const P='div.fixed.left-0.bottom-0.w-full';" +
+        // 메애기 화면에서 찾는 것들. 사이트 화면이 바뀌면 여기만 고친다
+        // bar 아래 재생 바, row 곡 한 줄, btn 줄 안의 재생 칸(썸네일), title·sub 줄 안의 제목·지역, search 검색 칸의 안내 글
+        "(()=>{const S={bar:'div.fixed.left-0.bottom-0.w-full',row:'div.group.flex.items-center.gap-2',btn:':scope>div.relative.cursor-pointer'," +
+        "title:'div.text-sm',sub:'div.text-xs',search:'노래 검색'};const P=S.bar;" +
+        "const T=(x,q)=>{const e=x.querySelector(q);return e?e.textContent.trim():''};" +
         // 소리 크기는 바에서 정한 값을 계속 쓴다 (0~1, 이 사이트에만 저장)
         "let V=parseFloat(localStorage.getItem('mbVol'));if(isNaN(V))V=1;" +
         // 반복(REP): 지금 곡을 계속 다시 튼다. 랜덤(SHUF): 곡이 끝나거나 다음을 누르면 지금 목록에서 아무 곡이나 튼다.
@@ -36,32 +40,56 @@ static partial class WebScripts
         "const v=(Math.random()*2-1)*0.022*(0.8+0.2*Math.sin(2*Math.PI*0.55*tt))+p;lp+=(v-lp)*0.28;" +
         "cd[i]=lp*Math.min(1,tt/0.04)*Math.min(1,(cd.length-i)/(sr*0.5))}" +
         "const cs=AC.createBufferSource();cs.buffer=cl;cs.connect(M);cs.start(t+0.92)}catch(e){}};" +
-        "const fadeIn=(a,wait)=>{clearInterval(fade);clearTimeout(fadeWait);let k=0;a.volume=0;" +
-        "fadeWait=setTimeout(()=>{try{a.currentTime=0}catch(e){}fade=setInterval(()=>{k=Math.min(1,k+0.08);try{a.volume=V*k}catch(e){}if(k>=1)clearInterval(fade)},70)},wait*1000)};" +
+        // 서서히 키우기는 타이머 대신 곡의 재생 시각 알림(timeupdate)에 맞춰 한다.
+        // 숨은 창에서는 타이머가 1분씩 밀려 소리가 0인 채로 멈춘 것처럼 들릴 수 있다
+        // 오디오가 페이지에 붙어 있지 않을 수 있어 알림은 오디오에 직접 걸고, 앱이 1초마다 부르는 mbState에서도 한 번 더 맞춘다
+        "const fadeStep=()=>{const f=fade;if(!f)return;const a=f.a,n=Date.now();if(n<f.at){a.volume=0;return}" +
+        "if(f.reset){f.reset=false;try{a.currentTime=0}catch(_){}}const k=Math.min(1,(n-f.at)/900);try{a.volume=V*k}catch(_){}if(k>=1)fade=null};" +
+        "const fadeIn=(a,wait)=>{a.volume=0;fade={a,at:Date.now()+wait*1000,reset:true};" +
+        "if(!a.__mbF){a.__mbF=1;a.addEventListener('timeupdate',fadeStep)}setTimeout(fadeStep,wait*1000+50)};" +
         "const op=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){window.__mbA=this;" +
         "const src=this.currentSrc||this.src||'';const isNew=src&&src!==lastSrc;if(src)lastSrc=src;" +
         // 레코드 소리는 5초 쿨타임: 쿨타임 중에 또 넘기면 소리 없이 바로 틀고 쿨타임을 다시 5초부터 센다
         "try{this.loop=REP;if(isNew&&FX){const now=Date.now(),cool=now-fxAt<5000;fxAt=now;" +
-        "if(cool){clearInterval(fade);clearTimeout(fadeWait);this.volume=V}else{vinyl();fadeIn(this,FXLEN)}}else this.volume=V}catch(e){}return op.apply(this,arguments)};" +
+        "if(cool){fade=null;this.volume=V}else{vinyl();fadeIn(this,FXLEN)}}else this.volume=V}catch(e){}return op.apply(this,arguments)};" +
         "window.mbSetFx=v=>{FX=!!v};" +
         "window.mbMode=m=>{if(m==='rep'){REP=!REP;localStorage.setItem('mbRep',REP?'1':'0');const a=window.__mbA;if(a)a.loop=REP}else{SHUF=!SHUF;localStorage.setItem('mbShuf',SHUF?'1':'0')}};" +
-        "const rnd=()=>{const r=R();if(!r.length)return false;const st=window.mbState&&window.mbState();const cur=st?st.t:'';let i=0,n=0;" +
-        "do{i=Math.floor(Math.random()*r.length);n++}while(n<10&&r.length>1&&((r[i].querySelector('div.text-sm')||{}).textContent||'').trim()===cur);return window.mbPlay(i)};" +
+        // 랜덤으로 고를 곡 묶음 (POOL): 사용자가 마지막으로 곡을 고른 목록. 없으면 지금 화면의 목록에서 고른다.
+        // 고른 곡이 지금 화면에 없으면 앱에 알려서 찾아 틀게 한다 (mb:play)
+        "let POOL=null;window.mbPool=a=>{POOL=Array.isArray(a)&&a.length?a:null};" +
+        "const rnd=()=>{const st=window.mbState&&window.mbState();const cur=st?st.t:'';" +
+        "const pool=POOL||R().map(x=>({t:T(x,S.title),s:T(x,S.sub)}));if(!pool.length)return false;let c,n=0;" +
+        "do{c=pool[Math.floor(Math.random()*pool.length)];n++}while(n<10&&pool.length>1&&c.t===cur);" +
+        "if(window.mbPlay(c.t,c.s))return true;if(!POOL)return false;" +
+        "try{chrome.webview.postMessage('mb:play:'+JSON.stringify(c));return true}catch(e){return false}};" +
         // 곡이 끝났을 때 사이트의 '다음 곡'보다 먼저 받아서 랜덤 곡을 튼다
         "window.addEventListener('ended',e=>{if(SHUF&&!REP&&rnd())e.stopImmediatePropagation()},true);" +
         "window.mbVol=v=>{V=Math.min(1,Math.max(0,v));try{localStorage.setItem('mbVol',V)}catch(e){}const a=window.__mbA;if(a)a.volume=V;return V};" +
-        "window.mbState=()=>{const p=document.querySelector(P);if(!p)return null;const sp=p.querySelectorAll('span.cursor-pointer');" +
+        "window.mbState=()=>{fadeStep();const p=document.querySelector(P);if(!p)return null;const sp=p.querySelectorAll('span.cursor-pointer');" +
         "const tm=[...p.querySelectorAll('span')].find(s=>/\\d+:\\d+ \\/ \\d+:\\d+/.test(s.textContent));const a=window.__mbA;" +
         "return {t:(sp[0]&&sp[0].textContent.trim())||'',s:(sp[1]&&sp[1].textContent.trim())||'',time:tm?tm.textContent.trim():'',playing:!!(a&&!a.paused&&!a.ended),hasA:!!a,vol:V,rep:REP,shuf:SHUF,fx:FX,img:(p.querySelector('img')||{}).src||''}};" +
-        "window.mbCmd=i=>{if(i===2&&SHUF&&rnd())return;const p=document.querySelector(P);const f=p&&p.querySelector('svg');if(!f)return;" +
+        // 사이트의 버튼을 그대로 누른다 (0 이전, 1 재생/일시정지, 2 다음)
+        "const press=i=>{const p=document.querySelector(P);const f=p&&p.querySelector('svg');if(!f)return;" +
         "const b=f.parentElement.querySelectorAll(':scope>svg')[i];if(b)b.dispatchEvent(new MouseEvent('click',{bubbles:true}))};" +
+        "window.mbCmd=i=>{if(i===2&&SHUF&&rnd())return;press(i)};" +
+        // 랜덤 곡을 앱이 못 틀었을 때: 사이트의 다음 곡으로 넘긴다
+        "window.mbNextRaw=()=>press(2);" +
         // 곡 목록 (첫 화면이면 인기 차트 TOP 100만), 곡 재생, 검색, 사이트 안 이동
         "const here=()=>location.pathname.replace(/\\/$/,'');" +
-        "const R=()=>{let r=[...document.querySelectorAll('div.group.flex.items-center.gap-2')].filter(x=>x.querySelector(':scope>div.relative.cursor-pointer img'));return here()==='/music'?r.slice(0,100):r};" +
-        "window.mbList=()=>R().map(x=>{const a=x.querySelector('div.text-sm'),b=x.querySelector('div.text-xs');const im=x.querySelector('img');return {t:a?a.textContent.trim():'',s:b?b.textContent.trim():'',img:im?(im.currentSrc||im.src||''):''}});" +
-        "window.mbPlay=i=>{const r=R()[i];const b=r&&r.querySelector(':scope>div.relative.cursor-pointer');if(!b)return false;b.dispatchEvent(new MouseEvent('click',{bubbles:true}));return true};" +
-        "window.mbSearch=q=>{const inp=[...document.querySelectorAll('input')].find(i=>i.placeholder==='노래 검색');if(!inp)return false;" +
+        // SEEN: 이 주소에서 곡 줄을 한 번이라도 봤는지 (곡 자료가 다 실렸는지 가리는 데 쓴다)
+        "const SEEN={};" +
+        "const R=()=>{let r=[...document.querySelectorAll(S.row)].filter(x=>x.querySelector(S.btn+' img'));if(r.length)SEEN[here()]=1;return here()==='/music'?r.slice(0,100):r};" +
+        "window.mbSeen=()=>{R();return !!SEEN[here()]};" +
+        "window.mbList=()=>R().map(x=>{const im=x.querySelector('img');return {t:T(x,S.title),s:T(x,S.sub),img:im?(im.currentSrc||im.src||''):''}});" +
+        // 순번이 아니라 제목·지역이 같은 줄을 찾아 누른다 (화면의 순서가 바뀌어도 다른 곡이 나오지 않게)
+        "window.mbPlay=(t,s)=>{const r=R().find(x=>T(x,S.title)===t&&T(x,S.sub)===s);const b=r&&r.querySelector(S.btn);if(!b)return false;" +
+        "b.dispatchEvent(new MouseEvent('click',{bubbles:true}));return true};" +
+        "const box=()=>[...document.querySelectorAll('input')].find(i=>i.placeholder===S.search);" +
+        // 검색 칸의 글이 q가 되게 한다 (이미 q면 건드리지 않는다)
+        "window.mbSearch=q=>{const inp=box();if(!inp)return false;if(inp.value===q)return true;" +
         "Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(inp,q);inp.dispatchEvent(new Event('input',{bubbles:true}));return true};" +
+        // 화면에서 무엇을 찾았는지 (못 읽었을 때 까닭을 가린다)
+        "window.mbCheck=()=>({path:here(),ready:document.readyState,bar:!!document.querySelector(S.bar),rows:R().length,search:!!box(),seen:!!SEEN[here()]});" +
         "window.mbGo=p=>{if(here()===p)return 0;const a=[...document.querySelectorAll('a[href]')].find(a=>{try{return new URL(a.href).pathname.replace(/\\/$/,'')===p}catch(e){return false}});" +
         "if(a){a.click();return 1}location.href=p;return 2};" +
         "window.mbHere=()=>here();})();";

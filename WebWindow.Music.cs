@@ -57,6 +57,8 @@ public partial class WebWindow
         _ = MusicWin?.web.CoreWebView2?.ExecuteScriptAsync($"window.mbVol&&window.mbVol({v.ToString(System.Globalization.CultureInfo.InvariantCulture)})");
     /// <summary>곡 정보가 바뀌면 알린다. null이면 뮤직 창이 닫힌 것.</summary>
     public static event Action<MusicInfo?>? MusicChanged;
+    /// <summary>뮤직 창이 마지막으로 알린 곡 (없으면 null).</summary>
+    public static MusicInfo? CurrentMusic => MusicWin?.lastInfo;
     bool reallyClose;
     readonly System.Windows.Forms.Timer musicTimer = new() { Interval = 1000 };
     string lastTime = "";
@@ -102,40 +104,167 @@ public partial class WebWindow
     {
         for (int i = 0; i < 100 && web.CoreWebView2 == null && !IsDisposed; i++) await Task.Delay(100);
         if (web.CoreWebView2 == null || IsDisposed) return null;
-        try { return await web.CoreWebView2.ExecuteScriptAsync(js); } catch { return null; }
+        try { return await web.CoreWebView2.ExecuteScriptAsync(js); }
+        catch (Exception ex) { Log.Write("music", "스크립트 실행 실패", ex); return null; }
     }
 
     public record Song(string Title, string Sub, string Img);
 
-    /// <summary>뒤에 숨은 뮤직 창에서 path 페이지(인기 차트, 검색)의 곡 목록을 읽는다. 노래는 끊기지 않는다.</summary>
-    public static async Task<List<Song>> MusicListAsync(Settings st, float scale, string path, string? query = null)
+    /// <summary>목록 읽기·곡 틀기가 어떻게 끝났는지.</summary>
+    public enum MusicStatus
+    {
+        Ok,
+        /// <summary>검색했는데 맞는 곡이 없다</summary>
+        Empty,
+        /// <summary>틀려는 곡이 사이트 목록에 없다</summary>
+        NotFound,
+        /// <summary>사이트가 제때 응답하지 않았다 (느리거나 연결이 끊김)</summary>
+        Timeout,
+        /// <summary>페이지는 열렸는데 곡 줄·검색 칸을 못 찾았다 (사이트 화면이 바뀐 듯)</summary>
+        PageChanged,
+        /// <summary>뮤직 창이 닫혔다</summary>
+        NoWindow,
+        /// <summary>더 새로운 요청에 밀려 그만뒀다</summary>
+        Canceled,
+    }
+
+    public record MusicList(List<Song> Songs, MusicStatus Status);
+
+    // ── 숨은 뮤직 창은 하나뿐이라, 페이지를 옮기거나 검색하는 일은 한 번에 하나만 한다 ──
+    // 사용자가 새로 누른 일(preempt)은 하던 일을 그만두게 하고 그다음에 돈다. 랜덤 다음 곡 같은 뒷일은 줄만 선다.
+    static readonly SemaphoreSlim musicGate = new(1, 1);
+    static CancellationTokenSource? musicJob;
+
+    static async Task<T> RunMusicJob<T>(Func<CancellationToken, Task<T>> job, T canceled, T failed, bool preempt = true)
+    {
+        var cts = new CancellationTokenSource();
+        if (preempt) { musicJob?.Cancel(); musicJob = cts; }
+        bool entered = false;
+        try
+        {
+            await musicGate.WaitAsync(cts.Token);
+            entered = true;
+            return await job(cts.Token);
+        }
+        catch (OperationCanceledException) { return canceled; }
+        catch (Exception ex) { Log.Write("music", "뮤직 작업 실패", ex); return failed; }
+        finally
+        {
+            if (entered) musicGate.Release();
+            if (musicJob == cts) musicJob = null;
+            cts.Dispose();
+        }
+    }
+
+    static string Js(string s) => System.Text.Json.JsonSerializer.Serialize(s);
+    const string SearchPath = "/music/search";
+
+    /// <summary>ok가 true를 줄 때까지 step(ms)마다 다시 본다. limit(ms)을 넘기면 false.</summary>
+    static async Task<bool> Until(Func<Task<bool>> ok, int limit, int step, CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await ok()) return true;
+            if (sw.ElapsedMilliseconds >= limit) return false;
+            await Task.Delay(step, ct);
+        }
+    }
+
+    /// <summary>
+    /// 뒤에 숨은 뮤직 창에서 path 페이지(인기 차트 /music, 검색 /music/search)의 곡 목록을 읽는다. 노래는 끊기지 않는다.
+    /// 먼저 하던 목록 읽기·곡 틀기가 있으면 그만두게 하고 돈다.
+    /// </summary>
+    public static Task<MusicList> MusicListAsync(Settings st, float scale, string path, string? query = null) =>
+        RunMusicJob(ct => ListCore(st, scale, path, query, ct),
+            new MusicList(new(), MusicStatus.Canceled), new MusicList(new(), MusicStatus.Timeout));
+
+    static async Task<MusicList> ListCore(Settings st, float scale, string path, string? query, CancellationToken ct)
     {
         var w = EnsureMusic(st, scale, Music.Home.Replace("/music", "") + path, false);
-        string p = System.Text.Json.JsonSerializer.Serialize(path);
-        // 페이지가 준비될 때까지 기다리며 옮긴다
-        for (int i = 0; i < 60; i++)
+        bool search = path == SearchPath;
+        // 검색 페이지는 검색어가 없어도 칸을 비워야 한다 (앞서 넣은 검색어가 남아 있으면 그 결과만 보인다)
+        string? q = search ? query ?? "" : null;
+        string p = Js(path);
+
+        // 1) 페이지 옮기기: 2초에 한 번만 옮겨 달라고 하고, 그 사이에는 주소만 본다 (자꾸 옮기면 읽던 페이지가 끊긴다)
+        var asked = Stopwatch.StartNew();
+        bool first = true;
+        bool there = await Until(async () =>
         {
-            var r = await w.Eval($"window.mbGo?(window.mbGo({p}),window.mbHere()):''");
-            if (r == p) break;
-            await Task.Delay(250);
+            if (first || asked.ElapsedMilliseconds >= 2000) { first = false; asked.Restart(); await w.Eval($"window.mbGo&&window.mbGo({p})"); }
+            return await w.Eval("window.mbHere?window.mbHere():''") == p;
+        }, 15000, 200, ct);
+        if (!there) return await w.Fail("페이지 이동", path, q);
+
+        // 2) 검색: 곡 자료가 실린 것을 한 번 본 다음에 검색어를 넣는다 (자료가 오기 전의 0곡을 '결과 없음'으로 잘못 보지 않게)
+        if (!string.IsNullOrEmpty(q) && await w.Eval("window.mbSeen?window.mbSeen():false") != "true")
+        {
+            if (await w.Settle("", false, 10000, ct) == null) return await w.Fail("곡 자료 기다리기", path, q);
         }
-        if (query != null)
+
+        // 3) 목록 읽기: 같은 목록이 세 번 이어서 읽히면 다 그려진 것으로 본다
+        var list = await w.Settle(q, !string.IsNullOrEmpty(q), search ? 8000 : 10000, ct);
+        if (list == null) return await w.Fail("목록 읽기", path, q);
+        return new MusicList(list, list.Count > 0 ? MusicStatus.Ok : MusicStatus.Empty);
+    }
+
+    /// <summary>
+    /// 검색어(q, 검색 페이지가 아니면 null)를 넣고 목록이 더 바뀌지 않을 때까지 기다려 읽는다.
+    /// allowEmpty가 false면 곡이 한 줄이라도 나올 때까지 기다린다. 제때 안 되면 null.
+    /// </summary>
+    async Task<List<Song>?> Settle(string? q, bool allowEmpty, int limit, CancellationToken ct)
+    {
+        string? last = null;
+        int same = 0;
+        List<Song>? result = null;
+        await Until(async () =>
         {
-            for (int i = 0; i < 40; i++)
-            {
-                if (await w.Eval($"window.mbSearch?window.mbSearch({System.Text.Json.JsonSerializer.Serialize(query)}):false") == "true") break;
-                await Task.Delay(250);
-            }
-            await Task.Delay(900); // 결과가 다시 그려질 때까지
-        }
-        for (int i = 0; i < 40; i++)
-        {
-            var json = await w.Eval("window.mbList?JSON.stringify(window.mbList()):'[]'");
+            // 검색 칸의 글이 q인지 볼 때마다 맞춘다 (페이지가 다시 그려져 지워졌으면 다시 넣는다)
+            if (q != null && await Eval($"window.mbSearch?window.mbSearch({Js(q)}):false") != "true") { same = 0; return false; }
+            var json = await Eval("window.mbList?JSON.stringify(window.mbList()):null");
+            if (string.IsNullOrEmpty(json) || json == "null") { same = 0; return false; }
+            if (json == last) same++; else { last = json; same = 1; }
+            if (same < 3) return false;
             var list = ParseSongs(json);
-            if (list.Count > 0 || (query != null && i >= 4)) return list;
-            await Task.Delay(250);
+            if (list.Count == 0 && !allowEmpty) return false;
+            result = list;
+            return true;
+        }, limit, 150, ct);
+        return result;
+    }
+
+    /// <summary>목록을 못 읽은 까닭을 가려 기록하고 돌려준다.</summary>
+    async Task<MusicList> Fail(string step, string path, string? q)
+    {
+        var status = MusicStatus.Timeout;
+        string? check = null;
+        if (IsDisposed) status = MusicStatus.NoWindow;
+        else
+        {
+            check = await Eval("window.mbCheck?JSON.stringify(window.mbCheck()):null");
+            if (IsDisposed) status = MusicStatus.NoWindow;
+            else
+                try
+                {
+                    var inner = string.IsNullOrEmpty(check) || check == "null" ? null : System.Text.Json.JsonSerializer.Deserialize<string>(check);
+                    if (inner != null)
+                    {
+                        check = inner;
+                        using var doc = System.Text.Json.JsonDocument.Parse(inner);
+                        var e = doc.RootElement;
+                        // 페이지는 다 열렸는데 곡 줄이나 검색 칸이 없으면 사이트 화면이 바뀐 것
+                        bool loaded = e.GetProperty("ready").GetString() == "complete" && e.GetProperty("path").GetString() == path;
+                        bool noRows = e.GetProperty("rows").GetInt32() == 0 && !e.GetProperty("seen").GetBoolean();
+                        bool noBox = path == SearchPath && !e.GetProperty("search").GetBoolean();
+                        if (loaded && (noRows || noBox)) status = MusicStatus.PageChanged;
+                    }
+                }
+                catch (Exception ex) { Log.Write("music", "화면 점검 결과를 읽지 못함", ex); }
         }
-        return new();
+        Log.Write("music", $"{step} 실패 → {status} (path={path}, q={q ?? "-"}, check={check ?? "없음"})");
+        return new MusicList(new(), status);
     }
 
     static List<Song> ParseSongs(string? json)
@@ -151,20 +280,65 @@ public partial class WebWindow
                 list.Add(new Song(e.GetProperty("t").GetString() ?? "", e.GetProperty("s").GetString() ?? "",
                     e.TryGetProperty("img", out var im) ? im.GetString() ?? "" : ""));
         }
-        catch { }
+        catch (Exception ex) { Log.Write("music", "곡 목록 글을 읽지 못함", ex); }
         return list;
     }
 
-    /// <summary>지금 읽어 둔 목록의 i번째 곡을 재생한다.</summary>
-    public static async Task MusicPlayAsync(int i)
+    /// <summary>
+    /// song을 튼다. 지금 페이지에 그 곡이 있으면 바로 누르고, 없으면 path 페이지(검색이면 query로 검색)에서 찾아 누른다.
+    /// pool을 주면 랜덤 재생이 그 곡들 안에서 고른다 (사용자가 곡을 고른 목록).
+    /// </summary>
+    public static Task<MusicStatus> MusicPlayAsync(Settings st, float scale, Song song, string path, string? query,
+        IReadOnlyList<Song>? pool = null, bool preempt = true) =>
+        RunMusicJob(ct => PlayCore(st, scale, song, path, query, pool, ct), MusicStatus.Canceled, MusicStatus.Timeout, preempt);
+
+    static async Task<MusicStatus> PlayCore(Settings st, float scale, Song song, string path, string? query,
+        IReadOnlyList<Song>? pool, CancellationToken ct)
     {
+        static string Click(Song s) => $"window.mbPlay?window.mbPlay({Js(s.Title)},{Js(s.Sub)}):false";
         var w = MusicWin;
-        if (w == null) return;
-        await w.Eval($"window.mbPlay&&window.mbPlay({i})");
-        // 곡은 바뀌었는데 멈춰 있으면 한 번 더 재생을 건다
-        await Task.Delay(1500);
+        string title = song.Title;
+        if (w == null || w.yt || await w.Eval(Click(song)) != "true")
+        {
+            var r = await ListCore(st, scale, path, query, ct);
+            if (r.Status is not (MusicStatus.Ok or MusicStatus.Empty)) return r.Status;
+            w = MusicWin;
+            if (w == null) return MusicStatus.NoWindow;
+            if (await w.Eval(Click(song)) != "true")
+            {
+                // 지역 이름이 바뀌었을 수 있으니 제목만 같은 곡이라도 튼다
+                var alt = r.Songs.FirstOrDefault(x => x.Title == song.Title);
+                if (alt == null || await w.Eval(Click(alt)) != "true")
+                {
+                    Log.Write("music", $"곡을 찾지 못함: {song.Title} / {song.Sub} (path={path}, q={query ?? "-"})");
+                    return MusicStatus.NotFound;
+                }
+            }
+        }
+        if (pool != null)
+            await w.Eval($"window.mbPool&&window.mbPool({System.Text.Json.JsonSerializer.Serialize(pool.Select(x => new { t = x.Title, s = x.Sub }))})");
+
+        // 재생 바의 제목이 그 곡으로 바뀔 때까지 지켜본다. 바뀌었는데 멈춰 있으면 한 번 더 재생을 건다
+        string want = Js(title);
+        await Until(async () => await w.Eval("(()=>{const s=window.mbState&&window.mbState();return s?s.t:''})()") == want, 3000, 200, ct);
+        await Task.Delay(400, ct);
         await w.Eval("(()=>{const a=window.__mbA;if(a&&a.paused&&!a.ended)a.play().catch(()=>{})})()");
         _ = w.PollSoon();
+        return MusicStatus.Ok;
+    }
+
+    /// <summary>페이지의 랜덤 재생이 고른 곡이 지금 화면에 없을 때 (mb:play): 검색으로 찾아 튼다. 못 틀면 사이트의 다음 곡으로 넘긴다.</summary>
+    async Task PlayFromPage(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var song = new Song(doc.RootElement.GetProperty("t").GetString() ?? "", doc.RootElement.GetProperty("s").GetString() ?? "", "");
+            if (song.Title == "") return;
+            var r = await MusicPlayAsync(settings, sc, song, SearchPath, song.Title, null, preempt: false);
+            if (r is not (MusicStatus.Ok or MusicStatus.Canceled)) await Eval("window.mbNextRaw&&window.mbNextRaw()");
+        }
+        catch (Exception ex) { Log.Write("music", "랜덤 다음 곡 실패", ex); }
     }
 
     static WebWindow? MusicWin => open.FirstOrDefault(x => x.kind == SiteKind.Music && !x.IsDisposed);
@@ -227,6 +401,6 @@ public partial class WebWindow
             lastInfo = info;
             MusicChanged?.Invoke(info);
         }
-        catch { }
+        catch (Exception ex) { Log.Write("music", "곡 정보를 읽지 못함", ex); }
     }
 }

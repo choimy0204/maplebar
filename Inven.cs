@@ -70,6 +70,7 @@ public sealed class InvenWatcher
     readonly Settings settings;
     readonly Action<string, InvenPost> notify; // (꼬리표, 글)
     readonly System.Windows.Forms.Timer timer = new() { Interval = TickMs };
+    public readonly Action Stop;
     int ticks;
     // 목록마다 이미 본 글 번호와, 지난번 목록의 가장 오래된 글 번호
     readonly Dictionary<string, (HashSet<long> Seen, long Oldest)> state = new();
@@ -80,6 +81,7 @@ public sealed class InvenWatcher
         this.settings = settings;
         this.notify = notify;
         timer.Tick += async (_, _) => await PollAsync(ticks++ % ChuEvery == 0);
+        Stop = timer.Stop;
         timer.Start();
         _ = PollAsync(true);
     }

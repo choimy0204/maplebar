@@ -194,6 +194,7 @@ sealed class JanusWatch
     }
 
     /// <summary>바의 칩을 눌렀을 때: 세던 시간을 지운다.</summary>
+    public void Stop() => poll.Stop();
     public void CancelJanus() => ClearJanus(DateTime.Now);
     public void CancelRune() { npcAt = null; if (st.RuneStart != null) { st.RuneStart = null; st.Save(); } }
     public void CancelBuff(int i) { if (st.Buffs[i].Start != null) { st.Buffs[i].Start = null; st.Save(); } }

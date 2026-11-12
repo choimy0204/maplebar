@@ -42,6 +42,8 @@ public class Settings
     public int? MusicY { get; set; }
     // 유튜브 뮤직 가사 보기 (가사가 없는 곡은 켜 둬도 안 보인다)
     public bool MusicLyrics { get; set; }
+    // 브금 즐겨찾기 (최근에 넣은 곡이 위)
+    public List<FavSong> MusicFavs { get; set; } = new();
     // 인벤 자유게시판 알림으로 지켜볼 목록 (Inven.Feeds의 Key)
     public List<string> InvenWatch { get; set; } = new();
     // 솔 야누스 알림: 설치 키를 누르면 지속시간을 세고, 꺼지면 게임 화면 가장자리에 보랏빛을 한 바퀴 돌린다
@@ -87,6 +89,8 @@ public class Settings
     static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar");
     static string FilePath => Path.Combine(Dir, "settings.json");
+    /// <summary>실패 기록 파일 (Log가 쓴다)</summary>
+    public static string LogPath => Path.Combine(Dir, "log.txt");
 
     // 사이트 로그인·사람 확인 쿠키가 남도록 WebView2 데이터를 여기에 둔다
     public static string WebDataDir => Path.Combine(Dir, "WebView2");
@@ -136,6 +140,14 @@ public class Settings
         Recent.Insert(0, name);
         if (Recent.Count > 10) Recent.RemoveRange(10, Recent.Count - 10);
     }
+}
+
+/// <summary>즐겨찾기한 브금 한 곡</summary>
+public class FavSong
+{
+    public string Title { get; set; } = "";
+    public string Sub { get; set; } = "";
+    public string Img { get; set; } = "";
 }
 
 /// <summary>버프 알림 한 칸</summary>
