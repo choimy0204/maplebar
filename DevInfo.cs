@@ -110,7 +110,16 @@ sealed class DevInfo : Form
         notes = new Panel { Location = new Point(rightX, S(54)), Size = new Size(rightW, ClientSize.Height - S(54) - S(18)), AutoScroll = true };
         NoteText("공지사항을 불러오는 중…");
 
-        Controls.AddRange(new Control[] { x, bar, title, card, name, icon, world, state, ask, line, ntitle, notes });
+        // 제목 옆에 지금 쓰는 프로그램 버전을 작게 적는다
+        var ver = typeof(DevInfo).Assembly.GetName().Version;
+        var verLabel = new Label
+        {
+            Text = ver == null ? "" : $"v{ver.Major}.{ver.Minor}.{Math.Max(0, ver.Build)}",
+            Font = F(8.5f), ForeColor = Gray, AutoSize = true,
+        };
+        verLabel.Location = new Point(title.Left + title.PreferredWidth + S(6), title.Top + title.PreferredHeight - verLabel.PreferredHeight - S(1));
+
+        Controls.AddRange(new Control[] { x, bar, title, verLabel, card, name, icon, world, state, ask, line, ntitle, notes });
 
         // 빈 곳을 끌어서 옮길 수 있게
         foreach (Control c in new Control[] { this, title, ntitle, bar })

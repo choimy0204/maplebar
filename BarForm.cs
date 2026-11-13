@@ -47,7 +47,7 @@ public class BarForm : Form
         Text = "메이플 바";
         FormBorderStyle = FormBorderStyle.None;
         TopMost = true;
-        ShowInTaskbar = true;
+        ShowInTaskbar = false; // 작업 표시줄·알탭에 안 나오게 (트레이 아이콘으로 연다)
         if (UI.AppIcon is { } appIcon) Icon = appIcon;
         StartPosition = FormStartPosition.Manual;
         Font = OwnFont(new Font("맑은 고딕", 10.5f * UI.Z, FontStyle.Bold));
@@ -991,6 +991,7 @@ public class BarForm : Form
         {
             var cp = base.CreateParams;
             cp.ClassStyle |= CS_DROPSHADOW; // 그림자
+            cp.ExStyle |= WS_EX_TOOLWINDOW; // 알탭에 안 나오게
             return cp;
         }
     }
