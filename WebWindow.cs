@@ -251,6 +251,33 @@ public partial class WebWindow : Form
         // 방송은 영상과 채팅이 옆으로 놓이니 가로로 넓게 연다
         if (KindOf(url) == SiteKind.Live) { w = Math.Min(W(800), wa.Width); h = Math.Min(W(500), wa.Height); }
 
+        // 이 종류 창을 전에 닫은 자리가 있으면 그 자리에 연다 (같은 종류가 이미 열려 있으면 비켜서 연다)
+        var key = PlaceKey(url);
+        bool keepSize = KindOf(url) is not (SiteKind.YouTubePlayer or SiteKind.LivePlayer); // 재생 창 크기는 영상 비율에 맞춘다
+        Rectangle Fit(Rectangle r)
+        {
+            var swa = Screen.FromRectangle(r).WorkingArea; // 다른 모니터에 두었으면 그 모니터에 연다
+            int rw = Math.Min(Math.Max(r.Width, S(200)), swa.Width), rh = Math.Min(Math.Max(r.Height, S(150)), swa.Height);
+            return new Rectangle(Math.Max(swa.Left, Math.Min(r.X, swa.Right - rw)), Math.Max(swa.Top, Math.Min(r.Y, swa.Bottom - rh)), rw, rh);
+        }
+        // 같은 종류 창이 이미 열려 있으면 그 창 옆으로 살짝 비켜서 연다 (자리가 없으면 반대쪽으로)
+        var same = key == null ? null : open.LastOrDefault(o => o != this && !o.IsDisposed && PlaceKey(o.startUrl) == key);
+        if (same != null)
+        {
+            var b = same.WindowState == FormWindowState.Normal && same.smallBounds == null ? same.Bounds : same.RestoreBounds;
+            var size = keepSize ? b.Size : new Size(w, h);
+            var swa = Screen.FromRectangle(b).WorkingArea;
+            int d = S(30);
+            foreach (var (dx, dy) in new[] { (-d, d), (d, d), (-d, -d), (d, -d) })
+            {
+                var r = new Rectangle(b.X + dx, b.Y + dy, size.Width, size.Height);
+                if (swa.Contains(r)) return r;
+            }
+            return Fit(new Rectangle(b.X - d, b.Y + d, size.Width, size.Height));
+        }
+        if (key != null && settings.WinPlaces.TryGetValue(key, out var sp) && sp.Length == 4)
+            return Fit(new Rectangle(sp[0], sp[1], keepSize ? sp[2] : w, keepSize ? sp[3] : h));
+
         Point p;
         if (open.Count > 0)
         {
@@ -340,8 +367,27 @@ public partial class WebWindow : Form
             if (Inven.IsInven(startUrl) || kind == SiteKind.Webtoon)
                 cw.Settings.UserAgent = Inven.MobileUA;
             // 새 창 링크: 사이트 안이면 또 새 창으로, 바깥이면 기본 브라우저로
-            cw.NewWindowRequested += (_, e) =>
+            cw.NewWindowRequested += async (_, e) =>
             {
+                // 구글·애플 로그인 팝업은 원래 창과 이어진 채로 열어야 로그인이 끝난다 (Claude 등)
+                if (!parked && IsLoginPopup(e.Uri))
+                {
+                    var d = e.GetDeferral();
+                    try
+                    {
+                        var pop = new Form { Text = "로그인", Size = new Size(S(480), S(640)), StartPosition = FormStartPosition.CenterScreen, ShowInTaskbar = false };
+                        var pw = new WebView2 { Dock = DockStyle.Fill };
+                        pop.Controls.Add(pw);
+                        pop.Show();
+                        await pw.EnsureCoreWebView2Async(await Env);
+                        pw.CoreWebView2.WindowCloseRequested += (_, _) => pop.Close();
+                        e.NewWindow = pw.CoreWebView2;
+                        e.Handled = true;
+                    }
+                    catch { e.Handled = true; }
+                    finally { d.Complete(); }
+                    return;
+                }
                 e.Handled = true;
                 // 화면 밖에 숨은 뮤직 창은 사용자가 누를 수 없으니, 페이지가 스스로 연 새 창이다.
                 // 메애기 창을 화면에 꺼내거나 다른 창을 띄우지 않는다 (메애기 주소면 숨은 채로 그 안에서 옮긴다)
@@ -492,6 +538,10 @@ public partial class WebWindow : Form
         return true;
     }
 
+    static bool IsLoginPopup(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) &&
+        (u.Host == "accounts.google.com" || u.Host == "appleid.apple.com");
+
     static bool IsSite(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("maplescouter.com");
 
@@ -635,12 +685,34 @@ public partial class WebWindow : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    // 옮기면 다음 첫 창 위치로 기억한다
+    /// <summary>창 위치를 따로 기억하는 단위: 코디·웹툰 같은 종류별, 그 밖의 사이트는 주소(호스트)별.
+    /// 숨겨 두는 뮤직 창과 재생 창 옆에 붙는 댓글·채팅 창은 기억하지 않는다</summary>
+    static string? PlaceKey(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        var k = KindOf(url);
+        if (k is SiteKind.Music or SiteKind.YouTubeComments or SiteKind.LiveChat) return null;
+        if (k == SiteKind.YouTubePlayer) return YouTube.IsShorts(url) ? "Shorts" : "YouTubePlayer";
+        if (k != SiteKind.Other) return k.ToString();
+        return Uri.TryCreate(url, UriKind.Absolute, out var u) ? "site:" + u.Host.ToLowerInvariant() : null;
+    }
+
+    void RememberPlace()
+    {
+        if (WindowState != FormWindowState.Normal || smallBounds != null) return; // 크게 보기·최대화 상태는 기억하지 않는다
+        var key = PlaceKey(startUrl);
+        if (key == null) return;
+        settings.WinPlaces[key] = new[] { Left, Top, Width, Height };
+        settings.Save();
+    }
+
+    // 옮기면 다음 첫 창 위치로 기억한다 (창 종류마다 따로)
     protected override void OnResizeEnd(EventArgs e)
     {
         base.OnResizeEnd(e);
         if (WindowState != FormWindowState.Normal) return;
         settings.WinX = Left; settings.WinY = Top;
+        RememberPlace();
         settings.Save();
     }
 
@@ -659,6 +731,7 @@ public partial class WebWindow : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         if (kind == SiteKind.Music) { musicTimer.Dispose(); MusicChanged?.Invoke(null); }
+        else RememberPlace(); // 닫을 때 자리를 기억해서 다음에 같은 자리에 연다
         open.Remove(this);
         // 미뤄 둔 투명도 저장이 있으면 지금 저장한다
         if (alphaSaveTimer.Enabled) { alphaSaveTimer.Stop(); settings.Save(); }

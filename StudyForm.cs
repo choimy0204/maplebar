@@ -122,19 +122,23 @@ sealed class StudyForm : Form
         // ── 공부 묶음 ──
         Controls.Add(new Label { Text = "공부 묶음", Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) });
         y += S(30);
-        int bx = pad;
-        foreach (var b in new[]
+        // 버튼은 줄마다 같은 너비로 꽉 채운다: 윗줄은 묶음 넣기, 아랫줄은 AI 창 바로 열기
+        void Row(params RoundLabel[] bs)
         {
-            Btn("AI용 양식 받기", Deep, UI.SoftAccent, AskAi),
-            Btn("파일 불러오기", UI.Text, UI.HoverBack, LoadFiles),
-            Btn("붙여 넣기", UI.Text, UI.HoverBack, PasteBox),
-        })
-        {
-            b.Location = new Point(bx, y);
-            Controls.Add(b);
-            bx = b.Right + S(8);
+            int gap = S(8), bw = (inner - gap * (bs.Length - 1)) / bs.Length;
+            for (int i = 0; i < bs.Length; i++)
+            {
+                bs[i].Bounds = new Rectangle(pad + i * (bw + gap), y, bw, S(34));
+                Controls.Add(bs[i]);
+            }
+            y += S(34) + S(8);
         }
-        y += S(36) + S(10);
+        Row(Btn("AI용 양식 받기", Deep, UI.SoftAccent, AskAi),
+            Btn("파일 불러오기", UI.Text, UI.HoverBack, LoadFiles),
+            Btn("붙여 넣기", UI.Text, UI.HoverBack, PasteBox));
+        Row(Btn("ChatGPT로 열기", UI.Text, UI.HoverBack, () => OpenAi(Ai.ChatGpt)),
+            Btn("Claude로 열기", UI.Text, UI.HoverBack, () => OpenAi(Ai.Claude)));
+        y += S(2);
 
         rowH = S(50); rowGap = S(6);
         list = new Panel { AutoScroll = true, Location = new Point(pad, y), Size = new Size(inner, rowH * 5 + rowGap * 4) };
@@ -351,6 +355,16 @@ sealed class StudyForm : Form
 
     static string RemoveName(string text) =>
         string.Join("\n", text.Replace("\r", "").Split('\n').Where(l => !l.TrimStart('#', ' ').StartsWith("이름")));
+
+    /// <summary>AI 창을 질문 칸에 기본 양식이 들어간 채로 연다. 잘릴 때를 대비해 클립보드에도 복사해 둔다</summary>
+    void OpenAi(string home)
+    {
+        var p = Study.Prompt("(여기에 공부할 주제를 적어 주세요)", 50, Study.WordCols);
+        try { Clipboard.SetText(p); } catch { }
+        new WebWindow(home + "?q=" + Uri.EscapeDataString(p), st, sc).Show();
+        msg.ForeColor = Deep;
+        msg.Text = "AI 창을 열었어요. 주제만 바꿔서 보내고, 받은 답을 '붙여 넣기' 하세요.";
+    }
 
     void AskAi()
     {

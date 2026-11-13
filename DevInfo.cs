@@ -66,7 +66,7 @@ sealed class DevInfo : Form
         AutoScaleMode = AutoScaleMode.None;
 
         int leftW = S(264), mid = S(18) + leftW + S(18), rightX = mid + S(18), rightW = S(370); // 공지 제목이 한 줄에 들어가게 넉넉히
-        ClientSize = new Size(rightX + rightW + S(18), S(290));
+        ClientSize = new Size(rightX + rightW + S(18), S(334)); // 왼쪽 아래 '패치 이력 보기' 버튼 자리까지
 
         var bar = new Panel { BackColor = UI.Accent, Location = Point.Empty, Size = new Size(ClientSize.Width, S(5)) };
         var x = new Label
@@ -119,7 +119,21 @@ sealed class DevInfo : Form
         };
         verLabel.Location = new Point(title.Left + title.PreferredWidth + S(6), title.Top + title.PreferredHeight - verLabel.PreferredHeight - S(1));
 
-        Controls.AddRange(new Control[] { x, bar, title, verLabel, card, name, icon, world, state, ask, line, ntitle, notes });
+        // 개발자 정보 아래: 지금까지 바뀐 내용(패치노트)을 버전별로 본다
+        PatchNotesWindow? patch = null;
+        var history = UI.Button("패치 이력 보기", "", () =>
+        {
+            if (patch != null && !patch.IsDisposed) { patch.Activate(); return; }
+            patch = new PatchNotesWindow(this, ver ?? new Version(0, 0), picker: true) { Owner = this };
+            patch.Show();
+        }, sc, null, UI.HoverBack);
+        history.AutoSize = false;
+        history.TextAlign = ContentAlignment.MiddleCenter;
+        history.Radius = S(8);
+        history.Font = F(9.5f, FontStyle.Bold);
+        history.Bounds = new Rectangle(S(18), ask.Bottom + S(8), leftW, S(32));
+
+        Controls.AddRange(new Control[] { x, bar, title, verLabel, card, name, icon, world, state, ask, history, line, ntitle, notes });
 
         // 빈 곳을 끌어서 옮길 수 있게
         foreach (Control c in new Control[] { this, title, ntitle, bar })

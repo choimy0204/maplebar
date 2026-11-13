@@ -137,3 +137,10 @@ public static class Coordi
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("meaegi.com", StringComparison.OrdinalIgnoreCase) &&
         Paths.Any(p => u.AbsolutePath.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 }
+
+/// <summary>AI 대화 (ChatGPT·Claude): 사이트 그대로 작은 창에서 쓴다. 로그인은 사용자가 직접 한다</summary>
+public static class Ai
+{
+    public const string ChatGpt = "https://chatgpt.com/";
+    public const string Claude = "https://claude.ai/new";
+}

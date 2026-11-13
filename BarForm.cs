@@ -95,7 +95,7 @@ public class BarForm : Form
                 nav.MouseEnter += (_, _) => OpenMega(mega, nav);
             }
             nav.Margin = new Padding(S(6), 0, S(6), 0);
-            if (top.Name == "영상") AddPlayIcon(nav);
+            if (top.Name == "영상&음악") AddPlayIcon(nav);
             left.Controls.Add(nav);
         }
 
@@ -147,10 +147,33 @@ public class BarForm : Form
         UpdateRecentChip();
 
         Label? gear = null;
-        gear = UI.Button("⚙", "설정", () => ShowSettingsMenu(gear!), sc);
+        // ⚙ 글자는 컬러 그림(꽃처럼 보임)으로 나와서, 톱니바퀴를 직접 그린다
+        gear = UI.Button(" ", "설정", () => ShowSettingsMenu(gear!), sc);
+        gear.Paint += (_, e) => DrawGear(e.Graphics, gear.ClientRectangle, gear.ForeColor);
         right.Controls.Add(gear);
         right.Controls.Add(UI.Button("—", "바 숨기기 (Ctrl+Alt+M으로 다시 열기)", HideAll, sc));
         right.Controls.Add(UI.Button("✕", "종료 (열린 창도 모두 닫힘)", Close, sc));
+    }
+
+    void DrawGear(Graphics g, Rectangle r, Color color)
+    {
+        const int n = 8;
+        float cx = r.Left + r.Width / 2f, cy = r.Top + r.Height / 2f, outer = 7.5f * sc, inner = 5.6f * sc;
+        double step = Math.PI * 2 / n;
+        var pts = new List<PointF>();
+        for (int i = 0; i < n; i++)
+        {
+            double a = i * step - Math.PI / 2;
+            foreach (var (ang, rad) in new[] { (a - step * 0.30, inner), (a - step * 0.17, outer), (a + step * 0.17, outer), (a + step * 0.30, inner) })
+                pts.Add(new PointF(cx + (float)(Math.Cos(ang) * rad), cy + (float)(Math.Sin(ang) * rad)));
+        }
+        using var path = new System.Drawing.Drawing2D.GraphicsPath(System.Drawing.Drawing2D.FillMode.Alternate);
+        path.AddPolygon(pts.ToArray());
+        float hole = 2.4f * sc;
+        path.AddEllipse(cx - hole, cy - hole, hole * 2, hole * 2); // 가운데 구멍
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var b = new SolidBrush(color);
+        g.FillPath(b, path);
     }
 
     // ── 뮤직: 메애기 창은 숨겨 두고 바에서 곡 제목·진행 바·⏮ ⏯ ⏭만 보여 준다 ──
@@ -691,9 +714,15 @@ public class BarForm : Form
             var bc = buffChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
             bc.Click += (_, _) => { w.CancelBuff(slot); if (bc.SetTime(null)) LayoutBar(); };
         }
-        var dopeChip = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.DopeMain };
-        dopeChip.Click += (_, _) => { w.CancelDope(); if (dopeChip.SetTime(null)) LayoutBar(); };
-        foreach (var c in new[] { runeChip, janusChip }.Concat(buffChips).Append(dopeChip))
+        // 도핑 칸마다 칩 하나 (빨강·갈색·분홍)
+        var dopeChips = new TimerChip[JanusWatch.DopeSlots];
+        for (int i = 0; i < dopeChips.Length; i++)
+        {
+            int slot = i;
+            var dc = dopeChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.DopeColors(i).main };
+            dc.Click += (_, _) => { w.CancelDope(slot); if (dc.SetTime(null)) LayoutBar(); };
+        }
+        foreach (var c in new[] { runeChip, janusChip }.Concat(buffChips).Concat(dopeChips))
         {
             right.Controls.Add(c);
             right.Controls.SetChildIndex(c, 0);
@@ -707,7 +736,7 @@ public class BarForm : Form
                 buffChips[i].BuffTint = JanusWatch.BuffColors(w.BuffMin(i)).main;
                 changed |= buffChips[i].SetTime(w.BuffRemaining(i));
             }
-            changed |= dopeChip.SetTime(w.DopeRemaining);
+            for (int i = 0; i < dopeChips.Length; i++) changed |= dopeChips[i].SetTime(w.DopeRemaining(i));
             if (changed) LayoutBar();
         };
         chipTimer.Start();

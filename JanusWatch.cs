@@ -85,7 +85,8 @@ sealed class JanusWatch
         // 꺼져 있는 동안 버프가 끝난 지 오래면 조용히 지운다 (방금 끝났으면 켜자마자 알린다)
         for (int i = 0; i < BuffSlots; i++)
             if (BuffEnd(i) is DateTime be && now >= be.AddMinutes(1)) { st.Buffs[i].Start = null; st.Save(); }
-        if (dopeEnd is DateTime de && now >= de.AddMinutes(1)) { st.DopeStart = null; st.Save(); }
+        for (int i = 0; i < DopeSlots; i++)
+            if (DopeEnd(i) is DateTime de && now >= de.AddMinutes(1)) { st.Dopes[i].Start = null; st.Save(); }
         KeyHook.Start();
         poll.Tick += (_, _) => Tick();
         poll.Start();
@@ -123,10 +124,12 @@ sealed class JanusWatch
                 for (int i = 0; i < RepeatSlots; i++) if (vk == st.Repeats[i].Key) RepeatKey(i, p.At, g);
                 int mask = 0;
                 for (int i = 0; i < BuffSlots; i++) if (vk == st.Buffs[i].Key) mask |= 1 << i;
+                int dmask = 0;
+                for (int i = 0; i < DopeSlots; i++) if (vk == st.Dopes[i].Key) dmask |= 1 << i;
                 Step(p.At, g, vk == st.JanusKey, vk == st.NpcKey, mask, vk == 0x0D,
-                    vk == st.DopeKey, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
+                    dmask, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
             }
-            Step(DateTime.Now, false, false, false, 0, false, false, 0); // 시간이 다 됐는지만 본다
+            Step(DateTime.Now, false, false, false, 0, false, 0, 0); // 시간이 다 됐는지만 본다
             return;
         }
         // 키 알림을 못 받으면: 키를 뗐는지 계속 봐 두어야 다음 누름을 한 번으로 센다
@@ -135,7 +138,8 @@ sealed class JanusWatch
         int buff = 0;
         for (int i = 0; i < BuffSlots; i++) if (Pressed(st.Buffs[i].Key, ref buffDown[i])) buff |= 1 << i;
         bool enter = Pressed(0x0D, ref enterDown);
-        bool dope = Pressed(st.DopeKey, ref dopeDown);
+        int dope = 0;
+        for (int i = 0; i < DopeSlots; i++) if (Pressed(st.Dopes[i].Key, ref dopeDown[i])) dope |= 1 << i;
         int arrows = 0;
         for (int i = 0; i < 4; i++) if (Pressed(Arrows[i], ref arrowDown[i])) arrows++;
         bool fg = Game.Foreground();
@@ -208,12 +212,12 @@ sealed class JanusWatch
         JanusAlert.Play(sc, text, c,
             Color.FromArgb(c.R + (255 - c.R) * 3 / 4, c.G + (255 - c.G) * 3 / 4, c.B + (255 - c.B) * 3 / 4), AlertSound.Kind.Buff);
 
-    void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, bool dope, int arrows)
+    void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, int dope, int arrows)
     {
         RepeatTick(now);
         RuneTick(now, inGame, npc, arrows);
         BuffTick(now, inGame, buff, enter);
-        DopeTick(now, inGame, dope, arrows, enter);
+        for (int i = 0; i < DopeSlots; i++) DopeTick(i, now, inGame, (dope >> i & 1) != 0, arrows, enter);
         if (!st.JanusOn)
         {
             pickups.Clear();
@@ -367,60 +371,74 @@ sealed class JanusWatch
     /// <summary>지금 엔터 시점으로 세는 중인지</summary>
     public bool BuffOnEnter(int i) => st.Buffs[i].Start is DateTime s && s == st.Buffs[i].EnterAt;
 
-    // 부스트 도핑: 키를 누르면 바로 DopeSec초를 센다. 다시 쓰면 처음부터 다시 센다
-    bool dopeDown;
-    DateTime? dopeEnd => st.DopeStart is DateTime s ? s.AddSeconds(st.DopeSec) : null;
+    // 부스트 도핑 3칸(빨강·갈색·분홍): 쓰면 Sec초를 센다. 다시 쓰면 처음부터 다시 센다
+    public const int DopeSlots = 3;
+    readonly bool[] dopeDown = new bool[DopeSlots];
+    DateTime? DopeEnd(int i) => st.Dopes[i].Start is DateTime s ? s.AddSeconds(st.Dopes[i].Sec) : null;
     // 사용 대기 중에는 아직 효과가 붙지 않았으니 바에 띄우지 않는다
-    public double? DopeRemaining => dopeEnd is DateTime e && DopeWaiting == null ? Math.Max(0, (e - DateTime.Now).TotalSeconds) : null;
+    public double? DopeRemaining(int i) => DopeEnd(i) is DateTime e && DopeWaiting(i) == null ? Math.Max(0, (e - DateTime.Now).TotalSeconds) : null;
     /// <summary>쓰고 효과가 붙기를 기다리는 중이면 남은 초</summary>
-    public double? DopeWaiting => st.DopeStart is DateTime s && s > DateTime.Now ? (s - DateTime.Now).TotalSeconds : null;
-    public void CancelDope() { if (st.DopeStart != null) { st.DopeStart = null; st.Save(); } }
+    public double? DopeWaiting(int i) => st.Dopes[i].Start is DateTime s && s > DateTime.Now ? (s - DateTime.Now).TotalSeconds : null;
+    public void CancelDope(int i) { if (st.Dopes[i].Start != null) { st.Dopes[i].Start = null; st.Save(); } }
     public static readonly Color DopeMain = Color.FromArgb(235, 40, 50), DopeLight = Color.FromArgb(255, 205, 205);
-    public static void PlayDope(float sc) => JanusAlert.Play(sc, "부스트 도핑이 끝났어요!", DopeMain, DopeLight, AlertSound.Kind.Dope);
+    static readonly (Color main, Color light)[] dopeColors =
+    {
+        (DopeMain, DopeLight),                                              // 빨강
+        (Color.FromArgb(150, 90, 45), Color.FromArgb(235, 215, 195)),       // 갈색
+        (Color.FromArgb(240, 90, 170), Color.FromArgb(255, 215, 235)),      // 분홍
+    };
+    public static (Color main, Color light) DopeColors(int i) => dopeColors[Math.Clamp(i, 0, DopeSlots - 1)];
+    public static string DopeDefaultName(int i) => i switch { 0 => "빨간 도핑", 1 => "갈색 도핑", _ => "분홍 도핑" };
+    public static void PlayDope(float sc, int i, string? name)
+    {
+        var (m, l) = DopeColors(i);
+        JanusAlert.Play(sc, string.IsNullOrWhiteSpace(name) ? "부스트 도핑이 끝났어요!" : name.Trim() + " 끝났어요!", m, l, AlertSound.Kind.Dope);
+    }
     public static void PlayRune(float sc) => JanusAlert.Play(sc, "곧 룬이 나와요!", Color.FromArgb(40, 190, 255), Color.FromArgb(200, 240, 255), AlertSound.Kind.Rune);
 
     // 도핑 키 → 방향키 한 번(사용 확인 창에서 '예'로 옮김) → 엔터 순서로 눌러야 쓴 것으로 본다.
     // 방향키를 두 번 이상 누르면 다시 원래 버튼으로 돌아갈 수 있어서 세지 않는다
-    DateTime? dopeKeyAt;
-    int dopeArrows;
+    readonly DateTime?[] dopeKeyAt = new DateTime?[DopeSlots];
+    readonly int[] dopeArrows = new int[DopeSlots];
     const double DopeWindowSec = 10;
     /// <summary>도핑 키 뒤에 누른 방향키 수 (기다리는 중이 아니면 -1, 설정 창 표시용)</summary>
-    public int DopeProgress => dopeKeyAt is DateTime t && (DateTime.Now - t).TotalSeconds <= DopeWindowSec ? dopeArrows : -1;
+    public int DopeProgress(int i) => dopeKeyAt[i] is DateTime t && (DateTime.Now - t).TotalSeconds <= DopeWindowSec ? dopeArrows[i] : -1;
 
-    void DopeTick(DateTime now, bool inGame, bool dope, int arrows, bool enter)
+    void DopeTick(int i, DateTime now, bool inGame, bool dope, int arrows, bool enter)
     {
-        if (!st.DopeOn || st.DopeKey == 0)
+        var d = st.Dopes[i];
+        if (!d.On || d.Key == 0)
         {
-            dopeKeyAt = null;
-            if (st.DopeStart != null) { st.DopeStart = null; st.Save(); }
+            dopeKeyAt[i] = null;
+            if (d.Start != null) { d.Start = null; st.Save(); }
             return;
         }
-        if (dopeKeyAt is DateTime k0 && (now - k0).TotalSeconds > DopeWindowSec) dopeKeyAt = null;
+        if (dopeKeyAt[i] is DateTime k0 && (now - k0).TotalSeconds > DopeWindowSec) dopeKeyAt[i] = null;
         if (dope && inGame)
         {
-            dopeKeyAt = now; dopeArrows = 0;
+            dopeKeyAt[i] = now; dopeArrows[i] = 0;
             LastKey = now; LastKind = "도핑 키";
         }
-        else if (dopeKeyAt != null && inGame)
+        else if (dopeKeyAt[i] != null && inGame)
         {
-            dopeArrows += arrows;
+            dopeArrows[i] += arrows;
             if (enter)
             {
-                bool ok = dopeArrows == 1;
-                dopeKeyAt = null;
+                bool ok = dopeArrows[i] == 1;
+                dopeKeyAt[i] = null;
                 if (ok)
                 {
                     // 사용 대기가 있으면 그만큼 뒤에 효과가 붙으니 그때부터 센다
-                    st.DopeStart = now.AddSeconds(st.DopeDelayOn ? st.DopeDelaySec : 0); st.Save();
-                    LastKey = now; LastKind = "도핑";
+                    d.Start = now.AddSeconds(d.DelayOn ? d.DelaySec : 0); st.Save();
+                    LastKey = now; LastKind = "도핑" + i;
                     return;
                 }
             }
         }
-        if (dopeEnd is DateTime end && now >= end)
+        if (DopeEnd(i) is DateTime end && now >= end)
         {
-            st.DopeStart = null; st.Save();
-            if (!Mute) PlayDope(sc);
+            d.Start = null; st.Save();
+            if (!Mute) PlayDope(sc, i, d.Name);
         }
     }
 

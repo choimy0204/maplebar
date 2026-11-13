@@ -76,8 +76,8 @@ public static class SiteMenu
             I("드레스룸", Coordi.Base + "/dressing-room"), I("드레스룸 v2", Coordi.Base + "/dressing-room/v2"),
             I("코디 분석", Coordi.Base + "/analysis/coordi"), I("룩북", Coordi.Base + "/lookbook"),
         }),
-        // 영상: 유튜브(영상·쇼츠는 재생 창 하나에서 연다)와 실시간 방송. 로그인은 사용자가 직접 한다
-        new("영상", YouTube.Home, new[] // 메뉴 글자만 눌러도 유튜브 홈을 연다
+        // 영상&음악: 유튜브(영상·쇼츠는 재생 창 하나에서 연다), 실시간 방송, 메애기 메이플 뮤직. 로그인은 사용자가 직접 한다
+        new("영상&음악", null, new[]
         {
             H("유튜브"),
             I("유튜브 홈", YouTube.Home), I("쇼츠", YouTube.Shorts),
@@ -86,15 +86,17 @@ public static class SiteMenu
             I("구글 로그인", YouTube.LoginUrl),
             H("실시간 방송"),
             I("SOOP", Live.Soop), I("치지직", Live.Chzzk), I("넥슨 라이브", Live.Nexon),
-        }),
-        // 메애기 메이플 뮤직 (사이트의 플레이어로 듣는다. 창 하나를 같이 쓴다)
-        new("🎵 뮤직", null, new[]
-        {
-            H("메애기 메이플 뮤직"),
+            // 메애기 메이플 뮤직 (사이트의 플레이어로 듣는다. 창 하나를 같이 쓴다)
+            H("메이플 뮤직"),
             I("인기 차트 TOP 100", Music.Home), I("브금 검색", Music.Home + "/search"),
-            H("내 목록"),
             I("현재 재생목록", Music.Home + "/current"), I("좋아요", Music.Home + "/favorite"),
             I("재생목록", Music.Home + "/my/playlists"),
+        }),
+        // AI 대화: 사이트 그대로 작은 창에서 쓴다. 로그인은 사용자가 직접 한다
+        new("AI", null, new[]
+        {
+            H("AI 대화"),
+            I("ChatGPT", Ai.ChatGpt), I("Claude", Ai.Claude),
         }),
     };
 }

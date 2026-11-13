@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.RegularExpressions;
 using static MapleBar.Native;
 
@@ -15,14 +15,22 @@ sealed class PatchNotesWindow : Form
 
     readonly float sc;
     readonly Version mine;
-    readonly Panel body;
+    readonly SlimScroll body;
     readonly FlowLayoutPanel list;
     int S(float v) => UI.Scale(v, sc);
     int TextW => body.ClientSize.Width - S(40);
 
-    public PatchNotesWindow(Form near, Version mine)
+    // 패치 이력 모드: 왼쪽에 버전 목록, 고른 버전의 내용만 오른쪽에 보여 준다 (개발자 정보에서 연다)
+    readonly bool picker;
+    readonly FlowLayoutPanel? side;
+    readonly SlimScroll? sideBox;
+    readonly int rowW;
+    RoundLabel? picked;
+
+    public PatchNotesWindow(Form near, Version mine, bool picker = false)
     {
         this.mine = mine;
+        this.picker = picker;
         sc = DeviceDpi / 96f;
         Text = "메이플 바 패치노트";
         FormBorderStyle = FormBorderStyle.None;
@@ -32,7 +40,8 @@ sealed class PatchNotesWindow : Form
         BackColor = Color.White;
         Font = new Font("맑은 고딕", 9.5f);
         AutoScaleMode = AutoScaleMode.None;
-        ClientSize = new Size(S(400), S(480));
+        int sideW = picker ? S(150) : 0, bodyX = picker ? S(12) + sideW + S(8) : S(8);
+        ClientSize = new Size(bodyX + S(400) - S(8), S(480));
         // 업데이트 창 오른쪽에 붙여 띄운다 (자리가 없으면 왼쪽)
         var wa = Screen.FromControl(near).WorkingArea;
         int x = near.Right + S(8);
@@ -41,28 +50,39 @@ sealed class PatchNotesWindow : Form
 
         var title = new Label
         {
-            Text = "패치노트", Font = new Font("맑은 고딕", 13f, FontStyle.Bold), ForeColor = UI.Text, AutoSize = false,
+            Text = picker ? "패치 이력" : "패치노트", Font = new Font("맑은 고딕", 13f, FontStyle.Bold), ForeColor = UI.Text, AutoSize = false,
             Location = new Point(S(22), S(18)), Size = new Size(S(250), S(30)),
         };
         var close = UI.Button("닫기", "", Close, sc, null, UI.HoverBack);
         close.Radius = S(6);
         Controls.Add(close);
         close.Location = new Point(ClientSize.Width - S(16) - close.PreferredWidth, S(20));
-        body = new Panel
-        {
-            AutoScroll = true, BackColor = Color.White,
-            Location = new Point(S(8), S(58)), Size = new Size(ClientSize.Width - S(10), ClientSize.Height - S(66)),
-        };
         list = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.White, Location = new Point(S(14), 0),
         };
-        body.Controls.Add(list);
+        body = new SlimScroll(list, sc)
+        {
+            Location = new Point(bodyX, S(58)), Size = new Size(ClientSize.Width - bodyX - S(4), ClientSize.Height - S(66)),
+        };
+        if (picker)
+        {
+            rowW = sideW - S(16);
+            side = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.White, Location = Point.Empty,
+            };
+            sideBox = new SlimScroll(side, sc) { Location = new Point(S(12), S(58)), Size = new Size(sideW, ClientSize.Height - S(70)) };
+            Controls.Add(sideBox);
+            Controls.Add(new Panel { BackColor = UI.Line, Location = new Point(S(12) + sideW + S(3), S(58)), Size = new Size(Math.Max(1, S(1)), ClientSize.Height - S(70)) });
+        }
         Controls.AddRange(new Control[] { title, body });
         title.MouseDown += Drag;
         MouseDown += Drag;
-        body.MouseEnter += (_, _) => body.Focus(); // 휠로 내려 보게
+        KeyPreview = true; // ESC나 Ctrl+W로 닫기
+        KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape || (e.Control && e.KeyCode == Keys.W)) { e.Handled = true; Close(); } };
 
         Line("불러오고 있어요…", Color.FromArgb(130, 130, 130));
         Shown += async (_, _) => Fill(await Load());
@@ -114,6 +134,47 @@ sealed class PatchNotesWindow : Form
     void Fill(List<Note>? notes)
     {
         if (IsDisposed) return;
+        if (picker && side != null && notes != null)
+        {
+            // 왼쪽 버전 목록: 누르면 오른쪽에 그 버전 내용만 보여 준다
+            side.SuspendLayout();
+            foreach (var n in notes)
+            {
+                bool isNew = Version.TryParse(n.Ver, out var v) && v > mine;
+                bool now = v != null && v.Major == mine.Major && v.Minor == mine.Minor && Math.Max(0, v.Build) == Math.Max(0, mine.Build);
+                var row = new RoundLabel
+                {
+                    Text = "v" + n.Ver + (now ? "  (지금)" : isNew ? "  (새 버전)" : "") + (n.Date != "" ? "\n" + n.Date : ""),
+                    AutoSize = false, Size = new Size(rowW, S(44)), Radius = S(8),
+                    Fill = Color.White, ForeColor = isNew ? UI.Accent : UI.Text, Font = new Font("맑은 고딕", 9f),
+                    TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(S(8), 0, 0, 0), Margin = new Padding(0, 0, 0, S(4)),
+                    Cursor = Cursors.Hand, UseMnemonic = false,
+                };
+                var note = n;
+                row.Click += (_, _) => Pick(row, note);
+                row.MouseEnter += (_, _) => { sideBox?.Focus(); if (row != picked) row.Fill = UI.HoverBack; };
+                row.MouseLeave += (_, _) => { if (row != picked) row.Fill = Color.White; };
+                side.Controls.Add(row);
+            }
+            side.ResumeLayout();
+            if (side.Controls.Count > 0) Pick((RoundLabel)side.Controls[0], notes[0]);
+            return;
+        }
+        ShowNotes(notes);
+    }
+
+    void Pick(RoundLabel row, Note n)
+    {
+        if (picked != null) { picked.Fill = Color.White; picked.Font = new Font(picked.Font, FontStyle.Regular); }
+        picked = row;
+        row.Fill = UI.SoftAccent;
+        row.Font = new Font(row.Font, FontStyle.Bold);
+        ShowNotes(new List<Note> { n });
+        body.ScrollTo(0); // 새 버전을 고르면 맨 위부터
+    }
+
+    void ShowNotes(List<Note>? notes)
+    {
         list.SuspendLayout();
         var old = list.Controls.Cast<Control>().ToList();
         list.Controls.Clear();

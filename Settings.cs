@@ -16,6 +16,8 @@ public class Settings
     // 사이트 창: 마지막 위치·크기, 항상 위 여부
     public int? WinX { get; set; }
     public int? WinY { get; set; }
+    /// <summary>창 종류마다 마지막 위치·크기 (코디, 웹툰, 사이트 주소별 등). 값은 x, y, 폭, 높이</summary>
+    public Dictionary<string, int[]> WinPlaces { get; set; } = new();
     public int WinW { get; set; }
     public int WinH { get; set; }
     public bool WinTopMost { get; set; } = true;
@@ -76,6 +78,7 @@ public class Settings
     public DateTime? DopeStart { get; set; }       // 실제로 효과가 시작되는 시각 (사용 대기를 더한 값)
     public bool DopeDelayOn { get; set; } = true;  // 쓰고 몇 초 뒤에 효과가 붙는 경우
     public int DopeDelaySec { get; set; } = 3;
+    public List<DopeSlot> Dopes { get; set; } = new(); // 위의 도핑 하나짜리 칸은 예전 설정을 옮기는 데만 쓴다
     // 정령의 펜던트 확인: 고른 버프가 도는 동안 maple.gg에서 장비를 보고, 안 꼈으면 20초마다 알린다
     public string? MapleNick { get; set; }
     public bool PendantOn { get; set; }
@@ -134,12 +137,26 @@ public class Settings
         if (s.Repeats.Count > 3) s.Repeats.RemoveRange(3, s.Repeats.Count - 3);
         s.AlertScreens ??= new() { "ALL" };
         s.Decks ??= new();
+        s.WinPlaces ??= new();
         foreach (var d in s.Decks) d.Stars ??= new();
         if (fresh && (s.BuffOn || s.BuffKey != 0 || s.BuffStart != null))
         {
             var b = s.Buffs.FirstOrDefault(x => x.Min == s.BuffMin) ?? s.Buffs[0];
             b.On = s.BuffOn; b.Key = s.BuffKey; b.Min = s.BuffMin; b.Start = s.BuffStart;
             s.BuffOn = false; s.BuffKey = 0; s.BuffStart = null;
+            s.Save();
+        }
+        // 부스트 도핑 3칸. 예전 도핑 하나짜리 설정은 첫 칸(빨강)으로 옮긴다
+        s.Dopes ??= new();
+        bool freshDope = s.Dopes.Count == 0;
+        while (s.Dopes.Count < 3) s.Dopes.Add(new DopeSlot());
+        if (s.Dopes.Count > 3) s.Dopes.RemoveRange(3, s.Dopes.Count - 3);
+        if (freshDope && (s.DopeOn || s.DopeKey != 0 || s.DopeStart != null))
+        {
+            var d = s.Dopes[0];
+            d.On = s.DopeOn; d.Key = s.DopeKey; d.Sec = s.DopeSec; d.Start = s.DopeStart;
+            d.DelayOn = s.DopeDelayOn; d.DelaySec = s.DopeDelaySec;
+            s.DopeOn = false; s.DopeKey = 0; s.DopeStart = null;
             s.Save();
         }
         return s;
@@ -191,6 +208,18 @@ public class BuffSlot
     public DateTime? KeyAt { get; set; }
     public DateTime? EnterAt { get; set; }
     public string? Name { get; set; } // 비어 있으면 "버프 1" 같은 기본 이름
+}
+
+/// <summary>부스트 도핑 알림 한 칸</summary>
+public class DopeSlot
+{
+    public bool On { get; set; }
+    public int Key { get; set; }
+    public int Sec { get; set; } = 100;
+    public DateTime? Start { get; set; }       // 실제로 효과가 시작되는 시각 (사용 대기를 더한 값)
+    public bool DelayOn { get; set; } = true;  // 쓰고 몇 초 뒤에 효과가 붙는 경우
+    public int DelaySec { get; set; } = 3;
+    public string? Name { get; set; }          // 비어 있으면 "도핑 1" 같은 기본 이름
 }
 
 /// <summary>반복 주기 알림 한 칸</summary>

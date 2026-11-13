@@ -97,7 +97,9 @@ static class Study
     {
         bool sentence = cols[0].Contains("문장");
         bool note = cols[2] == "첨언";
-        bool sound = cols[2].Contains("발음");
+        // 셋째 칸이 '발음'뿐이면 발음만, '발음 및 적용예시'처럼 다른 것도 있으면 발음과 함께 나머지도 쓰게 한다
+        bool sound = cols[2].Replace(" ", "") is "발음" or "발음기호";
+        bool soundMix = !sound && cols[2].Contains("발음");
         // 예시는 정한 칸 이름을 그대로 쓰고, 셋째 칸 내용도 칸 이름에 맞춘다
         (string a, string b, string c)[] rows = sentence
             ? new[]
@@ -112,12 +114,15 @@ static class Study
                 ("reluctant", "꺼리는, 마지못해 하는", "be reluctant to ~ 하기를 꺼리다"),
                 ("meticulous", "꼼꼼한, 세심한", "careful보다 더 철저한 느낌"),
             };
-        if (sound)
+        if (sound || soundMix)
         {
             string[] s = sentence
                 ? new[] { "잇 워즈 웨이 이지어 댄 아이 쏘트", "아임 러닝 레잇", "렛 미 슬립 온 잇" }
                 : new[] { "/juːˈbɪkwɪtəs/ 유비쿼터스", "/rɪˈlʌktənt/ 릴럭턴트", "/məˈtɪkjələs/ 머티큘러스" };
-            for (int i = 0; i < rows.Length; i++) rows[i].c = s[i];
+            string[] use = sentence
+                ? new[] { "비교할 때 '훨씬'을 강조", "약속에 늦을 때", "바로 결정하기 어려울 때" }
+                : new[] { "Smartphones are ubiquitous.", "She was reluctant to leave.", "He is meticulous about details." };
+            for (int i = 0; i < rows.Length; i++) rows[i].c = soundMix ? $"{s[i]} / {use[i]}" : s[i];
         }
         else if (!note) for (int i = 0; i < rows.Length; i++) rows[i].c = $"({cols[2]})";
         string ex = $"# 이름: {(sentence ? "영어 회화 문장" : "영어 단어")}\n# 칸: {cols[0]}|{cols[1]}|{cols[2]}\n" +
@@ -126,6 +131,8 @@ static class Study
             ? $"{cols[2]}{Josa(cols[2], "은", "는")} 한 줄로 짧게 써 주세요 (예문, 외우는 요령, 헷갈리는 점 등)."
             : sound
                 ? $"{cols[2]} 칸에는 {cols[0]}의 발음을 적어 주세요 (발음 기호와 한글 발음)."
+            : soundMix
+                ? $"{cols[2]} 칸에는 {cols[0]}의 발음(발음 기호와 한글 발음)을 먼저 쓰고, / 뒤에 나머지 내용을 한 줄로 짧게 적어 주세요."
                 : $"{cols[2]} 칸에는 {cols[2]}{Josa(cols[2], "을", "를")} 한 줄로 짧게 적어 주세요.";
         return
 $@"아래 규칙에 맞춰 자기계발 카드를 만들어 주세요.
@@ -146,7 +153,7 @@ $@"아래 규칙에 맞춰 자기계발 카드를 만들어 주세요.
 
 [예시]
 {ex}
-";
+".Replace("\r\n", "\n").Replace("\n", "\r\n"); // 윈도우 줄바꿈으로 맞춰야 어디에 붙여 넣어도 줄이 안 붙는다
     }
 
     /// <summary>받침이 있으면 a, 없으면 b (은/는, 을/를)</summary>

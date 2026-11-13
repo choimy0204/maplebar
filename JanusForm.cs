@@ -41,8 +41,14 @@ sealed class JanusForm : Form
     // 알림 창에는 야누스·룬 칸만, 웹툰 키 창에는 웹툰 칸만 있다 (없는 칸은 null)
     readonly bool toon;
     readonly RoundLabel? janusKey, npcKey, upKey, downKey;
-    RoundLabel? nextKey, prevKey, dopeKey, shortsNextKey, shortsPrevKey;
-    Label? dopeStatus;
+    RoundLabel? nextKey, prevKey, shortsNextKey, shortsPrevKey;
+    // 도핑 칸마다: 키 칸, 상태 줄
+    readonly RoundLabel?[] dopeKeys = new RoundLabel?[JanusWatch.DopeSlots];
+    readonly Label?[] dopeStatus = new Label?[JanusWatch.DopeSlots];
+    // 버프·도핑은 한 번에 한 칸만 보이고 ◀ ▶로 넘긴다
+    readonly Card?[] buffCards = new Card?[JanusWatch.BuffSlots], dopeCards = new Card?[JanusWatch.DopeSlots];
+    int buffPage, dopePage;
+    readonly List<Action> slotNavs = new(); // 넘기기 줄의 글과 화살표를 다시 그리는 함수들
     // 버프 칸마다: 키 칸, 상태 줄 (버프 창이 아니면 비어 있다)
     readonly RoundLabel?[] buffKeys = new RoundLabel?[JanusWatch.BuffSlots];
     readonly Label?[] buffStatus = new Label?[JanusWatch.BuffSlots];
@@ -72,6 +78,7 @@ sealed class JanusForm : Form
         // 새 페이지를 먼저 보이고 이전 페이지를 숨긴다
         foreach (var c in pages[p]) c.Visible = true;
         foreach (var c in pages[1 - p]) c.Visible = false;
+        ApplySlotPages(); // 1페이지를 다 보이게 했으니 버프·도핑은 고른 칸만 다시 남긴다
         foreach (var (prev, label, next) in pageNavs)
         {
             label.Text = $"{p + 1} / {PageCount} 페이지";
@@ -196,25 +203,38 @@ sealed class JanusForm : Form
         };
         Controls.Add(buffTip);
         y += buffTip.PreferredSize.Height + S(8);
+        // 버프 3칸은 같은 자리에 겹쳐 두고 ◀ ▶로 한 칸씩 본다
+        y += MakeSlotNav(rx, y, colW, JanusWatch.BuffSlots, () => buffPage, v => buffPage = v, BuffName, i => BuffText(st.Buffs[i].Min)) + S(10);
+        int buffH = 0;
         for (int i = 0; i < JanusWatch.BuffSlots; i++)
-            y += MakeBuffCard(rx, y, colW, i).Height + S(10);
+            buffH = Math.Max(buffH, (buffCards[i] = MakeBuffCard(rx, y, colW, i)).Height);
+        y += buffH + S(10);
         int rightEnd = y;
 
-        // 도핑은 세 번째 줄에 둔다
+        // 도핑은 세 번째 줄에 둔다: 빨강·갈색·분홍 3칸을 ◀ ▶로 넘긴다
         int dx = rx + colW + gap;
         y = top + Section("부스트 도핑", JanusWatch.DopeMain, dx, top, colW);
-        var dopeCard = MakeCard(dx, y, colW, new CardSpec
+        y += MakeSlotNav(dx, y, colW, JanusWatch.DopeSlots, () => dopePage, v => dopePage = v, DopeName, i => JanusWatch.DopeColors(i).main) + S(10);
+        int dopeH = 0;
+        for (int i = 0; i < JanusWatch.DopeSlots; i++)
         {
-            Color = JanusWatch.DopeMain, Title = "부스트 도핑", On = st.DopeOn, SetOn = v => st.DopeOn = v,
-            KeyLabel = "도핑 사용 키", Which = 9,
-            StepLabel = "지속시간", Value = st.DopeSec, Options = Enumerable.Range(3, 28).Select(i => i * 10).ToArray(), Fmt = v => v + "초", SetValue = v => st.DopeSec = v,
-            Hint = "도핑 키 → 방향키 한 번 → 엔터를 10초 안에 누르면 쓴 것으로 보고, 사용 대기(기본 3초) 뒤부터 세요. 끝나면 빨간색으로 알려 드려요. 다시 쓰면 처음부터 다시 셉니다.",
-            Preview = () => JanusWatch.PlayDope(sc),
-            Switches = new (string, bool, Action<bool>)[] { ("사용 대기", st.DopeDelayOn, v => st.DopeDelayOn = v) },
-            Step2 = ("대기 시간", st.DopeDelaySec, Enumerable.Range(1, 10).ToArray(), v => v + "초", v => st.DopeDelaySec = v),
-        }, out var dk, out var ds);
-        dopeKey = dk; dopeStatus = ds;
-        y += dopeCard.Height + S(10);
+            int slot = i;
+            var d = st.Dopes[i];
+            var dopeCard = MakeCard(dx, y, colW, new CardSpec
+            {
+                Color = JanusWatch.DopeColors(i).main, Title = JanusWatch.DopeDefaultName(i), On = d.On, SetOn = v => d.On = v,
+                KeyLabel = "도핑 사용 키", Which = 40 + i,
+                StepLabel = "지속시간", Value = d.Sec, Options = Enumerable.Range(3, 28).Select(n => n * 10).ToArray(), Fmt = v => v + "초", SetValue = v => d.Sec = v,
+                Hint = "도핑 키 → 방향키 한 번 → 엔터를 10초 안에 누르면 쓴 것으로 보고, 사용 대기(기본 3초) 뒤부터 세요. 끝나면 이 칸 색으로 알려 드려요. 다시 쓰면 처음부터 다시 셉니다.",
+                Preview = () => JanusWatch.PlayDope(sc, slot, d.Name),
+                Switches = new (string, bool, Action<bool>)[] { ("사용 대기", d.DelayOn, v => d.DelayOn = v) },
+                Step2 = ("대기 시간", d.DelaySec, Enumerable.Range(1, 10).ToArray(), v => v + "초", v => d.DelaySec = v),
+                GetName = () => d.Name, SetName = v => d.Name = v,
+            }, out var dk, out var ds);
+            dopeKeys[i] = dk; dopeStatus[i] = ds; dopeCards[i] = dopeCard;
+            dopeH = Math.Max(dopeH, dopeCard.Height);
+        }
+        y += dopeH + S(10);
         // 정령의 펜던트 확인도 세 번째 줄, 도핑 아래에 둔다
         y += S(10);
         y += Section("정령의 펜던트", PendantCheck.Blue, dx, y, colW);
@@ -233,6 +253,8 @@ sealed class JanusForm : Form
         pageEnd[1] = MakePage2(pad, top, colW, gap, W - pad * 2);
         pages[1] = Controls.Cast<Control>().Skip(page2Start).ToList();
         foreach (var c in pages[1]) c.Visible = false;
+        ApplySlotPages();
+        RefreshSlotNavs();
 
         }
 
@@ -313,7 +335,102 @@ sealed class JanusForm : Form
         public required Action Preview { get; init; }
         public (string label, bool on, Action<bool> set)[]? Switches { get; init; }
         public (string label, int value, int[] options, Func<int, string> fmt, Action<int> set)? Step2 { get; init; }
+        /// <summary>이름을 바꿀 수 있는 칸이면 저장된 이름 읽기·쓰기 (비우면 Title이 기본 이름)</summary>
+        public Func<string?>? GetName { get; init; }
+        public Action<string?>? SetName { get; init; }
     }
+
+    /// <summary>제목 글을 누르면 그 자리에서 이름을 바꾸게 한다 (엔터 저장, Esc 취소, 비우면 기본 이름)</summary>
+    void AddNameEditor(Card card, Label name, int ip, int cy, int right, string fallback, Func<string?> get, Action<string?> set)
+    {
+        string Shown() => string.IsNullOrWhiteSpace(get()) ? fallback : get()!.Trim();
+        name.Text = Shown();
+        name.Cursor = Cursors.IBeam;
+        var pen = new Label { Text = "✎", Font = F(9), ForeColor = Gray, AutoSize = true, Cursor = Cursors.Hand };
+        void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
+        PlacePen();
+        var box = new TextBox
+        {
+            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false, BorderStyle = BorderStyle.FixedSingle,
+            Location = new Point(ip + S(16), cy - S(1)), Width = right - ip - S(16) - S(10), PlaceholderText = fallback,
+        };
+        bool done = false;
+        void Edit()
+        {
+            done = false;
+            box.Text = get() ?? "";
+            name.Visible = pen.Visible = false;
+            box.Visible = true; box.Focus(); box.SelectAll();
+        }
+        void Finish(bool keep)
+        {
+            if (done) return;
+            done = true;
+            if (keep) { set(string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim()); st.Save(); }
+            name.Text = Shown(); PlacePen();
+            box.Visible = false; name.Visible = pen.Visible = true;
+            editingName = null;
+            RefreshSlotNavs();
+        }
+        name.Click += (_, _) => Edit();
+        pen.Click += (_, _) => Edit();
+        box.Enter += (_, _) => editingName = Finish;
+        box.Leave += (_, _) => Finish(true);
+        card.Controls.AddRange(new Control[] { pen, box });
+    }
+
+    /// <summary>버프·도핑 넘기기 줄: ◀ [이름 1 / 3] ▶. 한 번에 한 칸만 보인다</summary>
+    int MakeSlotNav(int x, int y, int w, int count, Func<int> get, Action<int> set, Func<int, string> nameOf, Func<int, Color> colorOf)
+    {
+        int bh = S(32), aw = S(44), g = S(6);
+        RoundLabel Btn(string text, int left, int width, float size) => new()
+        {
+            AutoSize = false, Size = new Size(width, bh), TextAlign = ContentAlignment.MiddleCenter,
+            Font = F(size, FontStyle.Bold), Radius = S(8), Text = text, Location = new Point(left, y), UseMnemonic = false,
+        };
+        var prev = Btn("◀", x, aw, 10.5f);
+        var label = Btn("", x + aw + g, w - (aw + g) * 2, 10);
+        label.Fill = UI.HoverBack;
+        var next = Btn("▶", x + w - aw, aw, 10.5f);
+        void Go(int d)
+        {
+            int to = get() + d;
+            if (to < 0 || to >= count) return;
+            editingName?.Invoke(true);
+            if (capturing != 0) { capturing = 0; UpdateKeys(); }
+            set(to);
+            ApplySlotPages();
+            RefreshSlotNavs();
+        }
+        prev.Click += (_, _) => Go(-1);
+        next.Click += (_, _) => Go(1);
+        slotNavs.Add(() =>
+        {
+            int p = get();
+            label.Text = $"{nameOf(p)}   {p + 1} / {count}";
+            label.ForeColor = Readable(colorOf(p));
+            foreach (var (b, ok) in new[] { (prev, p > 0), (next, p < count - 1) })
+            {
+                b.Fill = ok ? UI.SoftAccent : UI.HoverBack;
+                b.ForeColor = ok ? UI.Accent : Color.FromArgb(190, 190, 196);
+                b.Cursor = ok ? Cursors.Hand : Cursors.Default;
+            }
+        });
+        Controls.Add(prev); Controls.Add(label); Controls.Add(next);
+        return bh;
+    }
+
+    void RefreshSlotNavs() { foreach (var f in slotNavs) f(); }
+
+    /// <summary>버프·도핑 칸 중 고른 한 칸만 보인다 (1페이지일 때만)</summary>
+    void ApplySlotPages()
+    {
+        for (int i = 0; i < buffCards.Length; i++) if (buffCards[i] is Card c) c.Visible = page == 0 && i == buffPage;
+        for (int i = 0; i < dopeCards.Length; i++) if (dopeCards[i] is Card c) c.Visible = page == 0 && i == dopePage;
+    }
+
+    string BuffName(int i) => string.IsNullOrWhiteSpace(st.Buffs[i].Name) ? $"버프 {i + 1}" : st.Buffs[i].Name!.Trim();
+    string DopeName(int i) => string.IsNullOrWhiteSpace(st.Dopes[i].Name) ? JanusWatch.DopeDefaultName(i) : st.Dopes[i].Name!.Trim();
 
     Card MakeCard(int x, int y, int w, CardSpec spec, out RoundLabel keyPill, out Label status)
     {
@@ -332,6 +449,8 @@ sealed class JanusForm : Form
         sw.Location = new Point(w - ip - sw.Width, cy + S(1));
         sw.Changed += v => { setOn(v); st.Save(); UpdateStatus(); };
         card.Controls.AddRange(new Control[] { dot, name, sw });
+        if (spec.SetName is Action<string?> setName && spec.GetName is Func<string?> getName)
+            AddNameEditor(card, name, ip, cy, sw.Left, title, getName, setName);
         cy += S(38);
 
         // 키 줄
@@ -984,6 +1103,7 @@ sealed class JanusForm : Form
             name.Text = Shown(); PlacePen();
             box.Visible = false; name.Visible = pen.Visible = true;
             editingName = null;
+            RefreshSlotNavs();
         }
         name.Click += (_, _) => Edit();
         pen.Click += (_, _) => Edit();
@@ -1112,7 +1232,7 @@ sealed class JanusForm : Form
         Style(shortsNextKey, 10, st.ShortsNextKey);
         Style(shortsPrevKey, 11, st.ShortsPrevKey);
         for (int i = 0; i < JanusWatch.BuffSlots; i++) Style(buffKeys[i], 20 + i, st.Buffs[i].Key);
-        Style(dopeKey, 9, st.DopeKey);
+        for (int i = 0; i < JanusWatch.DopeSlots; i++) Style(dopeKeys[i], 40 + i, st.Dopes[i].Key);
         for (int i = 0; i < JanusWatch.RepeatSlots; i++) Style(repeatKeys[i], 30 + i, st.Repeats[i].Key);
     }
 
@@ -1201,16 +1321,21 @@ sealed class JanusForm : Form
             }
         }
 
-        if (dopeStatus == null) return;
-        if (!st.DopeOn) dopeStatus.Text = "꺼져 있어요";
-        else if (st.DopeKey == 0) dopeStatus.Text = "도핑 사용 키를 정해 주세요";
-        else if (watch.DopeProgress == 0) dopeStatus.Text = "도핑 키 인식됨 · 방향키 한 번";
-        else if (watch.DopeProgress == 1) dopeStatus.Text = "방향키 인식됨 · 엔터를 누르세요";
-        else if (watch.DopeProgress > 1) dopeStatus.Text = "방향키를 한 번만 눌러야 해요";
-        else if (watch.DopeWaiting is double dw) dopeStatus.Text = $"사용 대기 {Math.Ceiling(dw)}초";
-        else if (watch.DopeRemaining is double dr) dopeStatus.Text = $"남은 시간 {(int)dr / 60}:{(int)dr % 60:00}" + (recent && watch.LastKind == "도핑" ? " · 인식됨" : "");
-        else dopeStatus.Text = "도핑 키 → 방향키 → 엔터를 기다려요";
-        dopeStatus.ForeColor = st.DopeOn ? JanusWatch.DopeMain : Gray;
+        for (int i = 0; i < JanusWatch.DopeSlots; i++)
+        {
+            var dl = dopeStatus[i];
+            if (dl == null) return;
+            var d = st.Dopes[i];
+            if (!d.On) dl.Text = "꺼져 있어요";
+            else if (d.Key == 0) dl.Text = "도핑 사용 키를 정해 주세요";
+            else if (watch.DopeProgress(i) == 0) dl.Text = "도핑 키 인식됨 · 방향키 한 번";
+            else if (watch.DopeProgress(i) == 1) dl.Text = "방향키 인식됨 · 엔터를 누르세요";
+            else if (watch.DopeProgress(i) > 1) dl.Text = "방향키를 한 번만 눌러야 해요";
+            else if (watch.DopeWaiting(i) is double dw) dl.Text = $"사용 대기 {Math.Ceiling(dw)}초";
+            else if (watch.DopeRemaining(i) is double dr) dl.Text = $"남은 시간 {(int)dr / 60}:{(int)dr % 60:00}" + (recent && watch.LastKind == "도핑" + i ? " · 인식됨" : "");
+            else dl.Text = "도핑 키 → 방향키 → 엔터를 기다려요";
+            dl.ForeColor = d.On ? JanusWatch.DopeColors(i).main : Gray;
+        }
 
         if (pendantStatus == null) return;
         pendantStatus.Text = !st.PendantOn ? "꺼져 있어요"
@@ -1242,7 +1367,7 @@ sealed class JanusForm : Form
                     case 10: st.ShortsNextKey = vk; break;
                     case 11: st.ShortsPrevKey = vk; break;
                     case >= 20 and < 20 + JanusWatch.BuffSlots: st.Buffs[capturing - 20].Key = vk; break;
-                    case 9: st.DopeKey = vk; break;
+                    case >= 40 and < 40 + JanusWatch.DopeSlots: st.Dopes[capturing - 40].Key = vk; break;
                     case >= 30 and < 30 + JanusWatch.RepeatSlots: st.Repeats[capturing - 30].Key = vk; break;
                 }
                 st.Save();
