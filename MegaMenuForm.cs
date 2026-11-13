@@ -8,6 +8,9 @@ public class MegaMenuForm : Form
     const int MaxRows = 6; // 구역 안에서 한 칸에 넣는 최대 항목 수 (넘치면 옆 칸으로)
     readonly float sc;
     readonly FlowLayoutPanel groups;
+    // 구역 제목용, 항목용 글꼴 하나씩을 모든 칸이 같이 쓴다
+    readonly Font titleFont = new("맑은 고딕", 9.5f * UI.Z, FontStyle.Bold);
+    readonly Font itemFont = new("맑은 고딕", 10.5f * UI.Z, FontStyle.Bold);
     int S(int v) => UI.Scale(v, sc);
 
     public MegaMenuForm(MenuEntry[] items, float scale, Action<string> onPick)
@@ -62,7 +65,7 @@ public class MegaMenuForm : Form
         box.Controls.Add(new Label
         {
             Text = title, AutoSize = true, UseMnemonic = false,
-            Font = new Font("맑은 고딕", 9.5f * UI.Z, FontStyle.Bold), ForeColor = Color.FromArgb(120, 120, 120),
+            Font = titleFont, ForeColor = Color.FromArgb(120, 120, 120),
             Margin = new Padding(0, 0, 0, S(12)),
         });
 
@@ -90,7 +93,7 @@ public class MegaMenuForm : Form
         var lbl = new Label
         {
             Text = it.Title, AutoSize = true, UseMnemonic = false, Cursor = Cursors.Hand,
-            Font = new Font("맑은 고딕", 10.5f * UI.Z, FontStyle.Bold), ForeColor = UI.Text,
+            Font = itemFont, ForeColor = UI.Text,
             Margin = new Padding(0, 0, 0, S(9)),
         };
         lbl.MouseEnter += (_, _) => lbl.ForeColor = UI.Accent;
@@ -152,6 +155,12 @@ public class MegaMenuForm : Form
     }
 
     protected override bool ShowWithoutActivation => true;
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing); // 라벨이 먼저 정리된 뒤에 글꼴을 푼다
+        if (disposing) { titleFont.Dispose(); itemFont.Dispose(); }
+    }
 
     protected override void OnHandleCreated(EventArgs e)
     {

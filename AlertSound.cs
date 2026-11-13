@@ -51,7 +51,7 @@ static class AlertSound
             player = new SoundPlayer(new MemoryStream(wav));
             player.Play(); // 기다리지 않고 바로 돌아온다
         }
-        catch { }
+        catch (Exception ex) { Log.Write("sound", "알림음을 재생하지 못함", ex); }
     }
 
     static byte[] Make(Note[] notes, double vol)

@@ -23,11 +23,14 @@ static class KeyHook
     static volatile bool active; // 키 스레드에서 바꾸고 화면 스레드에서 읽는다
     public static bool Active { get => active; private set => active = value; }
 
+    static Thread? starting;
+
     public static void Start()
     {
         if (Active) return;
+        if (starting is { IsAlive: true }) return; // 앞서 켠 것이 아직 준비 중이면 하나 더 걸지 않는다
         using var ready = new ManualResetEventSlim();
-        var t = new Thread(() =>
+        var t = starting = new Thread(() =>
         {
             proc = Callback;
             hook = SetWindowsHookEx(13 /* WH_KEYBOARD_LL */, proc, GetModuleHandle(null), 0);

@@ -76,6 +76,22 @@ public class Settings
     public DateTime? DopeStart { get; set; }       // 실제로 효과가 시작되는 시각 (사용 대기를 더한 값)
     public bool DopeDelayOn { get; set; } = true;  // 쓰고 몇 초 뒤에 효과가 붙는 경우
     public int DopeDelaySec { get; set; } = 3;
+    // 정령의 펜던트 확인: 고른 버프가 도는 동안 maple.gg에서 장비를 보고, 안 꼈으면 20초마다 알린다
+    public string? MapleNick { get; set; }
+    public bool PendantOn { get; set; }
+    public int PendantBuff { get; set; }           // 버프 칸 번호 (0~2)
+    // 반복 주기 알림 3칸: 키를 누르면 정한 주기마다 정한 색으로 알린다
+    public List<RepeatSlot> Repeats { get; set; } = new();
+    // 알림을 띄울 모니터 (Screen.DeviceName). "ALL"이면 모든 모니터, 비어 있어도 모든 모니터
+    public List<string> AlertScreens { get; set; } = new() { "ALL" };
+    // 공부 카드: 켜 두면 카드를 띄워 두고 StudySec초마다 다음 카드로 넘긴다. StudyStarOnly면 즐겨찾기한 카드만. 카드 자리는 게임 화면에 대한 비율
+    public bool StudyOn { get; set; }
+    public bool StudyStarOnly { get; set; }
+    public int StudyMin { get; set; } = 10;
+    public int StudySec { get; set; } = 12;
+    public double? StudyFX { get; set; }
+    public double? StudyFY { get; set; }
+    public List<StudyDeck> Decks { get; set; } = new();
     // 네이버 웹툰: 누르고 있는 동안 부드럽게 위/아래로 스크롤하는 키와 속도(초당 픽셀)
     public int WebtoonUpKey { get; set; }
     public int WebtoonDownKey { get; set; }
@@ -102,7 +118,7 @@ public class Settings
             if (File.Exists(FilePath))
                 return FixBuffs(JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new());
         }
-        catch { }
+        catch (Exception ex) { Log.Write("settings", "설정을 읽지 못해 기본값으로 시작함", ex); }
         return FixBuffs(new());
     }
 
@@ -113,6 +129,12 @@ public class Settings
         int[] mins = { 30, 20, 10 };
         while (s.Buffs.Count < 3) s.Buffs.Add(new BuffSlot { Min = mins[s.Buffs.Count] });
         if (s.Buffs.Count > 3) s.Buffs.RemoveRange(3, s.Buffs.Count - 3);
+        int[] colors = { RepeatSlot.Palette[2], RepeatSlot.Palette[4], RepeatSlot.Palette[6] };
+        while (s.Repeats.Count < 3) s.Repeats.Add(new RepeatSlot { Argb = colors[s.Repeats.Count] });
+        if (s.Repeats.Count > 3) s.Repeats.RemoveRange(3, s.Repeats.Count - 3);
+        s.AlertScreens ??= new() { "ALL" };
+        s.Decks ??= new();
+        foreach (var d in s.Decks) d.Stars ??= new();
         if (fresh && (s.BuffOn || s.BuffKey != 0 || s.BuffStart != null))
         {
             var b = s.Buffs.FirstOrDefault(x => x.Min == s.BuffMin) ?? s.Buffs[0];
@@ -125,13 +147,20 @@ public class Settings
 
     public void Save()
     {
+        // 같은 폴더의 임시 파일에 쓴 뒤 바꿔치기해서, 쓰다 끊겨도 기존 설정이 깨지지 않게 한다
+        string tmp = FilePath + ".tmp";
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath,
+            File.WriteAllText(tmp,
                 JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(tmp, FilePath, true);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Write("settings", "설정을 저장하지 못함", ex);
+            try { File.Delete(tmp); } catch { }
+        }
     }
 
     public void AddRecent(string name)
@@ -157,6 +186,29 @@ public class BuffSlot
     public int Key { get; set; }
     public int Min { get; set; } = 30;
     public DateTime? Start { get; set; }
-    public bool WaitEnter { get; set; } = true; // 키 다음 엔터까지 눌러야 센다 (끄면 키만 눌러도 센다)
+    public bool WaitEnter { get; set; } = true; // 키 다음 엔터도 누르면 엔터 때부터 센다 (끄면 키 누른 때 그대로)
+    // 마지막으로 쓴 때의 두 시점. 둘 다 남겨 두고 나중에 어느 쪽으로 셀지 바꿀 수 있다
+    public DateTime? KeyAt { get; set; }
+    public DateTime? EnterAt { get; set; }
     public string? Name { get; set; } // 비어 있으면 "버프 1" 같은 기본 이름
+}
+
+/// <summary>반복 주기 알림 한 칸</summary>
+public class RepeatSlot
+{
+    /// <summary>고를 수 있는 색: 빨강·주황·노랑·초록·하늘·파랑·보라·분홍</summary>
+    public static readonly int[] Palette =
+    {
+        Color.FromArgb(240, 60, 60).ToArgb(), Color.FromArgb(255, 140, 0).ToArgb(), Color.FromArgb(255, 240, 0).ToArgb(),
+        Color.FromArgb(70, 210, 90).ToArgb(), Color.FromArgb(40, 200, 240).ToArgb(), Color.FromArgb(40, 110, 255).ToArgb(),
+        Color.FromArgb(150, 80, 240).ToArgb(), Color.FromArgb(235, 70, 140).ToArgb(),
+    };
+    public bool On { get; set; }
+    public int Key { get; set; }
+    public int Sec { get; set; } = 30;    // 주기 (초)
+    public int UntilSec { get; set; }     // 키를 누른 뒤 이만큼 반복하고 멈춘다 (0이면 끌 때까지)
+    public int Argb { get; set; }
+    public DateTime? Start { get; set; }  // 키를 누른 시각 (이때부터 주기마다 알린다)
+    public string? Name { get; set; }     // 알림에 뜨는 글. 비어 있으면 "반복 알림 1" 같은 기본 이름
+    public string Title(int i) => string.IsNullOrWhiteSpace(Name) ? $"반복 알림 {i + 1}" : Name.Trim();
 }

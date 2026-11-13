@@ -20,7 +20,8 @@ sealed class ClockForm : Form
     static readonly CultureInfo Ko = new("ko-KR");
 
     readonly Font bigFont, smallFont, secFont, dateFont;
-    Point pos;          // 창 왼쪽 위 (그림자 포함)
+    readonly SolidBrush shadowBrush = new(Color.FromArgb(9, 20, 10, 40)); // 그림자 색은 고정이라 재사용
+    Point pos;         // 창 왼쪽 위 (그림자 포함)
     Size size;
     string drawnKey = "";
     bool hover, menuOpen;
@@ -153,8 +154,7 @@ sealed class ClockForm : Form
         {
             var sr = card; sr.Inflate(i * sc, i * sc); sr.Offset(0, S(4));
             using var sp = UI.RoundRect(sr, r + i * sc);
-            using var sb = new SolidBrush(Color.FromArgb(9, 20, 10, 40));
-            g.FillPath(sb, sp);
+            g.FillPath(shadowBrush, sp);
         }
         using (var cp = UI.RoundRect(card, r))
         {
@@ -318,7 +318,7 @@ sealed class ClockForm : Form
     {
         if (disposing)
         {
-            tick.Dispose(); bmp?.Dispose();
+            tick.Dispose(); bmp?.Dispose(); shadowBrush.Dispose();
             bigFont.Dispose(); smallFont.Dispose(); secFont.Dispose(); dateFont.Dispose();
             var menuFont = ContextMenuStrip?.Font; ContextMenuStrip?.Dispose(); menuFont?.Dispose(); // 폼이 메뉴를 대신 치워 주지 않는다
         }

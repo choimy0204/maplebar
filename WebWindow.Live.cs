@@ -149,19 +149,20 @@ public partial class WebWindow
             await cw.AddScriptToExecuteOnDocumentCreatedAsync(LiveVideoOnlyScript);
             cw.SourceChanged += (_, _) => SyncChat();
             // 넥슨 라이브 다시보기: 채팅 창이 영상과 같은 시간의 채팅을 보이게 1초마다 재생 시간을 넘긴다
+            if (IsDisposed) return; // 초기화 중에 창이 닫혔으면 타이머를 만들지 않는다
             var sync = new System.Windows.Forms.Timer { Interval = 1000 };
             sync.Tick += async (_, _) =>
             {
-                if (ChatWindow() is not { } c || c.web.CoreWebView2 == null) return;
-                var src = web.Source;
-                if (src == null || !Live.IsNexon(src.ToString()) || !src.AbsolutePath.StartsWith("/replays/", StringComparison.OrdinalIgnoreCase)) return;
                 try
                 {
+                    if (ChatWindow() is not { } c || c.web.CoreWebView2 == null) return;
+                    var src = web.Source;
+                    if (src == null || !Live.IsNexon(src.ToString()) || !src.AbsolutePath.StartsWith("/replays/", StringComparison.OrdinalIgnoreCase)) return;
                     var t = await cw.ExecuteScriptAsync("(()=>{const v=document.querySelector('video[data-mbmain]')||document.querySelector('video');return v?Math.floor(v.currentTime):-1})()");
                     if (double.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s) && s >= 0)
                         await c.web.CoreWebView2.ExecuteScriptAsync("window.__mbt=" + s.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 }
-                catch { }
+                catch { } // 1초마다 도는 틱이고, 닫히는 중의 접근 실패는 정상이다
             };
             sync.Start();
             FormClosed += (_, _) => sync.Dispose();

@@ -6,6 +6,22 @@ namespace MapleBar;
 /// <summary>바와 사이트 창에서 같이 쓰는 작은 UI 도우미.</summary>
 public static class UI
 {
+    static Icon? appIcon;
+    static bool appIconTried;
+
+    /// <summary>프로그램 아이콘. 창마다 새로 꺼내면 닫아도 풀리지 않고 쌓이므로 한 번만 꺼내 함께 쓴다.</summary>
+    public static Icon? AppIcon
+    {
+        get
+        {
+            if (appIconTried) return appIcon;
+            appIconTried = true;
+            try { appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
+            catch (Exception ex) { Log.Write("UI", "프로그램 아이콘을 못 불러옴", ex); }
+            return appIcon;
+        }
+    }
+
     /// <summary>모니터 해상도에 맞춘 배율. 가로 1920(배율 100% 기준)이면 1, 더 좁거나 넓으면 그만큼 줄이거나 키운다.
     /// 크기(S)와 글꼴 크기에 같이 곱한다.</summary>
     public static float Z = 1f;
@@ -84,7 +100,8 @@ public static class UI
     public static void RoundCorners(IntPtr handle, bool small = false)
     {
         int pref = small ? 3 : 2; // 3 = 작게 둥글게, 2 = 둥글게
-        try { DwmSetWindowAttribute(handle, 33, ref pref, sizeof(int)); } catch { }
+        try { DwmSetWindowAttribute(handle, 33, ref pref, sizeof(int)); }
+        catch (Exception ex) { Log.Write("UI", "창 모서리를 둥글게 못 바꿈", ex); }
     }
 
     /// <summary>펼침 메뉴(하위 메뉴 포함)를 둥근 모양으로 만든다.</summary>

@@ -10,7 +10,7 @@ namespace MapleBar;
 /// 바의 뮤직 칸을 끌어서 꺼내 원하는 곳에 두고, 다시 바 위로 끌어 놓으면 바 안으로 돌아간다.
 /// 꺼낼 때는 칸 아래에서 물방울이 늘어나다 똑 떨어져 나와 칸 모양으로 펴진다.
 /// </summary>
-sealed partial class MusicDock
+sealed partial class MusicDock : IDisposable
 {
     readonly Form bar;
     readonly Control slot;           // 바 안에서 뮤직 칸이 들어 있는 줄
@@ -48,6 +48,19 @@ sealed partial class MusicDock
         pill.DragStart += OnDragStart;
         // 효과 중에 오류가 나도 앱이 멈추지 않게 하고, 칸은 바로 돌려 놓는다
         tick.Tick += (_, _) => { try { Tick(); } catch { Recover(); } };
+    }
+
+    /// <summary>타이머, 효과 창, 카드(꺼낸 것과 숨겨 둔 것), 사진을 해제한다. 여러 번 불러도 안전하다.</summary>
+    public void Dispose()
+    {
+        tick.Stop();
+        tick.Dispose();
+        pill.DragStart -= OnDragStart;
+        fx.Dispose();
+        card?.Dispose(); card = null;
+        spare?.Dispose(); spare = null;
+        shot?.Dispose(); shot = null;
+        penHi?.Dispose(); penHi = null;
     }
 
     // ── 시작 ──

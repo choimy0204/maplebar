@@ -26,6 +26,18 @@ public class BarForm : Form
 
     int S(int v) => UI.Scale(v, sc);
 
+    // 폼이 만든 글꼴은 폼을 정리할 때 함께 푼다
+    readonly List<Font> ownedFonts = new();
+    Font OwnFont(Font f) { ownedFonts.Add(f); return f; }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing); // 컨트롤이 먼저 정리된 뒤에 글꼴을 푼다
+        if (!disposing) return;
+        foreach (var f in ownedFonts) f.Dispose();
+        ownedFonts.Clear();
+    }
+
     public BarForm()
     {
         // Windows 배율(DPI)에 더해 모니터 가로 해상도에 맞춰 크기와 글꼴을 같이 키우거나 줄인다
@@ -36,10 +48,10 @@ public class BarForm : Form
         FormBorderStyle = FormBorderStyle.None;
         TopMost = true;
         ShowInTaskbar = true;
-        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        if (UI.AppIcon is { } appIcon) Icon = appIcon;
         StartPosition = FormStartPosition.Manual;
-        Font = new Font("맑은 고딕", 10.5f * UI.Z, FontStyle.Bold);
-        BackColor = UI.Line;          // 1px 테두리 색
+        Font = OwnFont(new Font("맑은 고딕", 10.5f * UI.Z, FontStyle.Bold));
+        BackColor = UI.Line;         // 1px 테두리 색
         Padding = new Padding(1);
         Height = S(56);
 
@@ -56,7 +68,7 @@ public class BarForm : Form
         var grip = new Label
         {
             Text = "⠿", AutoSize = true, Cursor = Cursors.SizeAll,
-            ForeColor = Color.FromArgb(170, 170, 170), Font = new Font("Segoe UI Symbol", 12f * UI.Z),
+            ForeColor = Color.FromArgb(170, 170, 170), Font = OwnFont(new Font("Segoe UI Symbol", 12f * UI.Z)),
             Margin = new Padding(0, 0, S(4), 0),
         };
         grip.MouseDown += DragMove;
@@ -108,7 +120,7 @@ public class BarForm : Form
         // 칸에 들어오면 입력기를 다시 붙이고, 마지막에 쓰던 한글/영문 상태로 돌려놓는다
         search.GotFocus += (_, _) => ImeRestore(search.Handle);
         search.LostFocus += (_, _) => ImeRemember(search.Handle);
-        search.Font = new Font("맑은 고딕", 10.5f * UI.Z);
+        search.Font = OwnFont(new Font("맑은 고딕", 10.5f * UI.Z));
         search.Width = searchBox.Width - S(44);
         search.Location = new Point(S(12), (searchBox.Height - search.PreferredHeight) / 2);
         search.KeyDown += (_, e) =>
@@ -117,7 +129,7 @@ public class BarForm : Form
             else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; search.Clear(); }
         };
         var searchIcon = UI.Button("🔍", "캐릭터정보 검색 (Enter)", () => Search(SiteMenu.InfoPath), sc);
-        searchIcon.Font = new Font("Segoe UI Emoji", 10f * UI.Z);
+        searchIcon.Font = OwnFont(new Font("Segoe UI Emoji", 10f * UI.Z));
         searchIcon.Padding = new Padding(S(2));
         searchIcon.Location = new Point(searchBox.Width - S(34), (searchBox.Height - searchIcon.PreferredSize.Height) / 2);
         searchBox.Controls.Add(search);
@@ -196,6 +208,7 @@ public class BarForm : Form
         Resize += fit;
         // 바를 다시 만들었을 때: 멈춰 있는 곡은 알림이 안 오니 지금 곡을 바로 보여 준다
         Shown += (_, _) => { if (WebWindow.CurrentMusic is { } cm) OnMusicChanged(cm); };
+        Shown += (_, _) => DevInfo.Warm(); // 개발자 정보를 미리 받아 둬서 누르자마자 뜨게
     }
 
     void OnMusicChanged(WebWindow.MusicInfo? m)
@@ -434,9 +447,11 @@ public class BarForm : Form
 
         // 인벤 자유게시판 알림: 체크한 목록에 새 글이 올라오면 화면 오른쪽 아래에 알려 준다
         cms.Items.Add(new ToolStripSeparator());
+        var headerFont = new Font("맑은 고딕", 9f * UI.Z, FontStyle.Bold);
+        cms.Disposed += (_, _) => headerFont.Dispose(); // 메뉴를 치울 때 헤더 글꼴도 함께 푼다
         cms.Items.Add(new ToolStripMenuItem("자유게시판 알림 (인벤)")
         {
-            Enabled = false, Font = new Font("맑은 고딕", 9f * UI.Z, FontStyle.Bold),
+            Enabled = false, Font = headerFont,
         });
         const string WatchTag = "watch";
         foreach (var f in Inven.Feeds)
@@ -456,6 +471,7 @@ public class BarForm : Form
         cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
         cms.Items.Add(new ToolStripSeparator());
         cms.Items.Add("알림 설정 (야누스·룬·버프)…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
+        cms.Items.Add("공부 카드…", null, (_, _) => StudyForm.Open(this, settings, sc));
         cms.Items.Add("웹툰·쇼츠 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
         cms.Items.Add(ClockItem());
         // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
@@ -471,6 +487,8 @@ public class BarForm : Form
         cms.Items.Add("바 숨기기 (Ctrl+Alt+M)", null, (_, _) => HideAll());
         cms.Items.Add(AlertWhenHiddenItem());
         cms.Items.Add(AutoStartItem());
+        cms.Items.Add(new ToolStripSeparator());
+        cms.Items.Add("개발자 정보", null, (_, _) => DevInfo.Open(this));
         ShowBelowBar(cms, anchor);
     }
 
@@ -554,10 +572,16 @@ public class BarForm : Form
     {
         var it = new ToolStripMenuItem("PC 켤 때 자동 실행") { Checked = AutoStart.On };
         it.ToolTipText = "켜 두면 PC를 켤 때 메이플 바가 화면 오른쪽 아래 아이콘으로 시작해요";
-        it.Click += (_, _) =>
+        bool busy = false;
+        it.Click += async (_, _) =>
         {
-            bool want = !AutoStart.On;
-            if (AutoStart.Set(want)) it.Checked = want;
+            if (busy) return;
+            busy = true;
+            bool want = !AutoStart.On, ok;
+            // 작업 스케줄러 명령이 끝날 때까지 화면이 멈추지 않게 뒤에서 돌린다
+            try { ok = await Task.Run(() => AutoStart.Set(want)); }
+            finally { busy = false; }
+            if (ok) { if (!it.IsDisposed) it.Checked = want; }
             else MessageBox.Show("자동 실행 설정을 바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", "메이플 바");
         };
         return it;
@@ -646,6 +670,8 @@ public class BarForm : Form
     }
 
     JanusWatch? janus; // 솔 야누스·룬 알림 (키 상태만 읽는다)
+    PendantCheck? pendant; // 고른 버프가 도는 동안 maple.gg에서 정령의 펜던트를 확인한다
+    StudyRun? study;       // 공부 카드를 정한 주기마다 띄운다
     ClockForm? clock; // 게임 화면 위 시계
     readonly System.Windows.Forms.Timer chipTimer = new() { Interval = 250 };
 
@@ -699,7 +725,9 @@ public class BarForm : Form
         gameTimer.Start();
         janus = new JanusWatch(settings, sc);
         AddTimerChips(janus);
-        clock = new ClockForm(settings, sc);
+        pendant = new PendantCheck(settings, janus, sc);
+        study = new StudyRun(settings, sc);
+        clock =new ClockForm(settings, sc);
         search.Focus();
         keepTop.Tick += (_, _) => StayOnTop();
         keepTop.Start();
@@ -779,7 +807,8 @@ public class BarForm : Form
             showWait = ThreadPool.RegisterWaitForSingleObject(ev, (_, _) =>
             {
                 if (IsDisposed || !IsHandleCreated) return;
-                try { BeginInvoke(() => { WindowState = FormWindowState.Normal; ShowAll(); }); } catch { }
+                try { BeginInvoke(() => { WindowState = FormWindowState.Normal; ShowAll(); }); }
+                catch (Exception ex) { Log.Write("바", "두 번째 실행 신호로 바를 못 불러옴", ex); }
             }, null, -1, executeOnlyOnce: false);
     }
 
@@ -1035,10 +1064,13 @@ public class BarForm : Form
     {
         // 바를 다시 만들 때 옛 바의 일이 계속 돌지 않게 멈춘다
         showWait?.Unregister(null);
-        foreach (var t in new[] { gameTimer, chipTimer, keepTop, foldTimer, megaTimer }) t.Stop();
+        foreach (var t in new[] { gameTimer, chipTimer, keepTop, foldTimer, megaTimer }) { t.Stop(); t.Dispose(); }
         janus?.Stop();
+        pendant?.Dispose(); pendant = null;
+        study?.Dispose(); study = null;
         inven?.Stop();
         lyrics?.Close(); lyrics = null;
+        musicDock?.Dispose(); musicDock = null;
         // 바에 딸린 작은 창(뮤직 카드·곡 목록·소리 조절 등)은 닫는다. 사이트 창·뮤직 창은 그대로 둔다
         if (Program.RestartRequested)
         {
@@ -1055,12 +1087,7 @@ public class BarForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var r = new Rectangle(0, 0, searchBox.Width - 1, searchBox.Height - 1);
         int d = S(10);
-        using var path = new GraphicsPath();
-        path.AddArc(r.Left, r.Top, d, d, 180, 90);
-        path.AddArc(r.Right - d, r.Top, d, d, 270, 90);
-        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        path.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
+        using var path = UI.RoundRect(r, d / 2f); // 지름이 d가 되는 반지름
         using var pen = new Pen(search.Focused ? UI.Accent : UI.Line, Math.Max(1, S(1)));
         g.DrawPath(pen, path);
     }

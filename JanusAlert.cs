@@ -14,25 +14,56 @@ static class JanusAlert
     static Color Main = Color.FromArgb(150, 80, 255);
     static Color Light = Color.FromArgb(228, 205, 255);
     static string Text = "";
+    // 잠깐 바뀌는 색 (정펜: 노랑으로 돌다가 6시 방향에서 잠깐 파랑). 없으면 null
+    static Color? FlashMain, FlashLight;
+    static double mix; // 0 = 기본 색, 1 = 잠깐 바뀌는 색
+    static Color M => Lerp(Main, FlashMain, mix);
+    static Color L => Lerp(Light, FlashLight, mix);
+    static Color Lerp(Color a, Color? b, double t) => b is not Color c || t <= 0 ? a :
+        Color.FromArgb((int)(a.R + (c.R - a.R) * t), (int)(a.G + (c.G - a.G) * t), (int)(a.B + (c.B - a.B) * t));
+
+    // 머리가 6시 방향(아래 가운데)에 닿는 때부터 잠깐 바뀐 색을 쓴다. 출발과 멈춤이 같은 모양이라 한 바퀴 시간의 절반에 닿는다
+    const double FlashAt = Lap / 2, FlashHold = 0.35, FlashEase = 0.08;
+    static double FlashMix(double el)
+    {
+        double t = el - FlashAt;
+        if (t < 0 || t > FlashHold + FlashEase) return 0;
+        return Math.Min(Math.Min(t / FlashEase, (FlashHold + FlashEase - t) / FlashEase), 1);
+    }
 
     static Action? stop;
 
-    /// <summary>기본은 솔 야누스(보라). 룬 알림은 글과 색만 바꿔 같은 효과를 쓴다.</summary>
+    /// <summary>알림이 뜰 때마다 (공부 카드가 1초 늦게 넘어가게 한다)</summary>
+    public static event Action? Played;
+
+    /// <summary>기본은 솔 야누스(보라). 룬 알림은 글과 색만 바꿔 같은 효과를 쓴다.
+    /// flash를 주면 빛이 6시 방향에 닿을 때 잠깐 그 색으로 바뀌었다가 돌아온다.</summary>
     public static void Play(float sc, string text = "솔 야누스가 꺼졌어요", Color? main = null, Color? light = null,
-        AlertSound.Kind sound = AlertSound.Kind.Janus)
+        AlertSound.Kind sound = AlertSound.Kind.Janus, Color? flash = null, Color? flashLight = null)
     {
         AlertSound.Play(sound);
+        Played?.Invoke();
         stop?.Invoke();
         Text = text;
         Main = main ?? Color.FromArgb(150, 80, 255);
         Light = light ?? Color.FromArgb(228, 205, 255);
-        // 모든 모니터에 띄운다. 게임이 있는 모니터는 게임 화면에 맞춘다
-        var areas = Screen.AllScreens.Select(s => s.Bounds).ToList();
+        FlashMain = flash;
+        FlashLight = flash == null ? null : flashLight ?? flash;
+        mix = 0;
+        // 고른 모니터에 띄운다 (ALL이거나 고른 모니터가 지금 없으면 모든 모니터). 게임이 있는 모니터는 게임 화면에 맞춘다
+        var all = Screen.AllScreens;
+        var pick = AlertSound.St?.AlertScreens;
+        var screens = pick == null || pick.Count == 0 || pick.Contains("ALL")
+            ? all : all.Where(s => pick.Contains(s.DeviceName)).ToArray();
+        if (screens.Length == 0) screens = all;
+        bool everyScreen = screens.Length == all.Length;
+        var areas = screens.Select(s => s.Bounds).ToList();
         if (Game.Area() is Rectangle gr)
         {
             var c = new Point(gr.X + gr.Width / 2, gr.Y + gr.Height / 2);
             int gi = areas.FindIndex(r => r.Contains(c));
-            if (gi >= 0) areas[gi] = gr; else areas.Add(gr);
+            if (gi >= 0) areas[gi] = gr;
+            else if (everyScreen) areas.Add(gr);
         }
         int t = Math.Max(8, (int)Math.Round(64 * sc));
         var sets = areas.Select(area =>
@@ -48,9 +79,17 @@ static class JanusAlert
             var bmps = rects.Select(r => new Bitmap(Math.Max(1, r.Width), Math.Max(1, r.Height))).ToArray();
             // 화면 전체를 물들이는 막: 가운데는 옅고 가장자리는 진하게 한 번만 그려 두고, 투명도만 바꾼다
             var tint = new Splash();
-            using (var tb = Tint(area.Size)) tint.Present(tb, area.Location);
+            using (var tb = Tint(area.Size, Main)) tint.Present(tb, area.Location);
             tint.SetAlpha(0);
-            return (area, rects, strips, bmps, tint, pill: new Splash());
+            // 잠깐 바뀌는 색이 있으면 그 색 막도 하나 더 만들어 두고 투명도로 섞는다
+            Splash? tint2 = null;
+            if (FlashMain is Color fc)
+            {
+                tint2 = new Splash();
+                using (var tb = Tint(area.Size, fc)) tint2.Present(tb, area.Location);
+                tint2.SetAlpha(0);
+            }
+            return (area, rects, strips, bmps, tint, tint2, pill: new Splash());
         }).ToArray();
         var timer = new System.Windows.Forms.Timer { Interval = 15 };
         var start = DateTime.Now;
@@ -61,11 +100,13 @@ static class JanusAlert
             foreach (var x in sets)
             {
                 x.tint.Dispose();
+                x.tint2?.Dispose();
                 foreach (var s in x.strips) s.Dispose();
                 foreach (var b in x.bmps) b.Dispose();
                 x.pill.Dispose();
             }
             pillBmp?.Dispose(); pillBmp = null;
+            pillFont?.Dispose(); pillFont = null;
             stop = null;
         };
 
@@ -77,10 +118,13 @@ static class JanusAlert
             double ta = el < Lap ? Math.Sin(el / Lap * Math.PI / 2) : 1 - Math.Pow((el - Lap) / Fade, 1.5);
             // 글씨: 처음에 살짝 늦게 떠서 끝날 때 같이 사라진다
             double a = Math.Clamp((el - 0.15) / 0.3, 0, 1) * Math.Clamp((Lap + Fade - el) / 0.6, 0, 1);
+            mix = FlashMain == null ? 0 : FlashMix(el);
             var pb = PillFor(a, sc);
-            foreach (var (area, rects, strips, bmps, tint, pill) in sets)
+            foreach (var (area, rects, strips, bmps, tint, tint2, pill) in sets)
             {
-                tint.SetAlpha((byte)(255 * Math.Clamp(ta, 0, 1)));
+                double tc = Math.Clamp(ta, 0, 1);
+                tint.SetAlpha((byte)(255 * tc * (1 - mix)));
+                tint2?.SetAlpha((byte)(255 * tc * mix));
                 for (int i = 0; i < rects.Length; i++)
                 {
                     using (var g = Graphics.FromImage(bmps[i]))
@@ -111,7 +155,7 @@ static class JanusAlert
             float head = (float)(p * len);
 
             // 지나간 자리에 남는 옅은 선
-            using (var pen = new Pen(Color.FromArgb(80, Main), 3 * sc) { LineJoin = LineJoin.Round })
+            using (var pen = new Pen(Color.FromArgb(80, M), 3 * sc) { LineJoin = LineJoin.Round })
             {
                 var pts = Span(r, head);
                 if (pts.Length >= 2) g.DrawLines(pen, pts);
@@ -126,10 +170,10 @@ static class JanusAlert
                 var pt = At(r, d);
                 float rad = (8 + 26 * k) * sc;
                 if (pt.X + rad < clip.Left || pt.X - rad > clip.Right || pt.Y + rad < clip.Top || pt.Y - rad > clip.Bottom) continue;
-                b.Color = Color.FromArgb(5 + (int)(50 * k * k), Main);
+                b.Color = Color.FromArgb(5 + (int)(50 * k * k), M);
                 g.FillEllipse(b, pt.X - rad, pt.Y - rad, rad * 2, rad * 2);
                 float core = (3 + 8 * k) * sc;
-                b.Color = Color.FromArgb((int)(210 * k * k * k), Light);
+                b.Color = Color.FromArgb((int)(210 * k * k * k), L);
                 g.FillEllipse(b, pt.X - core, pt.Y - core, core * 2, core * 2);
             }
         }
@@ -138,9 +182,9 @@ static class JanusAlert
             // 다 돌고 나면 테두리 전체가 한 번 빛나고 사라진다
             double u = (el - Lap) / Fade;
             float a = (float)(1 - u * u);
-            using (var pen = new Pen(Color.FromArgb((int)(50 * a), Main), 20 * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
-            using (var pen = new Pen(Color.FromArgb((int)(160 * a), Main), 4 * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
-            using (var pen = new Pen(Color.FromArgb((int)(140 * a), Light), 1.5f * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+            using (var pen = new Pen(Color.FromArgb((int)(50 * a), M), 20 * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+            using (var pen = new Pen(Color.FromArgb((int)(160 * a), M), 4 * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+            using (var pen = new Pen(Color.FromArgb((int)(140 * a), L), 1.5f * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
         }
     }
 
@@ -166,19 +210,19 @@ static class JanusAlert
         return list.ToArray();
     }
 
-    static Bitmap Tint(Size size)
+    static Bitmap Tint(Size size, Color c)
     {
         var bmp = new Bitmap(Math.Max(1, size.Width), Math.Max(1, size.Height));
         using var g = Graphics.FromImage(bmp);
-        using (var edge = new SolidBrush(Color.FromArgb(150, Main))) g.FillRectangle(edge, 0, 0, bmp.Width, bmp.Height);
+        using (var edge = new SolidBrush(Color.FromArgb(150, c))) g.FillRectangle(edge, 0, 0, bmp.Width, bmp.Height);
         // 화면보다 큰 타원으로 가운데를 옅게 (가장자리로 갈수록 진해진다)
         var oval = new RectangleF(-size.Width * 0.2f, -size.Height * 0.25f, size.Width * 1.4f, size.Height * 1.5f);
         using var path = new GraphicsPath();
         path.AddEllipse(oval);
         using var pb = new PathGradientBrush(path)
         {
-            CenterColor = Color.FromArgb(45, Main),
-            SurroundColors = new[] { Color.FromArgb(150, Main) },
+            CenterColor = Color.FromArgb(45, c),
+            SurroundColors = new[] { Color.FromArgb(150, c) },
         };
         g.CompositingMode = CompositingMode.SourceCopy; // 겹쳐 칠하지 않고 바꿔 칠한다
         g.FillPath(pb, path);
@@ -190,7 +234,7 @@ static class JanusAlert
     static (string, int, float, double) pillKey;
     static Bitmap PillFor(double a, float sc)
     {
-        var key = (Text, Main.ToArgb(), sc, a);
+        var key = (Text, M.ToArgb(), sc, a);
         if (pillBmp != null && key == pillKey) return pillBmp;
         pillBmp?.Dispose();
         pillBmp = Pill(a, sc);
@@ -198,10 +242,22 @@ static class JanusAlert
         return pillBmp;
     }
 
+    // 글꼴은 배율(sc)로만 정해지니 같은 배율이면 다시 쓴다
+    static Font? pillFont;
+    static float pillFontSc;
+    static Font PillFont(float sc)
+    {
+        if (pillFont != null && pillFontSc == sc) return pillFont;
+        pillFont?.Dispose();
+        pillFont = new Font("맑은 고딕", 30 * sc, FontStyle.Bold, GraphicsUnit.Pixel);
+        pillFontSc = sc;
+        return pillFont;
+    }
+
     static Bitmap Pill(double a, float sc)
     {
         string text = Text;
-        using var font = new Font("맑은 고딕", 30 * sc, FontStyle.Bold, GraphicsUnit.Pixel);
+        var font = PillFont(sc);
         Size ts;
         using (var tmp = new Bitmap(1, 1))
         using (var tg = Graphics.FromImage(tmp)) ts = Size.Ceiling(tg.MeasureString(text, font));
@@ -213,8 +269,8 @@ static class JanusAlert
         g.TextRenderingHint = TextRenderingHint.AntiAlias;
         var box = new RectangleF(1, 1, bmp.Width - 2, bmp.Height - 2);
         using var path = Round(box, box.Height / 2);
-        using (var b = new SolidBrush(Color.FromArgb((int)(215 * a), Main.R / 4, Main.G / 4, Main.B / 4 + 10))) g.FillPath(b, path);
-        using (var pen = new Pen(Color.FromArgb((int)(220 * a), Main), Math.Max(1f, 1.5f * sc))) g.DrawPath(pen, path);
+        using (var b = new SolidBrush(Color.FromArgb((int)(215 * a), M.R / 4, M.G / 4, M.B / 4 + 10))) g.FillPath(b, path);
+        using (var pen = new Pen(Color.FromArgb((int)(220 * a), M), Math.Max(1f, 1.5f * sc))) g.DrawPath(pen, path);
         using (var b = new SolidBrush(Color.FromArgb((int)(255 * a), Color.White))) g.DrawString(text, font, b, padX, padY);
         return bmp;
     }

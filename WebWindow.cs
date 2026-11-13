@@ -16,7 +16,7 @@ public partial class WebWindow : Form
 {
     // [전역] 모든 창이 같은 WebView2 환경(쿠키·로그인·사람 확인)을 함께 쓴다. 만들기에 실패하면 null로 되돌려 다음 창에서 다시 만든다
     static Task<CoreWebView2Environment>? sharedEnv;
-    static Task<CoreWebView2Environment> Env =>
+    internal static Task<CoreWebView2Environment> Env =>
         sharedEnv ??= CoreWebView2Environment.CreateAsync(null, Settings.WebDataDir,
             // 바에서 고른 곡이 숨은 창에서 바로 재생되게 한다
             new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required" + (Environment.GetEnvironmentVariable("MB_DEBUG") == "1" ? " --remote-debugging-port=9333" : "")));
@@ -27,6 +27,10 @@ public partial class WebWindow : Form
     readonly WebView2 web = new() { Dock = DockStyle.Fill };
     readonly Settings settings;
     readonly TitleStrip grip;
+    // 이 창이 만든 Font·ToolTip·메뉴: 창이 닫힐 때 해제한다
+    readonly List<IDisposable> owned = new();
+    // 투명도 저장은 마지막 휠 뒤 400ms에 한 번만 한다
+    readonly System.Windows.Forms.Timer alphaSaveTimer = new() { Interval = 400 };
     // 어떤 사이트 창인지: 주소를 바꿀 때마다 한 번 정해 두고, 매번 주소를 다시 풀지 않는다
     enum SiteKind { Other, Webtoon, Music, Coordi, YouTube, YouTubePlayer, YouTubeComments, Live, LivePlayer, LiveChat }
     string startUrlValue = "";
@@ -51,6 +55,12 @@ public partial class WebWindow : Form
         {
             this.owner = owner;
             DoubleBuffered = true; ResizeRedraw = true; BackColor = Color.White;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { bold.Dispose(); normal.Dispose(); }
+            base.Dispose(disposing);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -102,7 +112,8 @@ public partial class WebWindow : Form
         BackColor = Color.White; // 테두리(크기 조절 영역)가 따로 보이지 않게 흰색
         Padding = new Padding(edge);
         TopMost = settings.WinTopMost || Webtoon.IsWebtoon(url); // 웹툰은 늘 맨 위
-        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        if (UI.AppIcon is { } appIcon) Icon = appIcon;
+        alphaSaveTimer.Tick += (_, _) => { alphaSaveTimer.Stop(); settings.Save(); };
 
         // 위쪽 제목 줄: 주황 점 + 닉네임(굵게) + 페이지 이름(회색), 오른쪽에 주황 동그라미 ✕
         grip = new TitleStrip(this) { Dock = DockStyle.Top, Height = S(32), Padding = new Padding(0, S(5), S(2), S(5)) };
@@ -142,6 +153,7 @@ public partial class WebWindow : Form
             g.DrawPath(p, box);
         };
         var growTip = new ToolTip();
+        owned.Add(growTip);
         growTip.SetToolTip(grow, "크게 보기");
         grow.MouseEnter += (_, _) => grow.Fill = Color.FromArgb(255, 226, 196);
         grow.MouseLeave += (_, _) => grow.Fill = UI.SoftAccent;
@@ -167,18 +179,29 @@ public partial class WebWindow : Form
         grip.Controls.Add(gap2); gap2.BringToFront();
         alphaBar = new AlphaSlider { Dock = DockStyle.Right, Width = S(70), Value = Music.IsMusic(url) ? 100 : Math.Clamp(settings.WinOpacity, AlphaSlider.Min, 100) };
         alphaBar.Changed += v => SetAlpha(v);
-        new ToolTip().SetToolTip(alphaBar, "투명도");
+        var alphaBarTip = new ToolTip();
+        owned.Add(alphaBarTip);
+        alphaBarTip.SetToolTip(alphaBar, "투명도");
         grip.Controls.Add(alphaBar); alphaBar.BringToFront();
         if (KindOf(url) is SiteKind.YouTubePlayer or SiteKind.LivePlayer) { AddCommentsButton(KindOf(url) == SiteKind.LivePlayer ? "채팅" : "댓글"); StartBare(); }
         if (Music.IsMusic(url))
         {
             // 뮤직 창: 곡 정보를 1초마다 읽어 바에 알린다
-            musicTimer.Tick += async (_, _) => await PollMusic();
+            // 앞 확인이 아직 안 끝났으면 이번 틱은 건너뛴다 (페이지가 느릴 때 확인이 겹쳐 쌓이지 않게)
+            bool polling = false;
+            musicTimer.Tick += async (_, _) =>
+            {
+                if (polling) return;
+                polling = true;
+                try { await PollMusic(); } finally { polling = false; }
+            };
             if (yt) musicTimer.Interval = 400; // 가사의 지금 줄을 늦지 않게 따라간다
             musicTimer.Start();
         }
 
-        var menu = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 9.5f * UI.Z), ShowImageMargin = false });
+        var menuFont = new Font("맑은 고딕", 9.5f * UI.Z);
+        var menu = UI.Rounded(new ContextMenuStrip { Font = menuFont, ShowImageMargin = false });
+        owned.Add(menu); owned.Add(menuFont); // 메뉴를 먼저 해제하고 글꼴을 해제한다
         menu.Items.Add("새로고침 (F5)", null, (_, _) => web.CoreWebView2?.Reload());
         menu.Items.Add("뒤로 (Alt+←)", null, (_, _) => { if (web.CanGoBack) web.GoBack(); });
         menu.Items.Add("브라우저로 열기", null, (_, _) => { if (web.Source != null) OpenExternal(web.Source.ToString()); });
@@ -250,6 +273,7 @@ public partial class WebWindow : Form
         try
         {
             var env = await Env;
+            if (IsDisposed) return; // 기다리는 동안 창이 닫혔다
             await web.EnsureCoreWebView2Async(env);
             var cw = web.CoreWebView2;
             // 페이지(또는 그 안의 iframe)에 포커스가 있을 때도 브라우저 단계에서 Ctrl+W를 받는다
@@ -269,7 +293,7 @@ public partial class WebWindow : Form
                         }
                     };
             }
-            catch { }
+            catch (Exception ex) { Log.Write("web", "Ctrl+W 단축키를 걸지 못함", ex); }
             // 페이지 안에 포커스가 있어도 Ctrl+W로 창을 닫는다 (한글 입력 중에도 되도록 키 위치로 본다)
             await cw.AddScriptToExecuteOnDocumentCreatedAsync(
                 "addEventListener('keydown',e=>{if(e.ctrlKey&&!e.altKey&&!e.shiftKey&&e.code==='KeyW'){e.preventDefault();e.stopImmediatePropagation();" +
@@ -339,6 +363,7 @@ public partial class WebWindow : Form
         catch (Exception ex)
         {
             sharedEnv = null;
+            if (IsDisposed) return; // 이미 닫힌 창에는 안내 창을 띄우지 않는다
             MessageBox.Show(this, "사이트 화면을 띄우지 못했어요.\nMicrosoft Edge WebView2 런타임이 필요해요.\n\n" + ex.Message,
                 "메이플 바", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
@@ -472,7 +497,8 @@ public partial class WebWindow : Form
 
     static void OpenExternal(string url)
     {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) { Log.Write("web", "기본 브라우저로 열지 못함", ex); }
     }
 
     // ── 제목줄 없는 창 옮기기·크기 조절 ──
@@ -512,7 +538,7 @@ public partial class WebWindow : Form
             DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));
             DwmSetWindowAttribute(Handle, 34, ref noBorder, sizeof(int));
         }
-        catch { }
+        catch (Exception ex) { Log.Write("web", "창 모서리·테두리 모양을 바꾸지 못함", ex); }
     }
 
     protected override CreateParams CreateParams
@@ -554,7 +580,7 @@ public partial class WebWindow : Form
         Opacity = pct / 100.0;
         alphaBar.Value = pct;
         settings.WinOpacity = pct;
-        settings.Save();
+        alphaSaveTimer.Stop(); alphaSaveTimer.Start(); // 저장은 마지막 변경 뒤 400ms에 한 번
         Lift();
         alphaTip.Show($"투명도 {pct}%", grip, grip.PointToClient(Cursor.Position) + new Size(S(12), S(12)), 900);
     }
@@ -634,6 +660,12 @@ public partial class WebWindow : Form
     {
         if (kind == SiteKind.Music) { musicTimer.Dispose(); MusicChanged?.Invoke(null); }
         open.Remove(this);
+        // 미뤄 둔 투명도 저장이 있으면 지금 저장한다
+        if (alphaSaveTimer.Enabled) { alphaSaveTimer.Stop(); settings.Save(); }
+        alphaSaveTimer.Dispose();
+        foreach (var d in owned) d.Dispose();
+        owned.Clear();
+        alphaTip.Dispose();
         base.OnFormClosed(e);
     }
 }

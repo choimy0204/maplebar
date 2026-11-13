@@ -66,8 +66,16 @@ sealed class PatchNotesWindow : Form
 
         Line("불러오고 있어요…", Color.FromArgb(130, 130, 130));
         Shown += async (_, _) => Fill(await Load());
-        Paint += (_, e) => { using var p = new Pen(UI.Line); e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1); };
+        Paint += (_, e) => e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         HandleCreated += (_, _) => UI.RoundCorners(Handle);
+    }
+
+    readonly Pen border = new(UI.Line); // 테두리 색은 고정이라 재사용
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) border.Dispose();
+        base.Dispose(disposing);
     }
 
     static async Task<List<Note>?> Load()
@@ -107,7 +115,9 @@ sealed class PatchNotesWindow : Form
     {
         if (IsDisposed) return;
         list.SuspendLayout();
+        var old = list.Controls.Cast<Control>().ToList();
         list.Controls.Clear();
+        foreach (var c in old) { var f = c.Font; c.Dispose(); f.Dispose(); } // 라벨마다 전용 글꼴이 있다
         if (notes == null) Line("패치노트를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.", Color.FromArgb(130, 130, 130));
         else
             foreach (var n in notes)

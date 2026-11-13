@@ -164,11 +164,14 @@ sealed partial class MusicDock
         using (var rim = new Pen(Color.FromArgb(over ? 255 : 210, accent), Math.Max(1.5f, 1.8f * sc)))
             g.DrawEllipse(rim, box);
         // 반짝이는 빛: 왼쪽 위 굽은 띠 + 작은 점
-        using (var hi = new Pen(Color.FromArgb(220, Color.White), Math.Max(1.5f, 2.2f * sc)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-            g.DrawArc(hi, c.X - r * 0.68f, c.Y - r * 0.68f, r * 1.36f, r * 1.36f, 195, 55);
-        using (var dot = new SolidBrush(Color.FromArgb(230, Color.White)))
-            g.FillEllipse(dot, c.X + r * 0.32f, c.Y + r * 0.3f, r * 0.2f, r * 0.2f);
+        penHi ??= new Pen(Color.FromArgb(220, Color.White), Math.Max(1.5f, 2.2f * sc)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawArc(penHi, c.X - r * 0.68f, c.Y - r * 0.68f, r * 1.36f, r * 1.36f, 195, 55);
+        g.FillEllipse(brDot, c.X + r * 0.32f, c.Y + r * 0.3f, r * 0.2f, r * 0.2f);
     }
+
+    // 매 프레임 새로 만들지 않는 반짝임용 펜(배율 sc에 맞춰 처음 쓸 때 만든다)과 점 붓
+    Pen? penHi;
+    static readonly SolidBrush brDot = new(Color.FromArgb(230, Color.White));
 
     // 칸 모양 (둥근 알약). content는 칸 사진이 비치는 정도
     void DrawBlob(Graphics g, RectangleF r, int alpha, float content)

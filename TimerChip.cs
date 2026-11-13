@@ -16,6 +16,7 @@ sealed class TimerChip : Control
     string text = "";
     bool alert; // 룬이 나와 있을 때: 칩을 진하게
     static readonly ToolTip tip = new();
+    readonly Font chipFont; // 이 칩이 만든 글꼴 (칩을 정리할 때 푼다)
 
     public TimerChip(Kind kind, float sc)
     {
@@ -24,7 +25,7 @@ sealed class TimerChip : Control
                  ControlStyles.SupportsTransparentBackColor | ControlStyles.ResizeRedraw, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
-        Font = new Font("맑은 고딕", 10f * UI.Z, FontStyle.Bold);
+        Font = chipFont = new Font("맑은 고딕", 10f * UI.Z, FontStyle.Bold);
         tip.SetToolTip(this, kind switch
         {
             Kind.Janus => "솔 야누스 남은 시간 (누르면 취소)",
@@ -35,6 +36,12 @@ sealed class TimerChip : Control
     }
 
     int S(float v) => UI.Scale(v, sc);
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing); // 그리기가 끝난 뒤에 글꼴을 푼다
+        if (disposing) chipFont.Dispose();
+    }
 
     /// <summary>남은 초(없으면 숨김)를 넣는다. 보이고 숨김이 바뀌면 true.</summary>
     public bool SetTime(double? sec, bool ready = false)

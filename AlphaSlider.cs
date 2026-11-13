@@ -8,6 +8,10 @@ sealed class AlphaSlider : Control
     public const int Min = 30;
     int value = 100;
     bool drag;
+    // 색이 고정인 붓은 한 번만 만든다
+    readonly SolidBrush softBrush = new(UI.SoftAccent);
+    readonly SolidBrush accentBrush = new(UI.Accent);
+    readonly SolidBrush whiteBrush = new(Color.White);
     public event Action<int>? Changed;
 
     public AlphaSlider()
@@ -55,9 +59,22 @@ sealed class AlphaSlider : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         float cy = Height / 2f, th = Math.Max(3f, Height / 7f), kx = KnobX, kr = Height / 4.2f;
         float x0 = Pad, x1 = Width - Pad;
-        using (var b = new SolidBrush(UI.SoftAccent)) g.FillRectangle(b, x0, cy - th / 2, x1 - x0, th);
-        using (var b = new SolidBrush(UI.Accent)) g.FillRectangle(b, x0, cy - th / 2, kx - x0, th);
-        using (var b = new SolidBrush(Color.White)) g.FillEllipse(b, kx - kr, cy - kr, kr * 2, kr * 2);
+        g.FillRectangle(softBrush, x0, cy - th / 2, x1 - x0, th);
+        g.FillRectangle(accentBrush, x0, cy - th / 2, kx - x0, th);
+        g.FillEllipse(whiteBrush, kx - kr, cy - kr, kr * 2, kr * 2);
         using (var p = new Pen(UI.Accent, Math.Max(1.5f, th * 0.6f))) g.DrawEllipse(p, kx - kr, cy - kr, kr * 2, kr * 2);
+    }
+
+    // 마우스 캡처를 잃으면(다른 창이 가져가는 등) 끌기도 끝낸다
+    protected override void OnMouseCaptureChanged(EventArgs e)
+    {
+        if (!Capture) drag = false;
+        base.OnMouseCaptureChanged(e);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { softBrush.Dispose(); accentBrush.Dispose(); whiteBrush.Dispose(); }
+        base.Dispose(disposing);
     }
 }

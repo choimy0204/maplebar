@@ -35,9 +35,13 @@ static class Thumbs
         try
         {
             var bytes = await http.GetByteArrayAsync(url);
-            using var ms = new MemoryStream(bytes);
-            using var raw = Image.FromStream(ms);
-            img = new Bitmap(raw, new Size(64, 64 * raw.Height / Math.Max(1, raw.Width)));
+            // 그림을 풀고 줄이는 일은 뒤에서 한다 (여러 장이 한꺼번에 와도 화면이 끊기지 않게)
+            img = await Task.Run(() =>
+            {
+                using var ms = new MemoryStream(bytes);
+                using var raw = Image.FromStream(ms);
+                return new Bitmap(raw, new Size(64, 64 * raw.Height / Math.Max(1, raw.Width)));
+            });
         }
         catch { } // 받지 못하거나 읽을 수 없는 형식이면 ♪로 둔다
         finally { gate.Release(); }
@@ -72,15 +76,15 @@ static class Thumbs
                 string u = order.Dequeue();
                 if (cache.Remove(u, out var im) && im != null) drop.Add(im);
             }
-        foreach (var im in drop)
+        if (drop.Count == 0) return;
+        // 깎아 둔 그림은 버린 그림 전체에 대해 한 번만 훑는다
+        var dropSet = new HashSet<Image>(drop, ReferenceEqualityComparer.Instance);
+        foreach (var k in shaped.Keys.Where(k => dropSet.Contains(k.Item1)).ToList())
         {
-            foreach (var k in shaped.Keys.Where(k => ReferenceEquals(k.Item1, im)).ToList())
-            {
-                shaped[k].Dispose();
-                shaped.Remove(k);
-            }
-            im.Dispose();
+            shaped[k].Dispose();
+            shaped.Remove(k);
         }
+        foreach (var im in drop) im.Dispose();
     }
 
     static readonly HashSet<Control> pending = new();
@@ -161,6 +165,16 @@ public sealed class MusicPill : Control
     }
     Rectangle TitleRect => new(S(Compact ? 10 : 8), 0, Btn(Order[0]).Left - S(Compact ? 20 : 10), Height - S(6));
 
+    // 매 프레임 새로 만들지 않도록 색·굵기가 고정인 붓과 펜을 한 번만 만든다 (앱이 끝날 때까지 쓴다)
+    static readonly SolidBrush brHover = new(Color.FromArgb(18, UI.Accent));
+    static readonly SolidBrush brNote = new(Color.FromArgb(28, UI.Accent));
+    static readonly SolidBrush brTrack = new(Color.FromArgb(240, 230, 218));
+    static readonly SolidBrush brAccent = new(UI.Accent);
+    static readonly SolidBrush brPlayHot = new(ControlPaint.Dark(UI.Accent, 0.05f));
+    static readonly SolidBrush brBtnHot = new(Color.FromArgb(34, UI.Accent));
+    static readonly SolidBrush brBtnOn = new(Color.FromArgb(22, UI.Accent));
+    static readonly Pen penEdge = new(Color.FromArgb(236, 224, 210));
+
     public void SetInfo(WebWindow.MusicInfo m)
     {
         bool titleChanged = info?.Title != m.Title || info?.Sub != m.Sub;
@@ -170,7 +184,7 @@ public sealed class MusicPill : Control
         Invalidate();
     }
 
-    static double Progress(string time)
+    internal static double Progress(string time)
     {
         // "01:23 / 03:45"
         var parts = time.Split('/');
@@ -196,15 +210,15 @@ public sealed class MusicPill : Control
         if (!bare) using (var b = new SolidBrush(Paper)) g.FillPath(b, pill);
 
         var tr = TitleRect;
-        if (hot == BtnTitle) using (var b = new SolidBrush(Color.FromArgb(18, UI.Accent)))
-            using (var p = UI.RoundRect(new RectangleF(tr.Left - S(2), S(3), tr.Width + S(4), Height - S(7)), S(10))) g.FillPath(b, p);
+        if (hot == BtnTitle)
+            using (var p = UI.RoundRect(new RectangleF(tr.Left - S(2), S(3), tr.Width + S(4), Height - S(7)), S(10))) g.FillPath(brHover, p);
         // 썸네일 (없으면 ♪)
         var thumb = Thumbs.Get(info?.Img, this);
         var tb = new RectangleF(tr.Left + S(2), (Height - S(26)) / 2f, S(26), S(26));
         if (thumb != null) Thumbs.Draw(g, thumb, tb, S(13)); // 동그랗게
         else
         {
-            using (var b = new SolidBrush(Color.FromArgb(28, UI.Accent))) g.FillEllipse(b, tb);
+            g.FillEllipse(brNote, tb);
             TextRenderer.DrawText(g, "♪", noteFont, Rectangle.Round(tb), UI.Accent,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
         }
@@ -224,10 +238,10 @@ public sealed class MusicPill : Control
         // 진행 바: 칸 아래쪽 안에 아주 얇게
         float inset = S(8);
         var track = new RectangleF(inset, Height - S(bare ? 2 : 4), Width - inset * 2, Math.Max(1.5f, S(2)));
-        using (var b = new SolidBrush(Color.FromArgb(240, 230, 218))) g.FillRectangle(b, track);
+        g.FillRectangle(brTrack, track);
         double pr = info != null ? Progress(info.Time) : 0;
-        if (pr > 0) using (var b = new SolidBrush(UI.Accent)) g.FillRectangle(b, track.Left, track.Top, (float)(track.Width * pr), track.Height);
-        if (!bare) using (var pen = new Pen(Color.FromArgb(236, 224, 210))) g.DrawPath(pen, pill);
+        if (pr > 0) g.FillRectangle(brAccent, track.Left, track.Top, (float)(track.Width * pr), track.Height);
+        if (!bare) g.DrawPath(penEdge, pill);
 
         // 재생 버튼들과 반복·랜덤 사이 옅은 구분선
         var sr = Btn(BtnShuffle);
@@ -242,9 +256,9 @@ public sealed class MusicPill : Control
             var circle = new RectangleF(r.Left + (r.Width - d) / 2f, r.Top + (r.Height - d) / 2f, d, d);
             bool on = (i == BtnShuffle && info?.Shuffle == true) || (i == BtnRepeat && info?.Repeat == true);
             if (i == BtnPlay)
-                using (var b = new SolidBrush(hot == BtnPlay ? ControlPaint.Dark(UI.Accent, 0.05f) : UI.Accent)) g.FillEllipse(b, circle);
+                g.FillEllipse(hot == BtnPlay ? brPlayHot : brAccent, circle);
             else if (hot == i || on)
-                using (var b = new SolidBrush(Color.FromArgb(hot == i ? 34 : 22, UI.Accent))) g.FillEllipse(b, circle);
+                g.FillEllipse(hot == i ? brBtnHot : brBtnOn, circle);
             DrawIcon(g, i, r);
         }
     }
@@ -374,7 +388,7 @@ public sealed class MusicPill : Control
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { titleFont.Dispose(); subFont.Dispose(); noteFont.Dispose(); tip.Dispose(); oneFont?.Dispose(); }
+        if (disposing) { titleFont.Dispose(); subFont.Dispose(); noteFont.Dispose(); tip.Dispose(); oneFont?.Dispose(); dial?.Dispose(); } // dial은 Owner만 걸려 있어 자동 해제가 보장되지 않는다 (이중 해제는 안전)
         base.Dispose(disposing);
     }
 }
@@ -394,6 +408,14 @@ public sealed class VolumeDial : Form
     bool dragging;
     int outside; // 마우스가 밖에 있던 횟수
     int S(int v) => UI.Scale(v, sc);
+    // 매 프레임 새로 만들지 않도록 색이 고정인 펜과 붓을 한 번만 만든다 (앱이 끝날 때까지 쓴다)
+    static readonly Pen penBorder = new(Color.FromArgb(232, 232, 232));
+    static readonly Pen penFlatBorder = new(Color.FromArgb(236, 224, 210));
+    static readonly SolidBrush brTick = new(Color.FromArgb(215, 215, 215));
+    static readonly SolidBrush brFlatTrack = new(Color.FromArgb(240, 230, 218));
+    static readonly SolidBrush brShadow = new(Color.FromArgb(40, 0, 0, 0));
+    static readonly SolidBrush brWhite = new(Color.White);
+    static readonly SolidBrush brAccent = new(UI.Accent);
     double beforeMute = 0.5; // 음소거 전 소리 크기
     PointF Center => new(Width / 2f, S(24));
     float Radius => S(66);
@@ -530,7 +552,7 @@ public sealed class VolumeDial : Form
         var gray = Color.FromArgb(150, 150, 150);
 
         // 카드 테두리
-        using (var border = new Pen(Color.FromArgb(232, 232, 232))) g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+        g.DrawRectangle(penBorder, 0, 0, Width - 1, Height - 1);
 
         // 눈금 (25%마다 작은 점)
         for (int i = 1; i < 4; i++)
@@ -538,8 +560,7 @@ public sealed class VolumeDial : Form
             double a = AngleOf(i / 4.0) * Math.PI / 180;
             float tr = r + S(10), d = S(3);
             float tx = c.X + (float)(tr * Math.Cos(a)), ty = c.Y + (float)(tr * Math.Sin(a));
-            using var tb = new SolidBrush(Color.FromArgb(215, 215, 215));
-            g.FillEllipse(tb, tx - d / 2, ty - d / 2, d, d);
+            g.FillEllipse(brTick, tx - d / 2, ty - d / 2, d, d);
         }
 
         // 바탕 길과 채워진 부분 (연한 주황 → 진한 주황)
@@ -555,9 +576,9 @@ public sealed class VolumeDial : Form
         double rad = AngleOf(value) * Math.PI / 180;
         float kx = c.X + (float)(r * Math.Cos(rad)), ky = c.Y + (float)(r * Math.Sin(rad));
         float kr = S(8);
-        using (var sh = new SolidBrush(Color.FromArgb(40, 0, 0, 0))) g.FillEllipse(sh, kx - kr, ky - kr + S(2), kr * 2, kr * 2);
-        using (var b = new SolidBrush(Color.White)) g.FillEllipse(b, kx - kr, ky - kr, kr * 2, kr * 2);
-        using (var b = new SolidBrush(UI.Accent)) g.FillEllipse(b, kx - kr + S(3), ky - kr + S(3), kr * 2 - S(6), kr * 2 - S(6));
+        g.FillEllipse(brShadow, kx - kr, ky - kr + S(2), kr * 2, kr * 2);
+        g.FillEllipse(brWhite, kx - kr, ky - kr, kr * 2, kr * 2);
+        g.FillEllipse(brAccent, kx - kr + S(3), ky - kr + S(3), kr * 2 - S(6), kr * 2 - S(6));
 
         // 양 끝 0 / 100
         var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding;
@@ -572,20 +593,18 @@ public sealed class VolumeDial : Form
     // 꺼낸 카드용 가로 막대: [스피커] ━━━●──── 75%
     void PaintFlat(Graphics g)
     {
-        using (var border = new Pen(Color.FromArgb(236, 224, 210))) g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+        g.DrawRectangle(penFlatBorder, 0, 0, Width - 1, Height - 1);
         DrawSpeaker(g, IconRect, value);
         float cy = Height / 2f, th = S(4), l = TrackL, w = TrackR - TrackL;
-        using (var b = new SolidBrush(Color.FromArgb(240, 230, 218)))
-        using (var p = UI.RoundRect(new RectangleF(l, cy - th / 2, w, th), th / 2)) g.FillPath(b, p);
+        using (var p = UI.RoundRect(new RectangleF(l, cy - th / 2, w, th), th / 2)) g.FillPath(brFlatTrack, p);
         float kx = l + (float)(w * value);
         if (value > 0.005)
-            using (var b = new SolidBrush(UI.Accent))
-            using (var p = UI.RoundRect(new RectangleF(l, cy - th / 2, Math.Max(th, kx - l), th), th / 2)) g.FillPath(b, p);
+            using (var p = UI.RoundRect(new RectangleF(l, cy - th / 2, Math.Max(th, kx - l), th), th / 2)) g.FillPath(brAccent, p);
         // 손잡이: 흰 테두리가 있는 주황 점
         float kr = S(7);
-        using (var sh = new SolidBrush(Color.FromArgb(40, 0, 0, 0))) g.FillEllipse(sh, kx - kr, cy - kr + S(1), kr * 2, kr * 2);
-        using (var b = new SolidBrush(Color.White)) g.FillEllipse(b, kx - kr, cy - kr, kr * 2, kr * 2);
-        using (var b = new SolidBrush(UI.Accent)) g.FillEllipse(b, kx - kr + S(3), cy - kr + S(3), kr * 2 - S(6), kr * 2 - S(6));
+        g.FillEllipse(brShadow, kx - kr, cy - kr + S(1), kr * 2, kr * 2);
+        g.FillEllipse(brWhite, kx - kr, cy - kr, kr * 2, kr * 2);
+        g.FillEllipse(brAccent, kx - kr + S(3), cy - kr + S(3), kr * 2 - S(6), kr * 2 - S(6));
         TextRenderer.DrawText(g, $"{Math.Round(value * 100)}%", capFont, new Rectangle((int)TrackR + S(8), 0, Width - (int)TrackR - S(14), Height),
             Color.FromArgb(45, 40, 36), TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
@@ -680,6 +699,10 @@ public sealed class MusicPicker : Form
     int noteAt = -1; string note = ""; // 즐겨찾기 곡 아래에 잠깐 쓰는 말 (찾는 중… 등)
     int hover = -1, loadId;
     int S(int v) => UI.Scale(v, sc);
+    // 매 프레임 새로 만들지 않도록 고정된 붓과 펜을 한 번만 만든다 (앱이 끝날 때까지 쓴다)
+    static readonly SolidBrush brSoft = new(UI.SoftAccent);
+    static readonly SolidBrush brAccent = new(UI.Accent);
+    static readonly Pen penStar = new(Color.FromArgb(185, 185, 185), 1.3f) { LineJoin = LineJoin.Round };
 
     MusicPicker(Form bar, Settings st, float sc)
     {
@@ -797,13 +820,21 @@ public sealed class MusicPicker : Form
     }
 
     // ── 즐겨찾기 ──
-    bool IsFav(WebWindow.Song s) => st.MusicFavs.Any(f => f.Title == s.Title && f.Sub == s.Sub);
+    // 그릴 때마다 목록을 훑지 않도록 (제목, 부제) 모음을 들고 있는다. 즐겨찾기가 바뀌면 다시 만든다
+    HashSet<(string, string)>? favKeys;
+
+    bool IsFav(WebWindow.Song s)
+    {
+        favKeys ??= st.MusicFavs.Select(f => (f.Title, f.Sub)).ToHashSet();
+        return favKeys.Contains((s.Title, s.Sub));
+    }
 
     void ToggleFav(WebWindow.Song s)
     {
         int k = st.MusicFavs.FindIndex(f => f.Title == s.Title && f.Sub == s.Sub);
         if (k >= 0) st.MusicFavs.RemoveAt(k);
         else st.MusicFavs.Insert(0, new FavSong { Title = s.Title, Sub = s.Sub, Img = s.Img });
+        favKeys = null; // 다음에 그릴 때 다시 만든다
         st.Save();
         if (tab == Tab.Fav) ShowFavs();
         else list.Invalidate();
@@ -900,7 +931,7 @@ public sealed class MusicPicker : Form
         var r = e.Bounds;
         g.FillRectangle(Brushes.White, r);
         if (e.Index == hover)
-            using (var b = new SolidBrush(UI.SoftAccent)) using (var p = UI.RoundRect(new RectangleF(r.Left + 1, r.Top + 2, r.Width - 2, r.Height - 4), S(8))) g.FillPath(b, p);
+            using (var p = UI.RoundRect(new RectangleF(r.Left + 1, r.Top + 2, r.Width - 2, r.Height - 4), S(8))) g.FillPath(brSoft, p);
         var s = songs[e.Index];
         int x = r.Left + S(8);
         if (tab == Tab.Top)
@@ -915,7 +946,7 @@ public sealed class MusicPicker : Form
         if (thumb != null) Thumbs.Draw(g, thumb, tb, S(8));
         else
         {
-            using (var b = new SolidBrush(UI.SoftAccent)) using (var p = UI.RoundRect(tb, S(8))) g.FillPath(b, p);
+            using (var p = UI.RoundRect(tb, S(8))) g.FillPath(brSoft, p);
             TextRenderer.DrawText(g, "♪", bold, Rectangle.Round(tb), UI.Accent,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
         }
@@ -931,8 +962,7 @@ public sealed class MusicPicker : Form
         {
             // 재생 표시
             float cx = r.Right - S(48), cy = r.Top + r.Height / 2f, u = S(5);
-            using var b = new SolidBrush(UI.Accent);
-            g.FillEllipse(b, cx - S(12), cy - S(12), S(24), S(24));
+            g.FillEllipse(brAccent, cx - S(12), cy - S(12), S(24), S(24));
             g.FillPolygon(Brushes.White, new[] { new PointF(cx - u * 0.6f, cy - u), new PointF(cx - u * 0.6f, cy + u), new PointF(cx + u, cy) });
         }
     }
@@ -946,8 +976,8 @@ public sealed class MusicPicker : Form
             float rr = k % 2 == 0 ? r : r * 0.45f;
             pts[k] = new PointF(cx + (float)Math.Cos(a) * rr, cy + (float)Math.Sin(a) * rr);
         }
-        if (on) { using var b = new SolidBrush(UI.Accent); g.FillPolygon(b, pts); }
-        else { using var p = new Pen(Color.FromArgb(185, 185, 185), 1.3f) { LineJoin = LineJoin.Round }; g.DrawPolygon(p, pts); }
+        if (on) g.FillPolygon(brAccent, pts);
+        else g.DrawPolygon(penStar, pts);
     }
 
     protected override void OnHandleCreated(EventArgs e)

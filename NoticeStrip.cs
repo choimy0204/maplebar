@@ -63,6 +63,10 @@ public sealed class NoticeStrip : Form
     readonly Font tagFont = new("맑은 고딕", 9f, FontStyle.Bold);
     readonly Font titleFont = new("맑은 고딕", 10f, FontStyle.Bold);
     readonly Font subFont = new("맑은 고딕", 9f);
+    // 색이 고정인 펜·붓은 한 번만 만든다
+    readonly Pen linePen = new(UI.Line);
+    readonly SolidBrush accentBrush = new(UI.Accent);
+    readonly SolidBrush hoverBrush = new(UI.HoverBack);
     Phase phase = Phase.Grow;
     double holdLeft = HoldMs;
     long lastMs;
@@ -161,15 +165,14 @@ public sealed class NoticeStrip : Form
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(hover ? Color.FromArgb(255, 250, 243) : Color.White);
-        using (var pen = new Pen(UI.Line)) g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        g.DrawRectangle(linePen, 0, 0, Width - 1, Height - 1);
         if (Width < H * 2) return;
 
         int x = Offset + S(10);
         // 말머리 (주황 알약)
         var ts = TextRenderer.MeasureText(item.Tag, tagFont, Size.Empty, TextFormatFlags.NoPadding);
         var tagRect = new Rectangle(x, (H - (ts.Height + S(6))) / 2, ts.Width + S(16), ts.Height + S(6));
-        using (var path = UI.RoundRect(tagRect, tagRect.Height / 2f))
-        using (var b = new SolidBrush(UI.Accent)) g.FillPath(b, path);
+        using (var path = UI.RoundRect(tagRect, tagRect.Height / 2f)) g.FillPath(accentBrush, path);
         TextRenderer.DrawText(g, item.Tag, tagFont, tagRect, Color.White,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
@@ -184,7 +187,7 @@ public sealed class NoticeStrip : Form
                 TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             right -= S(4);
         }
-        if (hoverClose) using (var b = new SolidBrush(UI.HoverBack)) g.FillEllipse(b, CloseRect);
+        if (hoverClose) g.FillEllipse(hoverBrush, CloseRect);
         TextRenderer.DrawText(g, "✕", subFont, CloseRect, Color.FromArgb(150, 150, 150),
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
 
@@ -221,6 +224,7 @@ public sealed class NoticeStrip : Form
     {
         tick.Dispose();
         tagFont.Dispose(); titleFont.Dispose(); subFont.Dispose();
+        linePen.Dispose(); accentBrush.Dispose(); hoverBrush.Dispose();
         base.OnFormClosed(e);
     }
 

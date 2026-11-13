@@ -41,8 +41,16 @@ sealed class UpdateToast : Form
 
         var wa = Screen.PrimaryScreen!.WorkingArea;
         Location = new Point(wa.Right - Width - S(16), wa.Bottom - Height - S(16));
-        Paint += (_, e) => { using var p = new Pen(UI.Line); e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1); };
+        Paint += (_, e) => e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         HandleCreated += (_, _) => UI.RoundCorners(Handle);
+    }
+
+    readonly Pen border = new(UI.Line); // 테두리 색은 고정이라 재사용
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) border.Dispose();
+        base.Dispose(disposing);
     }
 
     protected override bool ShowWithoutActivation => true;

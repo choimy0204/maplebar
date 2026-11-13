@@ -29,6 +29,19 @@ static class Game
     /// <summary>게임 화면 영역. 게임이 꺼져 있거나 최소화되어 있으면 null.</summary>
     public static Rectangle? Area()
     {
+        // 한 틱 안에서 여러 곳이 잇달아 물으면 방금 찾은 값을 그대로 준다 (프로세스 목록을 매번 다시 훑지 않게)
+        long now = Environment.TickCount64;
+        if (now - areaAt < 100) return area;
+        area = FindArea();
+        areaAt = Environment.TickCount64;
+        return area;
+    }
+
+    static Rectangle? area;
+    static long areaAt = -1000;
+
+    static Rectangle? FindArea()
+    {
         var pids = MaplePids();
         if (pids.Count == 0) return null;
 

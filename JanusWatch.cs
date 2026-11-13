@@ -119,9 +119,11 @@ sealed class JanusWatch
                 // 훅은 왼쪽·오른쪽 Shift·Ctrl·Alt를 따로 알려 준다 → 설정에 저장된 공통 키로 맞춘다
                 int vk = p.Vk switch { 160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, var v => v };
                 if (vk == 0) continue;
+                bool g = Game.IsGame(p.Pid);
+                for (int i = 0; i < RepeatSlots; i++) if (vk == st.Repeats[i].Key) RepeatKey(i, p.At, g);
                 int mask = 0;
                 for (int i = 0; i < BuffSlots; i++) if (vk == st.Buffs[i].Key) mask |= 1 << i;
-                Step(p.At, Game.IsGame(p.Pid), vk == st.JanusKey, vk == st.NpcKey, mask, vk == 0x0D,
+                Step(p.At, g, vk == st.JanusKey, vk == st.NpcKey, mask, vk == 0x0D,
                     vk == st.DopeKey, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
             }
             Step(DateTime.Now, false, false, false, 0, false, false, 0); // 시간이 다 됐는지만 본다
@@ -136,11 +138,79 @@ sealed class JanusWatch
         bool dope = Pressed(st.DopeKey, ref dopeDown);
         int arrows = 0;
         for (int i = 0; i < 4; i++) if (Pressed(Arrows[i], ref arrowDown[i])) arrows++;
-        Step(DateTime.Now, Game.Foreground(), janus, npc, buff, enter, dope, arrows);
+        bool fg = Game.Foreground();
+        for (int i = 0; i < RepeatSlots; i++) if (Pressed(st.Repeats[i].Key, ref repeatDown[i])) RepeatKey(i, DateTime.Now, fg);
+        Step(DateTime.Now, fg, janus, npc, buff, enter, dope, arrows);
     }
+
+    // 반복 주기 알림 3칸: 칸마다 키를 누르면 그때부터 정한 주기마다 정한 색으로 알린다. 다시 누르면 처음부터 센다
+    public const int RepeatSlots = 3;
+    public const int RepeatMinSec = 5;
+    readonly bool[] repeatDown = new bool[RepeatSlots];
+    readonly DateTime?[] repeatNext = new DateTime?[RepeatSlots]; // 다음에 알릴 시각
+    readonly int[] repeatSec = new int[RepeatSlots];              // 다음 시각을 정할 때의 주기 (바뀌면 다시 계산)
+    /// <summary>마지막으로 키를 인식한 반복 칸 (설정 창 표시용)</summary>
+    public int LastRepeat { get; private set; } = -1;
+    public DateTime? LastRepeatAt { get; private set; }
+
+    void RepeatKey(int i, DateTime at, bool inGame)
+    {
+        var r = st.Repeats[i];
+        if (!r.On || r.Key == 0 || !inGame || r.Sec < RepeatMinSec) return;
+        r.Start = at; st.Save();
+        repeatNext[i] = null; // 아래에서 새로 계산
+        LastRepeat = i; LastRepeatAt = at;
+    }
+
+    void RepeatTick(DateTime now)
+    {
+        for (int i = 0; i < RepeatSlots; i++)
+        {
+            var r = st.Repeats[i];
+            if (!r.On || r.Sec < RepeatMinSec || r.Start is not DateTime s)
+            {
+                if (!r.On && r.Start != null) { r.Start = null; st.Save(); } // 끄면 세던 것도 멈춘다
+                repeatNext[i] = null;
+                continue;
+            }
+            if (repeatNext[i] == null || repeatSec[i] != r.Sec)
+            {
+                // 시작 시각부터 주기마다: 지난 것은 건너뛰고 다음 차례부터
+                double n = Math.Max(1, Math.Floor((now - s).TotalSeconds / r.Sec) + 1);
+                repeatNext[i] = s.AddSeconds(r.Sec * n);
+                repeatSec[i] = r.Sec;
+            }
+            DateTime? end = r.UntilSec > 0 ? s.AddSeconds(r.UntilSec) : null;
+            if (now >= repeatNext[i])
+            {
+                bool inTime = end == null || repeatNext[i] <= end; // 끝 시각 뒤의 차례는 알리지 않는다
+                while (repeatNext[i] <= now) repeatNext[i] = repeatNext[i]!.Value.AddSeconds(r.Sec);
+                if (inTime && !Mute) PlayRepeat(sc, r.Title(i), Color.FromArgb(r.Argb));
+            }
+            // 반복 시간이 다 되면 멈춘다 (트리거 키를 다시 누르면 처음부터)
+            if (end is DateTime e && now >= e) { r.Start = null; st.Save(); repeatNext[i] = null; }
+        }
+    }
+
+    /// <summary>반복이 끝날 때까지 남은 초. 끝없이 반복하거나 세고 있지 않으면 null.</summary>
+    public double? RepeatEndLeft(int i)
+    {
+        var r = st.Repeats[i];
+        return r.UntilSec > 0 && r.Start is DateTime s ? Math.Max(0, (s.AddSeconds(r.UntilSec) - DateTime.Now).TotalSeconds) : null;
+    }
+
+    /// <summary>다음 알림까지 남은 초. 세고 있지 않으면 null.</summary>
+    public double? RepeatRemaining(int i) =>
+        repeatNext[i] is DateTime t && st.Repeats[i].Start != null ? Math.Max(0, (t - DateTime.Now).TotalSeconds) : null;
+    public void CancelRepeat(int i) { if (st.Repeats[i].Start != null) { st.Repeats[i].Start = null; st.Save(); } repeatNext[i] = null; }
+
+    public static void PlayRepeat(float sc, string text, Color c) =>
+        JanusAlert.Play(sc, text, c,
+            Color.FromArgb(c.R + (255 - c.R) * 3 / 4, c.G + (255 - c.G) * 3 / 4, c.B + (255 - c.B) * 3 / 4), AlertSound.Kind.Buff);
 
     void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, bool dope, int arrows)
     {
+        RepeatTick(now);
         RuneTick(now, inGame, npc, arrows);
         BuffTick(now, inGame, buff, enter);
         DopeTick(now, inGame, dope, arrows, enter);
@@ -194,12 +264,12 @@ sealed class JanusWatch
     }
 
     /// <summary>바의 칩을 눌렀을 때: 세던 시간을 지운다.</summary>
-    public void Stop() => poll.Stop();
+    public void Stop() { poll.Stop(); poll.Dispose(); } // 끝낸 감시는 다시 켜지 않는다 (바를 새로 만들 때 새 감시가 생긴다)
     public void CancelJanus() => ClearJanus(DateTime.Now);
     public void CancelRune() { npcAt = null; if (st.RuneStart != null) { st.RuneStart = null; st.Save(); } }
     public void CancelBuff(int i) { if (st.Buffs[i].Start != null) { st.Buffs[i].Start = null; st.Save(); } }
 
-    // 버프 3칸: 칸마다 버프 키를 누르고 10초 안에 엔터까지 누르면(사용 확인) 그때부터 그 칸의 시간을 센다.
+    // 버프 3칸: 칸마다 버프 키를 누르면 바로 세고, 10초 안에 엔터도 누르면 엔터 시점을 남긴다(켜 두면 엔터 때부터 센다).
     // 다시 쓰면 처음부터 다시 센다. 키를 엔터로 정한 칸은 키 하나로 바로 센다
     public const int BuffSlots = 3;
     readonly bool[] buffDown = new bool[BuffSlots];
@@ -230,10 +300,10 @@ sealed class JanusWatch
 
     void BuffTick(DateTime now, bool inGame, int buff, bool enter)
     {
-        // 엔터가 아닌 다른 버프 키를 새로 눌렀으면, 엔터를 기다리던 다른 칸은 쓰지 않은 것으로 본다
+        // 엔터가 아닌 다른 버프 키를 새로 눌렀으면, 엔터를 기다리던 다른 칸은 더 기다리지 않는다
         int otherKey = 0;
         for (int i = 0; i < BuffSlots; i++)
-            if ((buff >> i & 1) != 0 && st.Buffs[i].Key != 0x0D && st.Buffs[i].WaitEnter) otherKey = st.Buffs[i].Key;
+            if ((buff >> i & 1) != 0 && st.Buffs[i].Key != 0x0D) otherKey = st.Buffs[i].Key;
 
         for (int i = 0; i < BuffSlots; i++)
         {
@@ -245,14 +315,24 @@ sealed class JanusWatch
                 continue;
             }
             bool hit = (buff >> i & 1) != 0 && inGame;
-            // 엔터를 기다리지 않는 칸, 또는 키가 엔터인 칸은 키 하나로 바로 센다
-            if (hit && (b.Key == 0x0D || !b.WaitEnter)) Start(i);
-            else if (hit) { buffKeyAt[i] = now; LastKey = now; LastKind = "버프 키"; LastBuff = i; }
+            // 키를 누르면 엔터를 안 눌러도 쓰인 경우가 있어서 바로 키 시점부터 센다.
+            // 10초 안에 엔터도 누르면 엔터 시점을 남기고, "엔터 때부터 세기"가 켜져 있으면 엔터 시점으로 옮긴다
+            if (hit)
+            {
+                b.KeyAt = now; b.EnterAt = null;
+                buffKeyAt[i] = b.Key == 0x0D ? null : now;
+                Start(i, now);
+            }
             else if (inGame && otherKey != 0 && otherKey != b.Key) buffKeyAt[i] = null;
             else if (enter && inGame && buffKeyAt[i] is DateTime k)
             {
                 buffKeyAt[i] = null;
-                if ((now - k).TotalSeconds <= BuffEnterSec) Start(i);
+                if ((now - k).TotalSeconds <= BuffEnterSec)
+                {
+                    b.EnterAt = now;
+                    if (b.WaitEnter) Start(i, now); else st.Save();
+                    LastKey = now; LastKind = "버프 엔터"; LastBuff = i;
+                }
             }
             if (BuffEnd(i) is DateTime end && now >= end)
             {
@@ -261,13 +341,31 @@ sealed class JanusWatch
             }
         }
 
-        void Start(int i)
+        void Start(int i, DateTime at)
         {
-            buffKeyAt[i] = null;
-            st.Buffs[i].Start = now; st.Save();
+            st.Buffs[i].Start = at; st.Save();
             LastKey = now; LastKind = "버프"; LastBuff = i;
         }
     }
+
+    /// <summary>버프를 키 누른 때(false) 또는 엔터 누른 때(true)부터 세도록 바꾼다. 그 시점으로 아직 안 끝났을 때만.</summary>
+    public bool UseBuffTime(int i, bool enter)
+    {
+        var b = st.Buffs[i];
+        if (BuffTimeLeft(i, enter) == null) return false;
+        b.Start = enter ? b.EnterAt : b.KeyAt; st.Save();
+        return true;
+    }
+    /// <summary>그 시점으로 셌을 때 남은 초 (기록이 없거나 이미 끝났으면 null)</summary>
+    public double? BuffTimeLeft(int i, bool enter)
+    {
+        var b = st.Buffs[i];
+        if (!b.On || (enter ? b.EnterAt : b.KeyAt) is not DateTime t) return null;
+        double left = (t.AddMinutes(b.Min) - DateTime.Now).TotalSeconds;
+        return left > 0 ? left : null;
+    }
+    /// <summary>지금 엔터 시점으로 세는 중인지</summary>
+    public bool BuffOnEnter(int i) => st.Buffs[i].Start is DateTime s && s == st.Buffs[i].EnterAt;
 
     // 부스트 도핑: 키를 누르면 바로 DopeSec초를 센다. 다시 쓰면 처음부터 다시 센다
     bool dopeDown;

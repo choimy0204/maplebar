@@ -98,16 +98,14 @@ public partial class WebWindow
     void BareTick()
     {
         if (IsDisposed) return;
-        bool bare = true; // 영상·쇼츠 모두 영상만 보인다
-        if (bare != bareMode)
+        // 영상·쇼츠 모두 영상만 보인다: 처음 한 번 제목 줄을 떼어 낸다
+        if (!bareMode)
         {
-            bareMode = bare;
+            bareMode = true;
             SuspendLayout();
-            if (bare) { grip.Dock = DockStyle.None; grip.Visible = false; BackColor = Color.Black; }
-            else { grip.Dock = DockStyle.Top; grip.Visible = true; BackColor = Color.White; }
+            grip.Dock = DockStyle.None; grip.Visible = false; BackColor = Color.Black;
             ResumeLayout();
         }
-        if (!bare) return;
         var r = RectangleToScreen(ClientRectangle);
         var c = Cursor.Position;
         bool show = r.Contains(c) && c.Y < r.Top + S(56) || grip.ContextMenuStrip?.Visible == true;
@@ -125,16 +123,20 @@ public partial class WebWindow
     {
         // 제목 글자가 버튼 밑으로 들어가지 않게 흰 상자에 담는다
         var box = new Panel { Dock = DockStyle.Right, Width = S(46), BackColor = Color.White };
+        var btnFont = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        owned.Add(btnFont); // 창이 닫힐 때 해제
         var b = new RoundLabel
         {
             Dock = DockStyle.Fill, AutoSize = false, Text = text, TextAlign = ContentAlignment.MiddleCenter,
             Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6),
-            Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
+            Font = btnFont,
         };
         b.MouseEnter += (_, _) => b.Fill = Color.FromArgb(255, 226, 196);
         b.MouseLeave += (_, _) => b.Fill = UI.SoftAccent;
         b.Click += (_, _) => ToggleComments();
-        new ToolTip().SetToolTip(b, text + " 창 열기·닫기");
+        var btnTip = new ToolTip();
+        owned.Add(btnTip);
+        btnTip.SetToolTip(b, text + " 창 열기·닫기");
         box.Controls.Add(b);
         var gap = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
         grip.Controls.Add(gap); gap.BringToFront();
@@ -154,7 +156,8 @@ public partial class WebWindow
         var host = web.Source?.Host ?? "";
         if (kind == SiteKind.LivePlayer && (host.EndsWith("sooplive.com") || host.EndsWith("sooplive.co.kr") || host.EndsWith("afreecatv.com")))
         {
-            try { _ = web.CoreWebView2?.ExecuteScriptAsync("window.__mbsn=0;document.documentElement.classList.toggle('mbnoch');dispatchEvent(new Event('resize'))"); } catch { }
+            try { _ = web.CoreWebView2?.ExecuteScriptAsync("window.__mbsn=0;document.documentElement.classList.toggle('mbnoch');dispatchEvent(new Event('resize'))"); }
+            catch (Exception ex) { Log.Write("web", "채팅 칸을 켜고 끄지 못함", ex); }
             return;
         }
         var c = SideWindow();
@@ -251,7 +254,7 @@ public partial class WebWindow
             await cw.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", Key("rawKeyDown"));
             await cw.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", Key("keyUp"));
         }
-        catch { }
+        catch (Exception ex) { Log.Write("web", "쇼츠를 넘기지 못함", ex); }
     }
 
     async Task InitYouTube(CoreWebView2 cw)
@@ -305,7 +308,8 @@ public partial class WebWindow
             w.Bounds = new Rectangle(x, y, sz.Width, sz.Height);
         }
         w.startUrl = url; // 아직 준비 중이면 InitAsync가 이 주소로 연다
-        try { w.web.CoreWebView2?.Navigate(url); } catch { }
+        try { w.web.CoreWebView2?.Navigate(url); }
+        catch (Exception ex) { Log.Write("web", "유튜브 재생 창에서 영상을 바꾸지 못함", ex); }
         if (w.WindowState == FormWindowState.Minimized) w.WindowState = FormWindowState.Normal;
         w.Activate();
     }

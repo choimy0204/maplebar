@@ -36,7 +36,7 @@ sealed class UpdateWindow : Form
         Font = new Font("맑은 고딕", 10f);
         AutoScaleMode = AutoScaleMode.None;
         ClientSize = new Size(S(360), S(178));
-        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        if (UI.AppIcon is { } appIcon) Icon = appIcon;
 
         title = new Label
         {
@@ -77,8 +77,16 @@ sealed class UpdateWindow : Form
         }
         else Shown += (_, _) => _ = Download();
 
-        Paint += (_, e) => { using var p = new Pen(UI.Line); e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1); };
+        Paint += (_, e) => e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         HandleCreated += (_, _) => UI.RoundCorners(Handle);
+    }
+
+    readonly Pen border = new(UI.Line); // 테두리 색은 고정이라 재사용
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) border.Dispose();
+        base.Dispose(disposing);
     }
 
     void OpenNotes()
@@ -89,7 +97,11 @@ sealed class UpdateWindow : Form
 
     void Buttons(params (string text, bool main, Action click)[] list)
     {
+        var old = row.Controls.Cast<Control>().ToList();
         row.Controls.Clear();
+        // 누른 버튼이 이벤트 처리 중일 수 있어, 처리가 끝난 뒤에 해제한다
+        if (IsHandleCreated) BeginInvoke(() => { foreach (var c in old) c.Dispose(); });
+        else foreach (var c in old) c.Dispose();
         // 오른쪽부터 쌓이니 거꾸로 넣는다 (첫 버튼이 왼쪽)
         foreach (var (text, main, click) in list.Reverse())
         {

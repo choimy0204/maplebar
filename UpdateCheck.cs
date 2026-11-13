@@ -47,6 +47,7 @@ static class UpdateCheck
             var mine = Mine();
             if (latest == null || Norm(latest.Value.ver) <= mine || asked != null) return;
             asked = latest.Value.ver;
+            watchTimer?.Stop(); // 한 번 물어본 뒤로는 더 확인하지 않으므로 타이머도 멈춘다
             var (ver, url, sha) = latest.Value;
             UpdateToast.Ask(() =>
             {
@@ -78,12 +79,12 @@ static class UpdateCheck
         {
             Process.Start(new ProcessStartInfo("powershell.exe",
                 "-NoProfile -WindowStyle Hidden -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script)))
-            { UseShellExecute = false, CreateNoWindow = true });
+            { UseShellExecute = false, CreateNoWindow = true })?.Dispose();
             return true;
         }
         catch
         {
-            try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); } catch { } // 직접 설치 창으로
+            try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true })?.Dispose(); } catch { } // 직접 설치 창으로
             return false;
         }
     }
@@ -93,14 +94,21 @@ static class UpdateCheck
 
     /// <summary>1분마다 쓰는 가벼운 확인: 최신 릴리스 주소가 어느 태그로 넘어가는지만 본다.
     /// (GitHub API는 한 시간에 60번까지라 1분마다 부르면 막힌다)</summary>
+    // 1분마다 새로 만들지 않고 하나를 재사용한다 (리디렉션을 따라가지 않는다)
+    static readonly HttpClient TagHttp = CreateTagHttp();
+
+    static HttpClient CreateTagHttp()
+    {
+        var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(5) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("MapleBar");
+        return http;
+    }
+
     static (Version ver, string url, string? sha)? LatestTag()
     {
         try
         {
-            using var h = new HttpClientHandler { AllowAutoRedirect = false };
-            using var http = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(5) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("MapleBar");
-            using var res = http.Send(new HttpRequestMessage(HttpMethod.Head, Repo + "/releases/latest"));
+            using var res = TagHttp.Send(new HttpRequestMessage(HttpMethod.Head, Repo + "/releases/latest"));
             var m = TagVer.Match(res.Headers.Location?.ToString() ?? "");
             if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return null;
             var t = m.Groups[1].Value;
@@ -124,10 +132,13 @@ static class UpdateCheck
                 if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return;
                 if (best == null || Norm(v) > Norm(best.Value.ver)) best = (v, url, sha);
             }
+            // 두 주소를 한꺼번에 묻는다 (차례로 물으면 응답이 없을 때 켜지는 데 두 배로 걸린다). 결과는 아래에서 예전 순서대로 본다
+            var relTask = Task.Run(() => http.GetStringAsync(ReleaseUrl));
+            var listTask = Task.Run(() => http.GetStringAsync(ListUrl));
             // 깃허브가 직접 만든 최신 릴리스의 설치 파일 (SHA256.txt가 함께 있다)
             try
             {
-                using var rel = JsonDocument.Parse(http.GetStringAsync(ReleaseUrl).GetAwaiter().GetResult());
+                using var rel = JsonDocument.Parse(relTask.GetAwaiter().GetResult());
                 if (rel.RootElement.TryGetProperty("assets", out var assets))
                 {
                     var list = assets.EnumerateArray().Select(a => (
@@ -141,7 +152,7 @@ static class UpdateCheck
             // 예전 방식: 저장소 dist 폴더
             try
             {
-                using var doc = JsonDocument.Parse(http.GetStringAsync(ListUrl).GetAwaiter().GetResult());
+                using var doc = JsonDocument.Parse(listTask.GetAwaiter().GetResult());
                 foreach (var f in doc.RootElement.EnumerateArray())
                     Take(f.TryGetProperty("name", out var n) ? n.GetString() : null,
                          f.TryGetProperty("download_url", out var d) ? d.GetString() : null, null);

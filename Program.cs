@@ -22,7 +22,8 @@ static class Program
         if (!created)
         {
             // 이미 켜져 있으면, 숨어 있던 바를 앞으로 불러오라고 알리고 끝낸다
-            try { using var ev = EventWaitHandle.OpenExisting(ShowEventName); ev.Set(); } catch { }
+            try { using var ev = EventWaitHandle.OpenExisting(ShowEventName); ev.Set(); }
+            catch (Exception ex) { Log.Write("시작", "켜져 있는 바에 신호를 못 보냄", ex); }
             return;
         }
         ShowEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);

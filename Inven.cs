@@ -80,8 +80,13 @@ public sealed class InvenWatcher
     {
         this.settings = settings;
         this.notify = notify;
-        timer.Tick += async (_, _) => await PollAsync(ticks++ % ChuEvery == 0);
-        Stop = timer.Stop;
+        timer.Tick += async (_, _) =>
+        {
+            // async void 틱: 예외가 밖으로 나가 앱이 죽지 않게 한다
+            try { await PollAsync(ticks++ % ChuEvery == 0); }
+            catch (Exception ex) { Log.Write("inven", "인벤 새 글 확인에 실패함", ex); }
+        };
+        Stop = () => { timer.Stop(); timer.Dispose(); }; // 다시 Start하는 곳은 없다
         timer.Start();
         _ = PollAsync(true);
     }
@@ -100,7 +105,8 @@ public sealed class InvenWatcher
                 if (!settings.InvenWatch.Contains(f.Key)) { state.Remove(f.Key); continue; }
                 if (!all && f.Key != "new" && state.ContainsKey(f.Key)) continue;
                 List<InvenPost> posts;
-                try { posts = await Inven.FetchAsync(f.Query); } catch { continue; }
+                try { posts = await Inven.FetchAsync(f.Query); }
+                catch (Exception ex) { Log.Write("inven", "인벤 목록을 읽지 못함: " + f.Key, ex); continue; }
                 if (posts.Count == 0) continue;
                 long oldest = posts.Min(p => p.Id);
 

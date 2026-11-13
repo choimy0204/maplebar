@@ -79,20 +79,12 @@ sealed class LyricsCard : Form
 
     double progress;
 
-    // "1:23 / 3:45" → 0~1
-    static double Progress(string time)
-    {
-        static double Sec(string s)
-        {
-            double t = 0;
-            foreach (var p in s.Trim().Split(':')) t = t * 60 + (double.TryParse(p, out var v) ? v : 0);
-            return t;
-        }
-        var parts = time.Split('/');
-        if (parts.Length != 2) return 0;
-        double total = Sec(parts[1]);
-        return total > 0 ? Math.Clamp(Sec(parts[0]) / total, 0, 1) : 0;
-    }
+    // 지금 줄 띠 폭 계산 캐시 (줄 내용, 그릴 폭, 잰 글자 폭)
+    string? measuredText;
+    int measuredW, measuredTextW;
+
+    // "1:23 / 3:45" → 0~1 (뮤직 칸과 같은 계산을 쓴다)
+    static double Progress(string time) => MusicPill.Progress(time);
 
     // 시간 맞춘 가사면 지금 줄을 가운데로, 아니면 곡 진행만큼 넘긴다. 휠로 넘긴 뒤 6초는 그대로 둔다
     void Follow()
@@ -183,7 +175,13 @@ sealed class LyricsCard : Form
             if (now && lines[i].Trim().Length > 0)
             {
                 // 지금 줄 뒤에 옅은 주황 띠
-                int tw = Math.Min(r.Width, TextRenderer.MeasureText(lines[i], bold, new Size(r.Width, int.MaxValue), Flags).Width + S(16));
+                // 줄 내용과 폭이 같으면 지난번에 잰 값을 쓴다 (글꼴은 바뀌지 않는다)
+                if (measuredText != lines[i] || measuredW != r.Width)
+                {
+                    measuredText = lines[i]; measuredW = r.Width;
+                    measuredTextW = TextRenderer.MeasureText(lines[i], bold, new Size(r.Width, int.MaxValue), Flags).Width;
+                }
+                int tw = Math.Min(r.Width, measuredTextW + S(16));
                 using var hb = new SolidBrush(Color.FromArgb(26, UI.Accent));
                 using var hp = UI.RoundRect(new RectangleF(r.X + (r.Width - tw) / 2f, y - S(1), tw, heights[i] + S(2)), S(8));
                 g.FillPath(hb, hp);

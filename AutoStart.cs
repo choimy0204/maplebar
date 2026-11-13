@@ -39,7 +39,7 @@ static class AutoStart
                 else if (On && !xml.Contains(SecurityElement.Escape(Exe), StringComparison.OrdinalIgnoreCase)) Register();
                 if (oldLink && On) File.Delete(OldShortcut);
             }
-            catch { }
+            catch (Exception ex) { Log.Write("autostart", "자동 실행 상태를 확인하지 못함", ex); }
         });
     }
 
@@ -56,7 +56,11 @@ static class AutoStart
             }
             return ok;
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            Log.Write("autostart", "자동 실행 설정을 바꾸지 못함", ex);
+            return false;
+        }
     }
 
     static bool Exists() => Run("/Query", "/TN", TaskName).code == 0;
