@@ -23,12 +23,13 @@ sealed class UpdateToast : Form
 
         var msg = new Label
         {
-            Text = "새 버전이 올라왔어요.\n업데이트하시겠어요?",
+            Text = "새 버전이 나왔어요.\n지금 받을까요?",
             ForeColor = UI.Text, AutoSize = false,
             Location = new Point(S(16), S(12)), Size = new Size(S(250), S(44)),
         };
-        var yes = UI.Button("Yes", "", () => { Close(); onYes(); }, sc, Color.White, UI.Accent);
-        var no = UI.Button("No", "", Close, sc, null, UI.HoverBack);
+        var yes = UI.Button("확인", "", () => { Close(); onYes(); }, sc, Color.White, UI.Accent);
+        var no = UI.Button("취소", "", Close, sc, null, UI.HoverBack);
+        yes.Radius = no.Radius = S(6); // 알약 말고 둥근 직사각형
         var row = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft, AutoSize = false,

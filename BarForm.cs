@@ -471,7 +471,7 @@ public class BarForm : Form
         cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
         cms.Items.Add(new ToolStripSeparator());
         cms.Items.Add("알림 설정 (야누스·룬·버프)…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
-        cms.Items.Add("공부 카드…", null, (_, _) => StudyForm.Open(this, settings, sc));
+        cms.Items.Add("자기계발 카드…", null, (_, _) => StudyForm.Open(this, settings, sc));
         cms.Items.Add("웹툰·쇼츠 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
         cms.Items.Add(ClockItem());
         // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
@@ -671,7 +671,7 @@ public class BarForm : Form
 
     JanusWatch? janus; // 솔 야누스·룬 알림 (키 상태만 읽는다)
     PendantCheck? pendant; // 고른 버프가 도는 동안 maple.gg에서 정령의 펜던트를 확인한다
-    StudyRun? study;       // 공부 카드를 정한 주기마다 띄운다
+    StudyRun? study;       // 자기계발 카드를 정한 주기마다 띄운다
     ClockForm? clock; // 게임 화면 위 시계
     readonly System.Windows.Forms.Timer chipTimer = new() { Interval = 250 };
 

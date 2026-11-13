@@ -84,7 +84,7 @@ public class Settings
     public List<RepeatSlot> Repeats { get; set; } = new();
     // 알림을 띄울 모니터 (Screen.DeviceName). "ALL"이면 모든 모니터, 비어 있어도 모든 모니터
     public List<string> AlertScreens { get; set; } = new() { "ALL" };
-    // 공부 카드: 켜 두면 카드를 띄워 두고 StudySec초마다 다음 카드로 넘긴다. StudyStarOnly면 즐겨찾기한 카드만. 카드 자리는 게임 화면에 대한 비율
+    // 자기계발 카드: 켜 두면 카드를 띄워 두고 StudySec초마다 다음 카드로 넘긴다. StudyStarOnly면 즐겨찾기한 카드만. 카드 자리는 게임 화면에 대한 비율
     public bool StudyOn { get; set; }
     public bool StudyStarOnly { get; set; }
     public int StudyMin { get; set; } = 10;

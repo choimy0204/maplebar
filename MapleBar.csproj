@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Product>메이플 바</Product>
     <AssemblyTitle>메이플 바</AssemblyTitle>
-    <Version>1.1.3</Version>
+    <Version>1.1.31</Version>
   </PropertyGroup>
 
   <ItemGroup>

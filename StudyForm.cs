@@ -5,7 +5,7 @@ using static MapleBar.Native;
 
 namespace MapleBar;
 
-/// <summary>공부 카드 창: 띄우는 주기, 공부 묶음 목록, 불러오기, AI에게 줄 양식 받기.</summary>
+/// <summary>자기계발 카드 창: 띄우는 주기, 공부 묶음 목록, 불러오기, AI에게 줄 양식 받기.</summary>
 sealed class StudyForm : Form
 {
     static StudyForm? open;
@@ -37,7 +37,7 @@ sealed class StudyForm : Form
     StudyForm(Settings st, float sc)
     {
         this.st = st; this.sc = sc;
-        Text = "공부 카드";
+        Text = "자기계발 카드";
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
@@ -49,7 +49,7 @@ sealed class StudyForm : Form
         MouseDown += (_, e) => Drag(this, e);
 
         int pad = S(18), W = S(500), inner = W - pad * 2, y = S(14);
-        var title = new Label { Text = "공부 카드", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
+        var title = new Label { Text = "자기계발 카드", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
         title.MouseDown += (_, e) => Drag(this, e);
         var close = UI.Button("✕", "닫기", Close, sc);
         close.Font = F(10);

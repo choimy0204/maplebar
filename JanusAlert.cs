@@ -33,7 +33,7 @@ static class JanusAlert
 
     static Action? stop;
 
-    /// <summary>알림이 뜰 때마다 (공부 카드가 1초 늦게 넘어가게 한다)</summary>
+    /// <summary>알림이 뜰 때마다 (자기계발 카드가 1초 늦게 넘어가게 한다)</summary>
     public static event Action? Played;
 
     /// <summary>기본은 솔 야누스(보라). 룬 알림은 글과 색만 바꿔 같은 효과를 쓴다.
