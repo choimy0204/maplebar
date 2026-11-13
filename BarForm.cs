@@ -714,7 +714,7 @@ public class BarForm : Form
             var bc = buffChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
             bc.Click += (_, _) => { w.CancelBuff(slot); if (bc.SetTime(null)) LayoutBar(); };
         }
-        // 도핑 칸마다 칩 하나 (빨강·갈색·분홍)
+        // 도핑 칸마다 칩 하나 
         var dopeChips = new TimerChip[JanusWatch.DopeSlots];
         for (int i = 0; i < dopeChips.Length; i++)
         {

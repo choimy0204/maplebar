@@ -371,7 +371,7 @@ sealed class JanusWatch
     /// <summary>지금 엔터 시점으로 세는 중인지</summary>
     public bool BuffOnEnter(int i) => st.Buffs[i].Start is DateTime s && s == st.Buffs[i].EnterAt;
 
-    // 부스트 도핑 3칸(빨강·갈색·분홍): 쓰면 Sec초를 센다. 다시 쓰면 처음부터 다시 센다
+    // 부스트 도핑 3칸: 쓰면 Sec초를 센다. 다시 쓰면 처음부터 다시 센다
     public const int DopeSlots = 3;
     readonly bool[] dopeDown = new bool[DopeSlots];
     DateTime? DopeEnd(int i) => st.Dopes[i].Start is DateTime s ? s.AddSeconds(st.Dopes[i].Sec) : null;
@@ -388,7 +388,7 @@ sealed class JanusWatch
         (Color.FromArgb(240, 90, 170), Color.FromArgb(255, 215, 235)),      // 분홍
     };
     public static (Color main, Color light) DopeColors(int i) => dopeColors[Math.Clamp(i, 0, DopeSlots - 1)];
-    public static string DopeDefaultName(int i) => i switch { 0 => "빨간 도핑", 1 => "갈색 도핑", _ => "분홍 도핑" };
+    public static string DopeDefaultName(int i) => i switch { 0 => "부스트 도핑 1", 1 => "부스트 도핑 2", _ => "부스트 도핑 3" };
     public static void PlayDope(float sc, int i, string? name)
     {
         var (m, l) = DopeColors(i);

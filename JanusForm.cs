@@ -211,7 +211,7 @@ sealed class JanusForm : Form
         y += buffH + S(10);
         int rightEnd = y;
 
-        // 도핑은 세 번째 줄에 둔다: 빨강·갈색·분홍 3칸을 ◀ ▶로 넘긴다
+        // 도핑은 세 번째 줄에 둔다: 3칸을 ◀ ▶로 넘긴다
         int dx = rx + colW + gap;
         y = top + Section("부스트 도핑", JanusWatch.DopeMain, dx, top, colW);
         y += MakeSlotNav(dx, y, colW, JanusWatch.DopeSlots, () => dopePage, v => dopePage = v, DopeName, i => JanusWatch.DopeColors(i).main) + S(10);
@@ -349,10 +349,10 @@ sealed class JanusForm : Form
         var pen = new Label { Text = "✎", Font = F(9), ForeColor = Gray, AutoSize = true, Cursor = Cursors.Hand };
         void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
         PlacePen();
-        var box = new TextBox
+        var box = new TextField
         {
-            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false, BorderStyle = BorderStyle.FixedSingle,
-            Location = new Point(ip + S(16), cy - S(1)), Width = right - ip - S(16) - S(10), PlaceholderText = fallback,
+            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false,
+            Location = new Point(ip + S(12), cy - S(5)), Width = right - ip - S(16) - S(10), PlaceholderText = fallback,
         };
         bool done = false;
         void Edit()
@@ -635,12 +635,12 @@ sealed class JanusForm : Form
 
         // 닉네임 칸
         card.Controls.Add(RowLabel("캐릭터 닉네임", ip, cy));
-        var nick = new TextBox
+        var nick = new TextField
         {
-            Font = F(10.5f), MaxLength = 12, BorderStyle = BorderStyle.FixedSingle,
+            Font = F(10.5f), MaxLength = 12,
             Text = st.MapleNick ?? "", PlaceholderText = "닉네임", Width = S(160),
         };
-        nick.Location = new Point(w - ip - nick.Width, cy + (S(30) - nick.PreferredHeight) / 2);
+        nick.Location = new Point(w - ip - nick.Width, cy + (S(30) - nick.Height) / 2);
         nick.TextChanged += (_, _) =>
         {
             st.MapleNick = string.IsNullOrWhiteSpace(nick.Text) ? null : nick.Text.Trim();
@@ -771,10 +771,10 @@ sealed class JanusForm : Form
         sw.Changed += v => { r.On = v; if (!v) watch.CancelRepeat(i); st.Save(); UpdateStatus(); };
         void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
         PlacePen();
-        var box = new TextBox
+        var box = new TextField
         {
-            Font = F(10.5f, FontStyle.Bold), MaxLength = 20, Visible = false, BorderStyle = BorderStyle.FixedSingle,
-            Location = new Point(ip + S(16), cy - S(1)), Width = sw.Left - ip - S(16) - S(10),
+            Font = F(10.5f, FontStyle.Bold), MaxLength = 20, Visible = false,
+            Location = new Point(ip + S(12), cy - S(5)), Width = sw.Left - ip - S(16) - S(10),
             PlaceholderText = $"반복 알림 {i + 1}",
         };
         bool done = false;
@@ -1081,10 +1081,10 @@ sealed class JanusForm : Form
         sw.Changed += v => { b.On = v; st.Save(); UpdateStatus(); };
         void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
         PlacePen();
-        var box = new TextBox
+        var box = new TextField
         {
-            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false, BorderStyle = BorderStyle.FixedSingle,
-            Location = new Point(ip + S(16), cy - S(1)), Width = sw.Left - ip - S(16) - S(10),
+            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false,
+            Location = new Point(ip + S(12), cy - S(5)), Width = sw.Left - ip - S(16) - S(10),
             PlaceholderText = $"버프 {i + 1}",
         };
         bool done = false;

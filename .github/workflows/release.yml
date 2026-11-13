@@ -59,4 +59,6 @@ jobs:
 
           SHA256: ``$env:HASH``
           "@
+          # 같은 버전을 다시 올리면(핫픽스) 예전 릴리스를 지우고 새로 만든다
+          gh release view "${{ github.ref_name }}" *> $null; if ($LASTEXITCODE -eq 0) { gh release delete "${{ github.ref_name }}" --yes }
           gh release create "${{ github.ref_name }}" "dist\MapleBar-Setup-$env:VER.exe" dist\SHA256.txt --title "메이플 바 $env:VER" --notes $notes
