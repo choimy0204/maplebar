@@ -1,6 +1,7 @@
 {
   "nick": "블신",
   "world": "엘리시움",
+  "presence": "https://maplebar-presence.zaebbi.workers.dev",
   "notices": [
     {
       "date": "2026-11-13",
