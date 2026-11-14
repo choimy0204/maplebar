@@ -1,4 +1,4 @@
-using Microsoft.Web.WebView2.Core;
+﻿using Microsoft.Web.WebView2.Core;
 using static MapleBar.Native;
 
 namespace MapleBar;
@@ -83,7 +83,7 @@ public partial class WebWindow
         add();document.addEventListener('DOMContentLoaded',add);setInterval(()=>{add();stop();panel()},500)})();
         """;
 
-    static WebWindow? CommentsWindow() => open.FirstOrDefault(x => !x.IsDisposed && x.kind == SiteKind.YouTubeComments);
+    static WebWindow? CommentsWindow() => FindOpen(SiteKind.YouTubeComments);
 
     // 일반 영상(쇼츠 아님): 제목 줄을 숨기고 영상만 보인다. 마우스를 창 위쪽에 올리면 제목 줄이 영상 위에 잠깐 나온다
     readonly System.Windows.Forms.Timer bareTimer = new() { Interval = 150 };
@@ -117,6 +117,37 @@ public partial class WebWindow
         }
         grip.Visible = show;
     }
+
+    /// <summary>유튜브 목록 창 제목 줄에 영상을 어디서 볼지 고르는 버튼을 단다 (새 창 ↔ 이 창)</summary>
+    void AddYtModeButton()
+    {
+        var box = new Panel { Dock = DockStyle.Right, Width = S(96), BackColor = Color.White };
+        var btnFont = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        owned.Add(btnFont);
+        string Label() => settings.YtSameWindow ? "영상: 현재 창" : "영상: 새 창";
+        var b = new RoundLabel
+        {
+            Dock = DockStyle.Fill, AutoSize = false, Text = Label(), TextAlign = ContentAlignment.MiddleCenter,
+            Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6),
+            Font = btnFont,
+        };
+        b.MouseEnter += (_, _) => b.Fill = Color.FromArgb(255, 226, 196);
+        b.MouseLeave += (_, _) => b.Fill = UI.SoftAccent;
+        var btnTip = new ToolTip();
+        owned.Add(btnTip);
+        void Tip() => btnTip.SetToolTip(b, settings.YtSameWindow
+            ? "영상을 현재 창에서 봐요. 누르면 새 창으로 따로 봐요."
+            : "영상을 새 창으로 따로 봐요. 누르면 현재 창에서 봐요.");
+        Tip();
+        b.Click += (_, _) => { settings.YtSameWindow = !settings.YtSameWindow; settings.Save(); b.Text = Label(); Tip(); };
+        box.Controls.Add(b);
+        var gap = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
+        grip.Controls.Add(gap); gap.BringToFront();
+        grip.Controls.Add(box); box.BringToFront();
+        ytModeBox = box; ytModeGap = gap;
+    }
+
+    Control? ytModeBox, ytModeGap; // 영상 보는 중엔 숨긴다 (목록 화면에서만 고른다)
 
     /// <summary>재생 창 제목 줄에 '댓글' 버튼을 단다. 누르면 댓글 창을 열고, 다시 누르면 닫는다.</summary>
     void AddCommentsButton(string text)
@@ -182,8 +213,9 @@ public partial class WebWindow
         int h = Math.Min(kind == SiteKind.LivePlayer ? Math.Max(Height, (int)Math.Round(820 * Math.Max(sc, DeviceDpi / 96f * 0.9f))) : Height, wa.Height);
         int y = Math.Max(wa.Top, Math.Min(Top, wa.Bottom - h));
         w.Bounds = new Rectangle(x, y, cw, h);
-        // 댓글 창을 ✕로 닫으면 재생 창도 같이 닫는다
-        w.FormClosed += (_, _) => { if (!w.keepPlayer && !IsDisposed) BeginInvoke(Close); };
+        // 방송 채팅 창을 ✕로 닫으면 재생 창도 같이 닫는다 (유튜브 댓글 창은 닫아도 영상은 남긴다)
+        if (kind == SiteKind.LivePlayer)
+            w.FormClosed += (_, _) => { if (!w.keepPlayer && !IsDisposed) BeginInvoke(Close); };
         w.Show();
     }
 
@@ -279,14 +311,18 @@ public partial class WebWindow
             string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
             if (m == null || !m.StartsWith("mb:yt:", StringComparison.Ordinal)) return;
             var u = m[6..];
-            if (YouTube.IsVideo(u) && !IsDisposed) BeginInvoke(() => ShowYouTube(u, settings, sc));
+            if (!YouTube.IsVideo(u) || IsDisposed) return;
+            // '이 창에서' 모드면 목록 창에서 그대로 연다 (댓글 창은 늘 재생 창으로)
+            if (kind == SiteKind.YouTube && settings.YtSameWindow) BeginInvoke(() => web.CoreWebView2?.Navigate(u));
+            else BeginInvoke(() => ShowYouTube(u, settings, sc));
         };
         // 놓친 경우(뒤로 가기, 페이지가 직접 옮김 등): 목록 창이 영상 페이지로 가면 재생 창으로 넘기고 목록으로 돌아온다
         if (kind == SiteKind.YouTubeComments) return;
         cw.HistoryChanged += (_, _) =>
         {
             var s = cw.Source;
-            if (!YouTube.IsVideo(s)) return;
+            if (ytModeBox != null && ytModeGap != null) ytModeBox.Visible = ytModeGap.Visible = !YouTube.IsVideo(s);
+            if (!YouTube.IsVideo(s) || settings.YtSameWindow) return;
             try { _ = cw.ExecuteScriptAsync("document.querySelectorAll('video').forEach(v=>{try{v.pause()}catch(e){}})"); } catch { }
             ShowYouTube(s, settings, sc);
             if (cw.CanGoBack) cw.GoBack(); else cw.Navigate(YouTube.Home);
@@ -296,7 +332,7 @@ public partial class WebWindow
     /// <summary>유튜브 재생 창에서 url을 연다. 창이 있으면 영상만 바꾸고, 없으면 새로 띄운다.</summary>
     public static void ShowYouTube(string url, Settings st, float scale)
     {
-        var w = open.FirstOrDefault(x => !x.IsDisposed && x.kind == SiteKind.YouTubePlayer);
+        var w = FindOpen(SiteKind.YouTubePlayer);
         if (w == null) { new WebWindow(url, st, scale).Show(); return; }
         // 일반 영상 ↔ 쇼츠로 바뀌면 창 모양도 바꾼다 (펼친 상태·최대화면 그대로 둔다)
         if (YouTube.IsShorts(url) != YouTube.IsShorts(w.startUrl) && w.smallBounds == null && w.WindowState == FormWindowState.Normal)

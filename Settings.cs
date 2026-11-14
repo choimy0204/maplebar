@@ -29,7 +29,9 @@ public class Settings
     // 바를 숨겨도(Ctrl+Alt+M) 야누스·룬·버프·도핑 알림을 띄운다
     public bool AlertWhenHidden { get; set; } = true;
     // 시계: 켜기, 초·날짜·24시간 보기, 게임 창 안에서의 자리(비율, 없으면 오른쪽 위)
-    public bool ClockOn { get; set; } = true;
+    public bool ClockOn { get; set; } = false;
+    // 유튜브 목록 창에서 영상을 누르면 재생 창을 따로 띄우지 않고 그 창에서 본다
+    public bool YtSameWindow { get; set; }
     public bool ClockSeconds { get; set; } = true;
     public bool ClockDate { get; set; } = true;
     public bool Clock24 { get; set; } = false;
@@ -92,6 +94,8 @@ public class Settings
     public bool StudyStarOnly { get; set; }
     public int StudyMin { get; set; } = 10;
     public int StudySec { get; set; } = 12;
+    // 설정 창들의 마지막 자리 (창 이름 → [x, y])
+    public Dictionary<string, int[]> WinPos { get; set; } = new();
     public double? StudyFX { get; set; }
     public double? StudyFY { get; set; }
     public List<StudyDeck> Decks { get; set; } = new();

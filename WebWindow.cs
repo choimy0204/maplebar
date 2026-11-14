@@ -23,6 +23,8 @@ public partial class WebWindow : Form
 
     // [전역] 지금 열려 있는 사이트 창 전부. 생성자에서 넣고 닫힐 때 뺀다 (UI 스레드에서만 쓴다)
     static readonly List<WebWindow> open = new();
+    /// <summary>열려 있는 창 가운데 그 종류인 것 (없으면 null)</summary>
+    static WebWindow? FindOpen(SiteKind k) => open.FirstOrDefault(x => !x.IsDisposed && x.kind == k);
 
     readonly WebView2 web = new() { Dock = DockStyle.Fill };
     readonly Settings settings;
@@ -184,6 +186,7 @@ public partial class WebWindow : Form
         alphaBarTip.SetToolTip(alphaBar, "투명도");
         grip.Controls.Add(alphaBar); alphaBar.BringToFront();
         if (KindOf(url) is SiteKind.YouTubePlayer or SiteKind.LivePlayer) { AddCommentsButton(KindOf(url) == SiteKind.LivePlayer ? "채팅" : "댓글"); StartBare(); }
+        if (KindOf(url) == SiteKind.YouTube) AddYtModeButton();
         if (Music.IsMusic(url))
         {
             // 뮤직 창: 곡 정보를 1초마다 읽어 바에 알린다
@@ -211,7 +214,22 @@ public partial class WebWindow : Form
         grip.MouseWheel += (_, e) => SetAlpha((int)Math.Round(Opacity * 100) + (e.Delta > 0 ? 5 : -5));
 
         grip.ContextMenuStrip = menu;
-        grip.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left && e.Clicks == 1) DragMove(); };
+        grip.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left || e.Clicks != 1) return;
+            // 최대화 중이면 실제로 끌기 시작할 때 원래 크기로 돌린다 (더블클릭은 그대로 최대화 풀기)
+            if (WindowState == FormWindowState.Maximized) maxDownAt = Cursor.Position;
+            else DragMove();
+        };
+        grip.MouseUp += (_, _) => maxDownAt = null;
+        grip.MouseMove += (_, e) =>
+        {
+            if (maxDownAt is not Point p || e.Button != MouseButtons.Left) return;
+            var c = Cursor.Position; var ds = SystemInformation.DragSize;
+            if (Math.Abs(c.X - p.X) < ds.Width && Math.Abs(c.Y - p.Y) < ds.Height) return;
+            maxDownAt = null;
+            UnmaxAndDrag(c);
+        };
         grip.DoubleClick += (_, _) => ToggleMax();
 
         Controls.Add(web);
@@ -552,15 +570,28 @@ public partial class WebWindow : Form
     }
 
     // ── 제목줄 없는 창 옮기기·크기 조절 ──
-    [DllImport("user32.dll")] static extern bool ReleaseCapture();
-    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
 
     void DragMove()
     {
         if (WindowState == FormWindowState.Maximized) return;
-        ReleaseCapture();
-        SendMessage(Handle, 0xA1 /*WM_NCLBUTTONDOWN*/, (IntPtr)2 /*HTCAPTION*/, IntPtr.Zero);
+        DragWindow(Handle);
+    }
+
+    Point? maxDownAt; // 최대화된 창의 제목 줄을 누른 자리 (끌기 시작 전)
+
+    /// <summary>최대화된 창을 원래 크기로 돌리고, 마우스가 제목 줄의 같은 비율 자리에 오게 놓은 뒤 이어서 끈다</summary>
+    void UnmaxAndDrag(Point cursor)
+    {
+        if (WindowState != FormWindowState.Maximized) return;
+        double fx = (double)(cursor.X - Left) / Math.Max(1, Width);
+        int dy = Math.Min(cursor.Y - Top, S(16));
+        ToggleMax();
+        var wa = Screen.FromPoint(cursor).WorkingArea;
+        int x = cursor.X - (int)(Width * fx);
+        x = Math.Clamp(x, wa.Left - Width + S(80), wa.Right - S(80));
+        Location = new Point(x, cursor.Y - dy);
+        DragWindow(Handle);
     }
 
     /// <summary>넥슨 라이브 재생 창: 페이지가 창 넓이에 따라 모양이 크게 바뀌어서, 알맞은 크기로 고정한다</summary>

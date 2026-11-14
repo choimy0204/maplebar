@@ -15,6 +15,9 @@ public sealed class TextField : Control
     public override string Text { get => tb.Text; set => tb.Text = value ?? ""; }
     public string PlaceholderText { get => tb.PlaceholderText; set => tb.PlaceholderText = value; }
     public int MaxLength { get => tb.MaxLength; set => tb.MaxLength = value; }
+    public HorizontalAlignment TextAlign { get => tb.TextAlign; set => tb.TextAlign = value; }
+    /// <summary>켜면 숫자만 칠 수 있다</summary>
+    public bool DigitsOnly { get; set; }
     public void SelectAll() => tb.SelectAll();
 
     public TextField()
@@ -26,6 +29,7 @@ public sealed class TextField : Control
         tb.BackColor = Fill;
         Controls.Add(tb);
         tb.TextChanged += (_, e) => OnTextChanged(e);
+        tb.KeyPress += (_, e) => { if (DigitsOnly && !char.IsDigit(e.KeyChar) && !char.IsControl(e.KeyChar)) e.Handled = true; };
         tb.Enter += (_, _) => Repaint();
         tb.Leave += (_, _) => Repaint();
         FitHeight();

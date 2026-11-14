@@ -13,10 +13,7 @@ sealed class StudyForm : Form
     public static void Open(Form owner, Settings st, float sc)
     {
         if (open == null || open.IsDisposed) open = new StudyForm(st, sc) { Owner = owner };
-        var wa = Screen.FromControl(owner).WorkingArea;
-        open.Location = new Point(
-            Math.Clamp(owner.Left + (owner.Width - open.Width) / 2, wa.Left, Math.Max(wa.Left, wa.Right - open.Width)),
-            Math.Clamp(owner.Bottom + (int)(12 * sc), wa.Top, Math.Max(wa.Top, wa.Bottom - open.Height)));
+        open.Location = WinPlace.Where(st, "study", open, owner, sc);
         if (!open.Visible) open.Show();
         open.Activate();
     }
@@ -226,6 +223,12 @@ sealed class StudyForm : Form
                 BeginInvoke(Fill);
             };
             del.MouseLeave += (_, _) => { if (sure) { sure = false; del.Text = "✕"; del.ForeColor = Gray; del.Fill = Color.Transparent; } };
+            // 스위치·✕ 말고 줄 어디를 눌러도 카드 목록을 연다
+            foreach (var c in new Control[] { row, name, info })
+            {
+                c.Cursor = Cursors.Hand;
+                c.Click += (_, _) => ShowCards(d);
+            }
             row.Controls.AddRange(new Control[] { sw, name, info, del });
             list.Controls.Add(row);
         }
@@ -321,6 +324,71 @@ sealed class StudyForm : Form
         box.Controls.Add(tb);
         parent.Controls.Add(box);
         return tb;
+    }
+
+    /// <summary>묶음에 든 카드를 표로 보여 준다 (★ = 즐겨찾기)</summary>
+    void ShowCards(StudyDeck d)
+    {
+        int w = S(640), pad = S(18), inner = w - pad * 2;
+        var f = Dialog(d.Name, w, out int y);
+        f.Controls.Add(new Label
+        {
+            Text = $"{d.Items.Count}장" + (d.Items.Count(d.Starred) is > 0 and var n ? $" · ★ {n}" : ""),
+            Font = F(9), ForeColor = Gray, AutoSize = true, Location = new Point(pad, y - S(6)),
+        });
+        y += S(20);
+        // 칸 너비: ★ 칸 + 단어 30% · 의미 30% · 첨언 나머지
+        int starW = S(26), rest = inner - starW - S(12);
+        int[] colX = { starW, starW + rest * 30 / 100, starW + rest * 60 / 100 };
+        int[] colW = { rest * 30 / 100 - S(8), rest * 30 / 100 - S(8), rest * 40 / 100 };
+        var head = new RoundLabel { AutoSize = false, Radius = S(8), Fill = UI.HoverBack, Bounds = new Rectangle(pad, y, inner, S(30)) };
+        for (int k = 0; k < 3; k++)
+            head.Controls.Add(new Label
+            {
+                Text = k < d.Cols.Length ? d.Cols[k] : "", Font = F(9, FontStyle.Bold), ForeColor = Gray, AutoSize = false, UseMnemonic = false,
+                BackColor = UI.HoverBack, TextAlign = ContentAlignment.MiddleLeft, Bounds = new Rectangle(colX[k] + S(4), 0, colW[k], S(30)),
+            });
+        f.Controls.Add(head);
+        y += S(34);
+
+        var lb = new ListBox
+        {
+            DrawMode = DrawMode.OwnerDrawFixed, BorderStyle = BorderStyle.None, IntegralHeight = false, ItemHeight = S(30),
+            Bounds = new Rectangle(pad, y, inner, S(420)), Font = F(9.5f), SelectionMode = SelectionMode.None,
+        };
+        foreach (var it in d.Items) lb.Items.Add(it);
+        lb.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0) return;
+            var it = (string[])lb.Items[e.Index];
+            var g = e.Graphics;
+            using (var bg = new SolidBrush(e.Index % 2 == 1 ? Color.FromArgb(248, 248, 250) : Color.White)) g.FillRectangle(bg, e.Bounds);
+            var flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+            if (d.Starred(it))
+                TextRenderer.DrawText(g, "★", lb.Font, new Rectangle(e.Bounds.X, e.Bounds.Y, starW, e.Bounds.Height), Color.FromArgb(255, 170, 0),
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            for (int k = 0; k < 3 && k < it.Length; k++)
+            {
+                var r = new Rectangle(e.Bounds.X + colX[k] + S(4), e.Bounds.Y, colW[k], e.Bounds.Height);
+                using var font = k == 0 ? new Font(lb.Font, FontStyle.Bold) : null;
+                TextRenderer.DrawText(g, it[k], font ?? lb.Font, r, k == 2 ? Gray : UI.Text, flags);
+            }
+        };
+        // 잘린 글은 마우스를 올리면 다 보여 준다
+        var tip = new ToolTip();
+        int tipAt = -1;
+        lb.MouseMove += (_, e) =>
+        {
+            int i = lb.IndexFromPoint(e.Location);
+            if (i == tipAt) return;
+            tipAt = i;
+            tip.SetToolTip(lb, i >= 0 ? string.Join("\n", (string[])lb.Items[i]) : "");
+        };
+        f.Controls.Add(lb);
+        y += lb.Height + S(16);
+        f.ClientSize = new Size(w, y);
+        ShowDialogOver(f);
+        tip.Dispose();
     }
 
     void PasteBox()
@@ -448,14 +516,12 @@ sealed class StudyForm : Form
     }
 
     [DllImport("imm32.dll")] static extern bool ImmAssociateContextEx(IntPtr hWnd, IntPtr hIMC, uint flags);
-    [DllImport("user32.dll")] static extern bool ReleaseCapture();
-    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
 
     static void Drag(Form f, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left) return;
-        ReleaseCapture();
-        SendMessage(f.Handle, 0xA1, (IntPtr)2, IntPtr.Zero); // 제목줄을 잡은 것처럼 끈다
+        DragWindow(f.Handle); // 제목줄을 잡은 것처럼 끈다
+        if (f is StudyForm sf) WinPlace.Remember(sf.st, "study", sf); // 본 창만 자리를 기억
     }
 
     protected override CreateParams CreateParams

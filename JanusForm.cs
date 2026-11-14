@@ -6,7 +6,7 @@ using static MapleBar.Native;
 
 namespace MapleBar;
 /// <summary>솔 야누스 · 룬 알림 설정 창. 바와 같은 흰 바탕, 둥근 카드, 주황 스위치를 쓴다.</summary>
-sealed class JanusForm : Form
+sealed class JanusForm : Form, IMessageFilter
 {
     static JanusForm? alertForm, toonForm;
 
@@ -23,9 +23,7 @@ sealed class JanusForm : Form
             open.AutoScroll = true;
             open.Size = new Size(Math.Min(open.Width, wa.Width), Math.Min(open.Height, wa.Height));
         }
-        open.Location = new Point(
-            Math.Clamp(owner.Left + (owner.Width - open.Width) / 2, wa.Left, Math.Max(wa.Left, wa.Right - open.Width)),
-            Math.Clamp(owner.Bottom + (int)(12 * sc), wa.Top, Math.Max(wa.Top, wa.Bottom - open.Height)));
+        open.Location = WinPlace.Where(st, open.PlaceKey, open, owner, sc);
         if (!open.Visible) open.Show();
         open.Activate();
     }
@@ -166,12 +164,13 @@ sealed class JanusForm : Form
         {
             Color = Purple, Title = "솔 야누스", On = st.JanusOn, SetOn = v => st.JanusOn = v,
             KeyLabel = "솔 야누스 키", Which = 1,
-            StepLabel = "지속시간", Value = st.JanusSec, Options = new[] { 60, 70, 80, 120 }, Fmt = v => JanusWatch.Endless(st, v) ? "무한대" : v + "초", SetValue = v => st.JanusSec = v,
+            StepLabel = "지속시간", Value = st.JanusSec, Options = Enumerable.Range(11, 14).Select(n => n * 5).Append(121).ToArray(), Fmt = v => JanusWatch.Endless(st, v) ? "∞" : v + "초", SetValue = v => st.JanusSec = v,
             Hint =
-                "1레벨 60초 · 10레벨 70초 · 20레벨 80초 · 30레벨 120초(루나 익스텐션이 있으면 무한대)\n" +
-                "첫 설치 후 50초 안에 더 설치한 건 세지 않아요. 루나 익스텐션이 없으면 다시 깔아도 갱신하지 않고 첫 설치만 세요.\n" +
-                "5석펫을 켜면 설치 때 한 번, 그 뒤 90초마다 게더링으로 지속시간만큼 더해서(최대 300초) 실제로 꺼질 때 알려 드려요. 20레벨은 약 12분, 10레벨은 약 5분 50초 유지돼요.\n" +
-                "아이템은 설치 1분 30초 뒤 사라져서, 65초에 연두색 빛으로 회수하라고 알려 드려요.",
+                "지속시간: 1레벨 60초 · 10레벨 70초 · 20레벨 80초 · 30레벨 120초\n" +
+                "120초보다 크게 넣으면 무한대예요. 루나 익스텐션을 켜면 120초도 무한대예요.\n" +
+                "처음 깐 뒤 50초 안에 또 깐 건 세지 않아요. 루나 익스텐션이 없으면 도는 중에 다시 깔아도 처음 것만 세요.\n" +
+                "5석펫을 켜면 90초마다 게더링으로 늘어난 시간까지 세서(최대 300초) 진짜 꺼질 때 알려 드려요.\n" +
+                "아이템은 깔고 1분 30초 뒤 사라져요. 65초에 연두색 빛으로 주우라고 알려 드려요.",
             Preview = () => JanusAlert.Play(sc),
             Switches = new (string, bool, Action<bool>)[]
             {
@@ -198,7 +197,9 @@ sealed class JanusForm : Form
         y = top + Section("버프", Orange, rx, top, colW);
         var buffTip = new Label
         {
-            Text = "버프를 3개까지 따로 셀 수 있어요. 버프 키를 누르면 키 시간을, 10초 안에 엔터도 누르면 엔터 시간도 같이 세요(엔터를 안 누르면 엔터 시간은 세지 않아요). '알릴 시간'에서 둘 중 하나를 골라 알림을 받고, 언제든 서로 바꿀 수 있어요. 다시 쓰면 처음부터 다시 셉니다. 30분은 분홍, 20분은 주황, 10분은 노랑으로 알려 드려요.",
+            Text = "버프를 3개까지 따로 세요. 버프 키를 누르면 그때부터 세고, 10초 안에 엔터도 누르면 엔터 때부터도 같이 세요.\n" +
+                   "'알릴 시간'에서 둘 중 하나를 고르고, 나중에 바꿔도 돼요. 다시 쓰면 처음부터 다시 세요.\n" +
+                   "30분은 분홍, 20분은 주황, 10분은 노랑으로 알려 드려요.",
             Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(colW, 0), Location = new Point(rx, y),
         };
         Controls.Add(buffTip);
@@ -343,16 +344,25 @@ sealed class JanusForm : Form
     /// <summary>제목 글을 누르면 그 자리에서 이름을 바꾸게 한다 (엔터 저장, Esc 취소, 비우면 기본 이름)</summary>
     void AddNameEditor(Card card, Label name, int ip, int cy, int right, string fallback, Func<string?> get, Action<string?> set)
     {
-        string Shown() => string.IsNullOrWhiteSpace(get()) ? fallback : get()!.Trim();
-        name.Text = Shown();
+        var (pen, box) = MakeNameEditor(name, ip, cy, right, fallback, 12,
+            () => string.IsNullOrWhiteSpace(get()) ? fallback : get()!.Trim(), get, set, refreshNavs: true);
+        card.Controls.AddRange(new Control[] { pen, box });
+    }
+
+    /// <summary>이름 바꾸기에 쓰는 ✎ 표시와 글 칸을 만든다 (카드에 올리는 것은 부르는 쪽이 한다).
+    /// shown = 지금 보여 줄 이름, right = 글 칸이 닿을 오른쪽 끝</summary>
+    (Label pen, TextField box) MakeNameEditor(Label name, int ip, int cy, int right, string placeholder, int maxLength,
+        Func<string> shown, Func<string?> get, Action<string?> set, bool refreshNavs)
+    {
+        name.Text = shown();
         name.Cursor = Cursors.IBeam;
         var pen = new Label { Text = "✎", Font = F(9), ForeColor = Gray, AutoSize = true, Cursor = Cursors.Hand };
         void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
         PlacePen();
         var box = new TextField
         {
-            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false,
-            Location = new Point(ip + S(12), cy - S(5)), Width = right - ip - S(16) - S(10), PlaceholderText = fallback,
+            Font = F(10.5f, FontStyle.Bold), MaxLength = maxLength, Visible = false,
+            Location = new Point(ip + S(12), cy - S(5)), Width = right - ip - S(16) - S(10), PlaceholderText = placeholder,
         };
         bool done = false;
         void Edit()
@@ -367,16 +377,16 @@ sealed class JanusForm : Form
             if (done) return;
             done = true;
             if (keep) { set(string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim()); st.Save(); }
-            name.Text = Shown(); PlacePen();
+            name.Text = shown(); PlacePen();
             box.Visible = false; name.Visible = pen.Visible = true;
             editingName = null;
-            RefreshSlotNavs();
+            if (refreshNavs) RefreshSlotNavs();
         }
         name.Click += (_, _) => Edit();
         pen.Click += (_, _) => Edit();
         box.Enter += (_, _) => editingName = Finish;
         box.Leave += (_, _) => Finish(true);
-        card.Controls.AddRange(new Control[] { pen, box });
+        return (pen, box);
     }
 
     /// <summary>버프·도핑 넘기기 줄: ◀ [이름 1 / 3] ▶. 한 번에 한 칸만 보인다</summary>
@@ -468,17 +478,14 @@ sealed class JanusForm : Form
 
         // 숫자 줄: − 값 +
         card.Controls.Add(RowLabel(stepLabel, ip, cy));
-        // 저장된 값과 가장 가까운 선택지에서 시작한다
-        int idx = Nearest(options, value);
-        var shown = ValueLabel(fmt(options[idx]));
-        if (options[idx] != value) { setValue(options[idx]); st.Save(); }
-        void Change(int d)
-        {
-            idx = Math.Clamp(idx + d, 0, options.Length - 1);
-            shown.Text = fmt(options[idx]);
-            setValue(options[idx]); st.Save();
-        }
+        // − + 는 선택지 사이를 오가고, 값 칸을 두 번 누르면 범위 안의 아무 숫자나 칠 수 있다
+        int cur = Math.Clamp(value, options[0], options[^1]);
+        var shown = ValueLabel(fmt(cur));
+        if (cur != value) { setValue(cur); st.Save(); }
+        void Set(int v) { cur = v; shown.Text = fmt(cur); setValue(cur); st.Save(); UpdateStatus(); }
+        void Change(int d) => Set(StepOption(options, cur, d));
         AddStepper(card, shown, w - ip, cy, Change);
+        AddTypeIn(card, shown, () => cur, options[0], options[^1], Set);
         cy += S(38);
 
         // 켜고 끄는 줄 (바꾸면 값 표시도 다시 쓴다: 루나 익스텐션에 따라 120초 ↔ 무한대)
@@ -487,7 +494,7 @@ sealed class JanusForm : Form
             card.Controls.Add(RowLabel(label, ip, cy));
             var t = new Toggle { On = on2, Size = new Size(S(40), S(22)) };
             t.Location = new Point(w - ip - t.Width, cy + S(4));
-            t.Changed += v => { set(v); st.Save(); shown.Text = fmt(options[idx]); UpdateStatus(); };
+            t.Changed += v => { set(v); st.Save(); shown.Text = fmt(cur); UpdateStatus(); };
             card.Controls.Add(t);
             cy += S(34);
         }
@@ -496,10 +503,11 @@ sealed class JanusForm : Form
         if (step2 is var (l2, v2, o2, f2, s2))
         {
             card.Controls.Add(RowLabel(l2, ip, cy));
-            int i2 = Nearest(o2, v2);
-            var shown2 = ValueLabel(f2(o2[i2]));
-            void Change2(int d) { i2 = Math.Clamp(i2 + d, 0, o2.Length - 1); shown2.Text = f2(o2[i2]); s2(o2[i2]); st.Save(); }
-            AddStepper(card, shown2, w - ip, cy, Change2);
+            int c2 = Math.Clamp(v2, o2[0], o2[^1]);
+            var shown2 = ValueLabel(f2(c2));
+            void Set2(int v) { c2 = v; shown2.Text = f2(c2); s2(c2); st.Save(); }
+            AddStepper(card, shown2, w - ip, cy, d => Set2(StepOption(o2, c2, d)));
+            AddTypeIn(card, shown2, () => c2, o2[0], o2[^1], Set2);
             cy += S(38);
         }
 
@@ -682,8 +690,9 @@ sealed class JanusForm : Form
 
         var hint = new Label
         {
-            Text = "고른 버프가 도는 동안 maple.gg에서 목걸이·펜던트 칸을 봐요. 1분마다 정보 갱신을 누르고 끝나면 바로 다시 봐요. 없으면 낄 때까지 20초마다 노란 빛으로 알려 드려요(아래 가운데에서 잠깐 파랑).\n" +
-                   "maple.gg는 장비가 바뀐 뒤 반영까지 평균 15분쯤 걸려요.",
+            Text = "고른 버프가 도는 동안 maple.gg에서 목걸이·펜던트를 1분마다 확인해요. 확인할 때 아래 가운데가 잠깐 파랗게 빛나요.\n" +
+                   "정펜이 없으면 낄 때까지 20초마다 노란 빛으로 알려 드려요.\n" +
+                   "maple.gg는 장비를 바꾸고 반영까지 15분쯤 걸려요.",
             Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy),
         };
         card.Controls.Add(hint);
@@ -765,39 +774,11 @@ sealed class JanusForm : Form
         var dot = new Label { Text = "●", Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) };
         // 이름 = 알림에 뜨는 글: 누르면 그 자리에서 바꾼다 (비우면 기본 이름 "반복 알림 1")
         var name = new Label { Text = r.Title(i), Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy), Cursor = Cursors.IBeam };
-        var pen = new Label { Text = "✎", Font = F(9), ForeColor = Gray, AutoSize = true, Cursor = Cursors.Hand };
         var sw = new Toggle { On = r.On, Size = new Size(S(40), S(22)) };
         sw.Location = new Point(w - ip - sw.Width, cy + S(1));
         sw.Changed += v => { r.On = v; if (!v) watch.CancelRepeat(i); st.Save(); UpdateStatus(); };
-        void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
-        PlacePen();
-        var box = new TextField
-        {
-            Font = F(10.5f, FontStyle.Bold), MaxLength = 20, Visible = false,
-            Location = new Point(ip + S(12), cy - S(5)), Width = sw.Left - ip - S(16) - S(10),
-            PlaceholderText = $"반복 알림 {i + 1}",
-        };
-        bool done = false;
-        void Edit()
-        {
-            done = false;
-            box.Text = r.Name ?? "";
-            name.Visible = pen.Visible = false;
-            box.Visible = true; box.Focus(); box.SelectAll();
-        }
-        void Finish(bool keep)
-        {
-            if (done) return;
-            done = true;
-            if (keep) { r.Name = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim(); st.Save(); }
-            name.Text = r.Title(i); PlacePen();
-            box.Visible = false; name.Visible = pen.Visible = true;
-            editingName = null;
-        }
-        name.Click += (_, _) => Edit();
-        pen.Click += (_, _) => Edit();
-        box.Enter += (_, _) => editingName = Finish;
-        box.Leave += (_, _) => Finish(true);
+        var (pen, box) = MakeNameEditor(name, ip, cy, sw.Left, $"반복 알림 {i + 1}", 20,
+            () => r.Title(i), () => r.Name, v => r.Name = v, refreshNavs: false);
         card.Controls.AddRange(new Control[] { dot, name, pen, box, sw });
         cy += S(38);
 
@@ -1075,40 +1056,11 @@ sealed class JanusForm : Form
         // 이름: 누르면 그 자리에서 바꾼다 (비우면 기본 이름 "버프 1")
         string Shown() => string.IsNullOrWhiteSpace(b.Name) ? $"버프 {i + 1}" : b.Name.Trim();
         var name = new Label { Text = Shown(), Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy), Cursor = Cursors.IBeam };
-        var pen = new Label { Text = "✎", Font = F(9), ForeColor = Gray, AutoSize = true, Cursor = Cursors.Hand };
         var sw = new Toggle { On = b.On, Size = new Size(S(40), S(22)) };
         sw.Location = new Point(w - ip - sw.Width, cy + S(1));
         sw.Changed += v => { b.On = v; st.Save(); UpdateStatus(); };
-        void PlacePen() => pen.Location = new Point(name.Right + S(4), cy + S(3));
-        PlacePen();
-        var box = new TextField
-        {
-            Font = F(10.5f, FontStyle.Bold), MaxLength = 12, Visible = false,
-            Location = new Point(ip + S(12), cy - S(5)), Width = sw.Left - ip - S(16) - S(10),
-            PlaceholderText = $"버프 {i + 1}",
-        };
-        bool done = false;
-        void Edit()
-        {
-            done = false;
-            box.Text = b.Name ?? "";
-            name.Visible = pen.Visible = false;
-            box.Visible = true; box.Focus(); box.SelectAll();
-        }
-        void Finish(bool keep)
-        {
-            if (done) return;
-            done = true;
-            if (keep) { b.Name = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim(); st.Save(); }
-            name.Text = Shown(); PlacePen();
-            box.Visible = false; name.Visible = pen.Visible = true;
-            editingName = null;
-            RefreshSlotNavs();
-        }
-        name.Click += (_, _) => Edit();
-        pen.Click += (_, _) => Edit();
-        box.Enter += (_, _) => editingName = Finish;
-        box.Leave += (_, _) => Finish(true);
+        var (pen, box) = MakeNameEditor(name, ip, cy, sw.Left, $"버프 {i + 1}", 12,
+            Shown, () => b.Name, v => b.Name = v, refreshNavs: true);
         card.Controls.AddRange(new Control[] { dot, name, pen, box, sw });
         cy += S(38);
 
@@ -1192,7 +1144,7 @@ sealed class JanusForm : Form
     }
 
     // "− 값 +" 줄의 값 칸
-    Label ValueLabel(string text, int width = 64) =>
+    RoundLabel ValueLabel(string text, int width = 64) =>
         new() { AutoSize = false, Size = new Size(S(width), S(30)), TextAlign = ContentAlignment.MiddleCenter, Font = F(10, FontStyle.Bold), Text = text };
 
     /// <summary>"− 값 +" 줄: 값 칸 양쪽에 − · + 버튼을 붙여 오른쪽 끝(right)에 맞춰 놓는다. 누르면 change(±step).</summary>
@@ -1204,9 +1156,57 @@ sealed class JanusForm : Form
         card.Controls.AddRange(new Control[] { minus, shown, plus });
         int top = cy + (S(30) - plus.PreferredSize.Height) / 2;
         plus.Location = new Point(right - plus.PreferredSize.Width, top);
-        shown.Location = new Point(plus.Left - shown.Width, cy);
-        minus.Location = new Point(shown.Left - minus.PreferredSize.Width, top);
+        int gap = S(8); // 값 칸과 − + 사이 여백
+        shown.Location = new Point(plus.Left - gap - shown.Width, cy);
+        minus.Location = new Point(shown.Left - gap - minus.PreferredSize.Width, top);
         return (minus, plus);
+    }
+
+    /// <summary>지금 값에서 d 방향으로 바로 다음 선택지 (없으면 그대로)</summary>
+    static int StepOption(int[] options, int cur, int d) =>
+        d > 0 ? options.Where(o => o > cur).DefaultIfEmpty(cur).Min() : options.Where(o => o < cur).DefaultIfEmpty(cur).Max();
+
+    /// <summary>값 칸을 누르면 숫자를 직접 친다. Enter나 다른 곳을 누르면 확정, Esc는 취소. 범위 밖이면 범위 안으로 맞춘다</summary>
+    void AddTypeIn(Control card, RoundLabel shown, Func<int> get, int min, int max, Action<int> apply)
+    {
+        // 글 칸처럼 보이게: 흰 바탕 둥근 네모 + 회색 테두리 (마우스를 올리면 파란 테두리)
+        bool hover = false;
+        shown.Fill = Color.White;
+        shown.Radius = S(8);
+        shown.Cursor = Cursors.IBeam;
+        shown.MouseEnter += (_, _) => { hover = true; shown.Invalidate(); };
+        shown.MouseLeave += (_, _) => { hover = false; shown.Invalidate(); };
+        shown.Paint += (_, e) =>
+        {
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var path = UI.RoundRect(new RectangleF(0.5f, 0.5f, shown.Width - 1.5f, shown.Height - 1.5f), S(8));
+            using var pen = new Pen(hover ? UI.Accent : Color.FromArgb(205, 205, 212), hover ? 1.5f : 1f);
+            e.Graphics.DrawPath(pen, path);
+        };
+        new ToolTip().SetToolTip(shown, "눌러서 직접 입력");
+        var box = new TextField { Font = shown.Font, MaxLength = max.ToString().Length, DigitsOnly = true,
+            TextAlign = HorizontalAlignment.Center, ImeMode = ImeMode.Disable, Visible = false };
+        card.Controls.Add(box);
+        bool done = true;
+        void Finish(bool keep)
+        {
+            if (done) return;
+            done = true;
+            if (keep && int.TryParse(box.Text, out int v)) apply(Math.Clamp(v, min, max));
+            box.Visible = false; shown.Visible = true;
+            editingName = null;
+        }
+        shown.Click += (_, _) =>
+        {
+            done = false;
+            box.Width = shown.Width;
+            box.Location = new Point(shown.Left, shown.Top + (shown.Height - box.Height) / 2);
+            box.Text = get().ToString();
+            shown.Visible = false; box.Visible = true; box.BringToFront();
+            box.Focus(); box.SelectAll();
+        };
+        box.Enter += (_, _) => editingName = Finish;
+        box.Leave += (_, _) => Finish(true);
     }
 
     /// <summary>저장된 값과 가장 가까운 선택지의 번호 (같으면 앞쪽)</summary>
@@ -1410,23 +1410,41 @@ sealed class JanusForm : Form
     {
         base.OnHandleCreated(e);
         UI.RoundCorners(Handle);
+        Application.AddMessageFilter(this);
+    }
+
+    [DllImport("user32.dll")] static extern IntPtr GetFocus();
+
+    /// <summary>글 칸을 고치는 중에 다른 곳을 누르면 고치기를 끝낸다 (빈 곳·글자는 포커스를 가져가지 않아서 직접 끝낸다)</summary>
+    public bool PreFilterMessage(ref Message m)
+    {
+        const int WM_LBUTTONDOWN = 0x201, WM_RBUTTONDOWN = 0x204, WM_NCLBUTTONDOWN = 0xA1;
+        if (editingName == null || m.Msg is not (WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_NCLBUTTONDOWN)) return false;
+        var focus = GetFocus();
+        if (m.HWnd == focus) return false;
+        // 둥근 글 칸의 여백을 누른 건 같은 칸이다
+        if (FromHandle(m.HWnd) is TextField tf && tf.ContainsFocus) return false;
+        var fin = editingName;
+        BeginInvoke(() => { if (editingName == fin) fin(true); });
+        return false;
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         refresh.Stop();
         refresh.Dispose(); // 닫힌 창은 다시 열지 않는다
+        Application.RemoveMessageFilter(this);
+        WinPlace.Remember(st, PlaceKey, this);
         base.OnFormClosed(e);
     }
 
-    [DllImport("user32.dll")] static extern bool ReleaseCapture();
-    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+    string PlaceKey => toon ? "toon" : "alert";
 
     void Drag(MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left) return;
-        ReleaseCapture();
-        SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); // 제목줄을 잡은 것처럼 끈다
+        DragWindow(Handle); // 제목줄을 잡은 것처럼 끈다
+        WinPlace.Remember(st, PlaceKey, this); // 다 끈 뒤 자리를 기억
     }
 
     /// <summary>둥근 테두리 카드</summary>

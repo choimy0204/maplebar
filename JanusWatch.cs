@@ -26,10 +26,10 @@ sealed class JanusWatch
         ? (st.PetOn ? PetRun(s, st.PetGatherAt ?? s, st.JanusSec).end : s.AddSeconds(st.JanusSec)) : null;
     const double IgnoreSec = 50;     // 첫 설치 후 이 시간 안에 누른 건 추가 설치로 보고 무시
     /// <summary>끝나지 않는 경우는 세지도 알리지도 않는다.
-    /// 루나 익스텐션 + 30레벨(120초), 또는 5석펫에서 지속시간이 게더링 주기(90초) 이상일 때.</summary>
+    /// 121초 이상(무한대로 고른 것), 루나 익스텐션 + 30레벨(120초), 또는 5석펫에서 지속시간이 게더링 주기(90초) 이상일 때.</summary>
     public static bool Endless(Settings st) => Endless(st, st.JanusSec);
     /// <summary>지속시간을 sec초로 했을 때 끝나지 않는지 (설정 창의 '무한대' 표시도 이걸 쓴다).</summary>
-    public static bool Endless(Settings st, int sec) => st.PetOn ? sec >= GatherSec : st.LunaExt && sec >= 120;
+    public static bool Endless(Settings st, int sec) => sec > 120 || (st.PetOn ? sec >= GatherSec : st.LunaExt && sec >= 120);
 
     // 5석펫: 게더링은 쿨타임 90초. 야누스가 있고 쿨이 돌았으면 바로 쓰고, 그 뒤로 90초마다 쓴다.
     // 게더링마다 남은 시간에 지속시간을 더하고 최대 300초. 설치 때 쿨이 돌아 있으면 20레벨은 160초로 시작한다.
