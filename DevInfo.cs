@@ -137,7 +137,7 @@ sealed class DevInfo : Form
 
         // 빈 곳을 끌어서 옮길 수 있게
         foreach (Control c in new Control[] { this, title, ntitle, bar })
-            c.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) { ReleaseCapture(); SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); } };
+            c.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) DragWindow(Handle); };
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) Close(); };
 
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
@@ -481,9 +481,6 @@ return JSON.stringify({name:a.alt||'', avatar:a.currentSrc||a.src, world:(w.inne
         }
         base.Dispose(disposing);
     }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ReleaseCapture();
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
 
     protected override CreateParams CreateParams
     {

@@ -220,12 +220,8 @@ sealed class PatchNotesWindow : Form
     void Drag(object? s, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left) return;
-        ReleaseCapture();
-        SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); // WM_NCLBUTTONDOWN, HTCAPTION
+        DragWindow(Handle);
     }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ReleaseCapture();
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
 
     protected override CreateParams CreateParams
     {

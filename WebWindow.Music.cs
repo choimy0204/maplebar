@@ -341,7 +341,7 @@ public partial class WebWindow
         catch (Exception ex) { Log.Write("music", "랜덤 다음 곡 실패", ex); }
     }
 
-    static WebWindow? MusicWin => open.FirstOrDefault(x => x.kind == SiteKind.Music && !x.IsDisposed);
+    static WebWindow? MusicWin => FindOpen(SiteKind.Music);
     public static bool MusicOpen => MusicWin != null;
 
     public static void MusicCmd(int i)

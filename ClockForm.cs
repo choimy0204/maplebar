@@ -217,31 +217,13 @@ sealed class ClockForm : Form
     {
         if (!Visible) { Show(); }
         if (!IsHandleCreated) return;
-        var src = fresh ?? bmp;
-        IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen), hb = IntPtr.Zero, old = IntPtr.Zero;
         try
         {
-            var dst = new POINT { x = pos.X, y = pos.Y };
-            var blend = new BLENDFUNCTION { BlendOp = 0, SourceConstantAlpha = 255, AlphaFormat = 1 };
-            if (src == null) { UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref blend, 2); return; }
-            if (fresh == null)
-            {
-                // 그림은 그대로, 자리만 옮긴다
-                UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, ref blend, 2);
-                return;
-            }
-            hb = src.GetHbitmap(Color.FromArgb(0));
-            old = SelectObject(mem, hb);
-            var sz = new SIZE { cx = src.Width, cy = src.Height };
-            var sp = new POINT();
-            UpdateLayeredWindow(Handle, screen, ref dst, ref sz, mem, ref sp, 0, ref blend, 2);
+            if (fresh == null) MoveLayered(Handle, pos); // 그림은 그대로, 자리만 옮긴다
+            else PushLayered(Handle, fresh, pos);
         }
         finally
         {
-            if (old != IntPtr.Zero) SelectObject(mem, old);
-            if (hb != IntPtr.Zero) DeleteObject(hb);
-            DeleteDC(mem);
-            ReleaseDC(IntPtr.Zero, screen);
             KeepTop();
         }
     }
@@ -324,15 +306,4 @@ sealed class ClockForm : Form
         }
         base.Dispose(disposing);
     }
-
-    [StructLayout(LayoutKind.Sequential)] struct POINT { public int x, y; }
-    [StructLayout(LayoutKind.Sequential)] struct SIZE { public int cx, cy; }
-    [StructLayout(LayoutKind.Sequential, Pack = 1)] struct BLENDFUNCTION { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }
-    [DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
-    [DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, IntPtr psize, IntPtr hdcSrc, IntPtr pptSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
-    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
-    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
-    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
-    [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
-    [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
 }

@@ -129,7 +129,7 @@ public partial class WebWindow
         tick();document.addEventListener('DOMContentLoaded',tick);setInterval(tick,500)})();
         """;
 
-    static WebWindow? ChatWindow() => open.FirstOrDefault(x => !x.IsDisposed && x.kind == SiteKind.LiveChat);
+    static WebWindow? ChatWindow() => FindOpen(SiteKind.LiveChat);
 
     /// <summary>재생 창의 방송이 바뀌면 채팅 창도 그 방송의 채팅으로 바꾼다.</summary>
     void SyncChat()
@@ -196,7 +196,7 @@ public partial class WebWindow
     /// <summary>방송 재생 창에서 url을 연다. 창이 있으면 방송만 바꾸고, 없으면 새로 띄운다.</summary>
     public static void ShowLive(string url, Settings st, float scale)
     {
-        var w = open.FirstOrDefault(x => !x.IsDisposed && x.kind == SiteKind.LivePlayer);
+        var w = FindOpen(SiteKind.LivePlayer);
         if (w == null) { new WebWindow(url, st, scale).Show(); return; }
         w.startUrl = url; // 아직 준비 중이면 InitAsync가 이 주소로 연다
         try { w.web.CoreWebView2?.Navigate(url); } catch { }

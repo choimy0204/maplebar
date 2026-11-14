@@ -787,13 +787,9 @@ public sealed class MusicPicker : Form
     void Drag(object? s, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left) return;
-        ReleaseCapture();
-        SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); // WM_NCLBUTTONDOWN, HTCAPTION
+        DragWindow(Handle);
         moved = true;
     }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ReleaseCapture();
-    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
 
     void Place()
     {
