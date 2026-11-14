@@ -6,3 +6,4 @@ publish/
 # 설치 파일만 올리고 나머지 빌드 결과는 올리지 않는다
 dist/*
 !dist/MapleBar-Setup-1.0.2.exe
+presence/.wrangler/

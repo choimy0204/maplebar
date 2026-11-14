@@ -34,7 +34,9 @@ static class Program
         ToolStripManager.Renderer = new RoundMenuRenderer(); // 둥근 메뉴
         // 해상도가 바뀌면 바 창만 새 크기로 다시 만든다. 앱은 계속 켜져 있어 음악·열린 창이 그대로 남는다
         // (Application.Run을 끝냈다 다시 부르면 그때 다른 창이 모두 없어지므로, 실행은 한 번만 하고 바만 갈아 끼운다)
+        Presence.Start(); // 하루 사용자 세기 (하루 한 번 신호만 보낸다)
         Application.Run(new BarContext());
+        Presence.Stop();
 
         ShowEvent.Dispose();
         mutex.ReleaseMutex();
