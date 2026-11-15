@@ -118,7 +118,8 @@ sealed class UpdateWindow : Form
         status.Text = "받을 준비를 하고 있어요…";
         bar.Visible = true;
         bar.Value = 0;
-        string file = Path.Combine(Path.GetTempPath(), "MapleBar-Update", Path.GetFileName(new Uri(url).LocalPath));
+        // 앞서 받은 파일이 아직 설치 중이라 잠겨 있을 수 있어, 받을 때마다 새 폴더에 받는다
+        string file = Path.Combine(Path.GetTempPath(), "MapleBar-Update", Guid.NewGuid().ToString("N")[..8], Path.GetFileName(new Uri(url).LocalPath));
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);

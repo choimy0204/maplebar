@@ -53,10 +53,25 @@ static class UpdateCheck
             {
                 using var w = new UpdateWindow(mine, ver, url, sha, ask: false);
                 w.ShowDialog();
-                if (w.File != null && StartInstall(w.File)) Application.Exit(); // 꺼져야 설치가 시작된다
+                if (w.File != null && StartInstall(w.File)) ExitForUpdate(); // 꺼져야 설치가 시작된다
             });
         };
         watchTimer.Start();
+    }
+
+    /// <summary>업데이트하려고 앱을 끈다.
+    /// Application.Exit는 열린 창 목록을 돌면서 닫는데, 바가 닫힐 때 시계 창 등을 같이 닫아 목록이 바뀌면
+    /// "Collection was modified" 오류가 난다. 그래서 목록을 복사해 하나씩 닫고, 바는 맨 나중에 닫는다.</summary>
+    static void ExitForUpdate()
+    {
+        try
+        {
+            var forms = Application.OpenForms.Cast<Form>().ToList();
+            foreach (var f in forms) if (f is not BarForm && !f.IsDisposed) f.Close();
+            foreach (var f in forms) if (f is BarForm && !f.IsDisposed) f.Close(); // 바가 닫히면 앱이 끝난다
+        }
+        catch (Exception ex) { Log.Write("업데이트", "창 닫기 실패", ex); }
+        Application.ExitThread(); // 혹시 남은 창이 있어도 끝낸다
     }
 
     static Version Mine() => Norm(typeof(UpdateCheck).Assembly.GetName().Version ?? new Version(0, 0));
