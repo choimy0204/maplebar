@@ -100,9 +100,17 @@ public partial class WebWindow : Form
 
     int S(int v) => UI.Scale(v, sc);
 
-    public WebWindow(string url, Settings settings, float scale)
+    // 페이지보다 먼저 돌릴 스크립트 (환산 보관함에 아이템 넣기 등). 없으면 null
+    readonly string? initScript;
+
+    // 경매장 '착용 해보기'로 연 효율·보스컷 창. 바의 캐릭터 검색으로 바뀌지 않고, 경매장에서 고른 캐릭터만 보여 준다
+    readonly bool wearWin;
+
+    public WebWindow(string url, Settings settings, float scale, string? initScript = null, bool wear = false)
     {
         this.settings = settings;
+        this.initScript = initScript;
+        wearWin = wear;
         sc = scale;
         yt = Music.IsYtMusic(url);
         edge = S(9); // 바깥 4는 크기 조절, 안쪽은 잡고 옮기기
@@ -137,6 +145,7 @@ public partial class WebWindow : Form
         close.MouseLeave += (_, _) => close.Fill = UI.Accent;
         close.Click += (_, _) => Close();
         grip.Controls.Add(close);
+        closeBtn = close;
         // ✕ 왼쪽 펼치기 버튼: 누르면 크게(BigSize), 다시 누르면 원래 크기로
         var gap = new Panel { Dock = DockStyle.Right, Width = S(6), BackColor = Color.Transparent };
         grip.Controls.Add(gap); gap.BringToFront();
@@ -186,7 +195,7 @@ public partial class WebWindow : Form
         alphaBarTip.SetToolTip(alphaBar, "투명도");
         grip.Controls.Add(alphaBar); alphaBar.BringToFront();
         if (KindOf(url) is SiteKind.YouTubePlayer or SiteKind.LivePlayer) { AddCommentsButton(KindOf(url) == SiteKind.LivePlayer ? "채팅" : "댓글"); StartBare(); }
-        if (KindOf(url) == SiteKind.YouTube) AddYtModeButton();
+        if (KindOf(url) is SiteKind.YouTube or SiteKind.Live) AddYtModeButton(KindOf(url) == SiteKind.Live);
         if (Music.IsMusic(url))
         {
             // 뮤직 창: 곡 정보를 1초마다 읽어 바에 알린다
@@ -268,6 +277,8 @@ public partial class WebWindow : Form
         }
         // 방송은 영상과 채팅이 옆으로 놓이니 가로로 넓게 연다
         if (KindOf(url) == SiteKind.Live) { w = Math.Min(W(800), wa.Width); h = Math.Min(W(500), wa.Height); }
+        // 경매장: 사이트가 700px 이하면 모바일 화면이 되므로 그보다 넓게, 1100px 전체보다는 작게 연다 (그 사이 폭은 AuctionScript가 맞춘다)
+        if (Nexon.IsAuction(url)) { float d = DeviceDpi / 96f; w = Math.Min((int)Math.Round(900 * d), wa.Width); h = Math.Min((int)Math.Round(680 * d), wa.Height); }
 
         // 이 종류 창을 전에 닫은 자리가 있으면 그 자리에 연다 (같은 종류가 이미 열려 있으면 비켜서 연다)
         var key = PlaceKey(url);
@@ -353,6 +364,21 @@ public partial class WebWindow : Form
                 if (m == "mb:close" && !IsDisposed) BeginInvoke(() => { if (!IsDisposed) Close(); });
                 // 브금 랜덤 재생이 고른 곡이 지금 화면에 없으면 앱이 찾아서 튼다
                 else if (m != null && m.StartsWith("mb:play:") && kind == SiteKind.Music && !yt && !IsDisposed) _ = PlayFromPage(m[8..]);
+                // 경매장 아이템을 환산 보관함에 넣는다
+                else if (m != null && m.StartsWith("mb:scouter:") && Nexon.IsAuction(cw.Source) && !IsDisposed) BeginInvoke(() => { _ = SendToScouter(m[11..]); });
+                // 경매장 검색 결과를 이 컴퓨터에 보관·불러오기·지우기
+                else if (m != null && m.StartsWith("mb:auc:") && Nexon.IsAuction(cw.Source) && m.Length < 6_000_000 && !IsDisposed) AuctionSaves.Handle(this, cw, m[7..]);
+                // [임시] 경매장 구조 저장. 우리 필터 창을 만들려고 쓴다 (이 컴퓨터 안에만). 다 만들면 지운다
+                else if (m != null && m.StartsWith("mb:dump:") && Nexon.IsAuction(cw.Source) && m.Length < 8_000_000)
+                {
+                    try
+                    {
+                        var dir = Path.Combine(Path.GetTempPath(), "MapleBarAuction");
+                        Directory.CreateDirectory(dir);
+                        File.WriteAllText(Path.Combine(dir, $"dump-{DateTime.Now:HHmmss}-{Interlocked.Increment(ref dumpNo)}.txt"), m[8..]);
+                    }
+                    catch (Exception ex) { Log.Write("web", "경매장 구조 저장 실패", ex); }
+                }
             };
             // 숨은 뮤직 창은 화면에 안 보이니 광고를 건드리지 않는다
             if (kind == SiteKind.Webtoon) await cw.AddScriptToExecuteOnDocumentCreatedAsync(ScrollScript);
@@ -381,6 +407,17 @@ public partial class WebWindow : Form
                 await cw.AddScriptToExecuteOnDocumentCreatedAsync(MusicScript);
                 fxScriptId = await cw.AddScriptToExecuteOnDocumentCreatedAsync(FxScript(settings.MusicFx));
             }
+            // 경매장: 필터 검색 5초 대기를 버튼에 보여 준다 (로그인 뒤 같은 창에서 경매장으로 오므로 넥슨 주소면 넣어 둔다)
+            if (Nexon.IsNexon(startUrl))
+            {
+                await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.AuctionScript);
+                await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.PickScript); // 아이템 → 환산 보관함
+                await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.AuctionUiScript); // 우리 경매장 화면
+                await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.DumpScript); // [임시]
+            }
+            if (initScript != null) await cw.AddScriptToExecuteOnDocumentCreatedAsync(initScript);
+            if (wearWin) await cw.AddScriptToExecuteOnDocumentCreatedAsync("window.__mbWearWin = true;");
+            if (IsSite(startUrl)) await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.WearViewScript); // '착용 해보기'로 연 보스컷 창
             // 인벤은 작은 창에 맞는 모바일 화면으로 보이게 한다
             if (Inven.IsInven(startUrl) || kind == SiteKind.Webtoon)
                 cw.Settings.UserAgent = Inven.MobileUA;
@@ -417,8 +454,12 @@ public partial class WebWindow : Form
                 }
                 if (Music.IsMusic(e.Uri) && ShowMusic(e.Uri)) return;
                 if (YouTube.IsVideo(e.Uri)) { ShowYouTube(e.Uri, settings, sc); return; }
-                if (Live.IsPlayer(e.Uri)) { ShowLive(e.Uri, settings, sc); return; }
-                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri) || YouTube.IsYouTube(e.Uri) || Live.IsLive(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
+                if (Live.IsPlayer(e.Uri))
+                {
+                    if (kind == SiteKind.Live && settings.LiveSameWindow) cw.Navigate(e.Uri); else ShowLive(e.Uri, settings, sc);
+                    return;
+                }
+                if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri) || YouTube.IsYouTube(e.Uri) || Live.IsLive(e.Uri) || Nexon.IsNexon(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
                 else OpenExternal(e.Uri);
             };
             cw.DocumentTitleChanged += (_, _) => { Text = cw.DocumentTitle; grip.Invalidate(); };
@@ -492,7 +533,22 @@ public partial class WebWindow : Form
 
     public static void CloseAll()
     {
-        foreach (var w in open.ToList()) w.Close();
+        foreach (var w in open.ToList())
+        {
+            if (w.IsDisposed) continue; // 경매장 창이 닫히며 같이 닫힌 배율표
+            w.reallyClose = true; w.Close();
+        }
+    }
+
+    /// <summary>숨겨 둔 경매장 창이 있으면 다시 보여 준다 (닫을 때 숨겨 둔 그 화면 그대로)</summary>
+    public static bool ShowHiddenAuction()
+    {
+        var w = open.LastOrDefault(x => !x.IsDisposed && !x.Visible && x.TopLevel && Nexon.IsAuction(x.web.Source?.ToString() ?? x.startUrl));
+        if (w == null) return false;
+        w.Show();
+        if (w.WindowState == FormWindowState.Minimized) w.WindowState = FormWindowState.Normal;
+        w.Activate();
+        return true;
     }
 
     public static bool AnyOpen => open.Count > 0;
@@ -506,6 +562,7 @@ public partial class WebWindow : Form
         bool showsPath = false;
         foreach (var w in open.ToList())
         {
+            if (w.wearWin) continue; // 착용 창은 경매장에서 고른 캐릭터 그대로 둔다
             // 아직 불러오는 중인 창은 처음 열려던 주소를 기준으로 본다
             var src = w.web.Source;
             if (src == null || !IsSite(src.ToString())) Uri.TryCreate(w.startUrl, UriKind.Absolute, out src);
@@ -563,6 +620,251 @@ public partial class WebWindow : Form
     static bool IsSite(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("maplescouter.com");
 
+    static int dumpNo; // [임시] 경매장 구조 저장 파일 번호
+
+    /// <summary>경매장에서 고른 아이템을 환산 보관함(아이템메이커가 쓰는 곳)에 넣고 효율·보스컷을 보여 준다.
+    /// 열린 효율·보스컷 창이 있으면 거기에 넣고 다시 읽고, 없으면 새 창을 열면서 넣는다.</summary>
+    async Task SendToScouter(string json)
+    {
+        try
+        {
+            if (json.Length > 64_000) return;
+            if (System.Text.Json.Nodes.JsonNode.Parse(json) is not System.Text.Json.Nodes.JsonObject root ||
+                root["name"] is not System.Text.Json.Nodes.JsonValue nm || !nm.TryGetValue<string>(out _)) return;
+            // 경매장에서 고른 캐릭터 (아이템 정보에는 넣지 않는다)
+            string? who = null;
+            if (root["mbWho"] is System.Text.Json.Nodes.JsonValue wv && wv.TryGetValue<string>(out var ws))
+            {
+                var s = ws.Trim();
+                if (System.Text.RegularExpressions.Regex.IsMatch(s, @"^[\p{L}\p{N}]{1,12}$")) who = s;
+            }
+            root.Remove("mbWho");
+            // 다시 써서 넣는다 (페이지가 보낸 글자를 그대로 스크립트에 붙이지 않는다)
+            var script = Nexon.AddBookmarkScript(root.ToJsonString(), Guid.NewGuid().ToString("N")[..12]);
+
+            var nick = who ?? settings.StarNick ?? settings.MapleNick;
+            var url = SiteMenu.Base + SiteMenu.BossCutPath + (string.IsNullOrWhiteSpace(nick) ? "" : "?name=" + Uri.EscapeDataString(nick));
+
+            // 착용은 늘 착용 창 하나에서 본다 (내가 연 효율·보스컷 창은 건드리지 않는다)
+            var target = open.FirstOrDefault(w => w.wearWin && !w.IsDisposed);
+            // 배율표는 이 경매장 창 안에 붙인다. 다른 경매장 창에 붙은 것은 닫고 여기에 새로 연다 (닫은 창이 아래 목록에 끼지 않게 먼저 닫는다)
+            if (target != null && target.wearHost != this) { target.Close(); target = null; }
+            // 보관함을 쓰는 화면(효율·보스컷, 아이템메이커)은 넣은 뒤 다시 읽어야 옛 목록으로 덮어쓰지 않는다
+            var scouters = open.Where(w => !w.IsDisposed && w.web.CoreWebView2 != null && w.web.Source != null && IsSite(w.web.Source.ToString())).ToList();
+            bool UsesList(WebWindow w) => w.web.Source!.AbsolutePath.TrimEnd('/') is SiteMenu.BossCutPath or "/ko/item";
+            if (scouters.Count > 0)
+            {
+                // 곧 다시 읽을 창(착용 창 포함)은 먼저 멈춘다: 화면에 남은 옛 목록이 새 목록을 덮어쓰면
+                // 이전 착용 아이템이 되살아나 '꼈다 → 벗었다 → 다시 낌'이 된다
+                var reload = scouters.Where(w => w != target && UsesList(w)).ToList();
+                foreach (var w in reload.Append(target))
+                    if (w is { IsDisposed: false } && w.web.CoreWebView2 != null)
+                        try { await w.web.CoreWebView2.ExecuteScriptAsync(Nexon.FreezeListScript); } catch { }
+                await AddThenReload(scouters[0], script, reload);
+                if (target != null && !target.IsDisposed && target.web.CoreWebView2 != null)
+                {
+                    // 착용 창은 고른 캐릭터로 다시 연다
+                    target.startUrl = url;
+                    target.web.CoreWebView2.Navigate(url);
+                    SetFolded(false); // 접어 두었으면 다시 펼친다
+                    return;
+                }
+            }
+            if (IsDisposed || Disposing) return; // 기다리는 사이 이 경매장 창이 닫혔으면 붙일 곳이 없다
+            if (target != null && !target.IsDisposed) target.Close(); // 아직 준비 안 된 착용 창은 닫고 새로 연다
+            // 열린 환산 창이 있으면 거기서 이미 넣었으니 새 창은 그냥 연다
+            EmbedWear(new WebWindow(url, settings, sc, scouters.Count > 0 ? null : script, wear: true));
+        }
+        catch (Exception ex) { Log.Write("web", "경매장 아이템을 환산에 넣지 못함", ex); }
+    }
+
+    // ── 경매장 창 안의 보스 배율표 칸 (가운데 작은 칸막이로 나눈다) ──
+    WebWindow? wearChild, wearHost;
+    Panel? wearPane;
+    WearDivider? wearDiv;
+    int widened; // 배율표를 붙이며 창을 넓힌 너비 (닫으면 그만큼 줄인다)
+    RoundLabel? closeBtn;
+
+    void EmbedWear(WebWindow w)
+    {
+        if (wearPane == null)
+        {
+            int pw = (int)Math.Ceiling(740 * DeviceDpi / 96.0);
+            var div = new WearDivider(S(10));
+            // 보통 크기면 붙일 만큼 창을 넓힌다 (경매장 화면이 좁아지지 않게)
+            if (WindowState == FormWindowState.Normal)
+            {
+                var wa = Screen.FromControl(this).WorkingArea;
+                int want = Math.Max(Width, Math.Min(Width + pw + div.Width, wa.Width)); // 이미 화면보다 넓으면 줄이지 않는다
+                widened = want - Width;
+                int x = Math.Max(wa.Left, Math.Min(Left, wa.Right - want));
+                Bounds = new Rectangle(x, Top, want, Height);
+            }
+            wearPane = new Panel { Dock = DockStyle.Right, Width = pw, BackColor = Color.White };
+            wearDiv = div;
+            div.Dragged += dx =>
+            {
+                if (wearPane == null) return;
+                int min = S(320), max = Math.Max(min, ClientSize.Width - Padding.Horizontal - S(360));
+                wearPane.Width = Math.Clamp(wearPane.Width - dx, min, max);
+            };
+            Controls.Add(wearPane);
+            Controls.Add(div);
+            // 놓는 순서: 제목 줄(위) → 배율표(오른쪽) → 칸막이 → 경매장(나머지)
+            Controls.SetChildIndex(web, 0);
+            Controls.SetChildIndex(div, 1);
+            Controls.SetChildIndex(wearPane, 2);
+            Controls.SetChildIndex(grip, 3);
+        }
+        w.Opacity = 1;
+        w.TopLevel = false;
+        w.ShowInTaskbar = false;
+        w.Padding = Padding.Empty;
+        w.Dock = DockStyle.Fill;
+        w.wearHost = this;
+        // 경매장과 한 화면처럼 보이게 배율표의 제목 줄(닉네임·버튼)은 통째로 숨긴다. 접기는 경매장 제목 줄의 버튼으로 한다
+        w.grip.Visible = false;
+        EnsureFoldButton();
+        if (folded) SetFolded(false);
+        wearChild = w;
+        w.FormClosed += (_, _) => { if (wearChild == w) RemoveWearPane(); };
+        wearPane.Controls.Add(w);
+        w.Show();
+    }
+
+    // 효율표 접기·펼치기 버튼 (경매장 제목 줄, 투명도 바 왼쪽). 효율표가 붙어 있을 때만 보인다
+    Control? foldBtn;
+    bool folded;
+
+    void EnsureFoldButton()
+    {
+        if (foldBtn != null) { foldBtn.Visible = true; return; }
+        var gap = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
+        // 옅은 회색 둥근 네모 + 화살표 + 짧은 글자 (주황 버튼들 옆에서 튀지 않게)
+        var fb = new Panel { Dock = DockStyle.Right, Width = S(64), Text = "접기", Cursor = Cursors.Hand, BackColor = Color.White };
+        bool hot = false;
+        var fnt = new Font("맑은 고딕", 9f);
+        owned.Add(fnt);
+        typeof(Panel).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.SetValue(fb, true);
+        fb.Paint += (_, e) =>
+        {
+            var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var r = new RectangleF(0.5f, 0.5f, fb.Width - 1.5f, fb.Height - 1.5f);
+            using (var box = UI.RoundRect(r, S(6)))
+            {
+                using var bg = new SolidBrush(hot ? Color.FromArgb(234, 236, 240) : Color.FromArgb(244, 245, 247));
+                using var pen = new Pen(Color.FromArgb(220, 223, 228));
+                g.FillPath(bg, box); g.DrawPath(pen, box);
+            }
+            bool open = fb.Text == "접기";
+            var col = Color.FromArgb(85, 90, 98);
+            // 접기: 오른쪽으로 접히는 화살표(›) / 펼치기: 왼쪽으로 펼치는 화살표(‹)
+            float cx = S(13), cy = fb.Height / 2f, d = S(3);
+            using (var p = new Pen(col, Math.Max(1.4f, S(2) * 0.75f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                g.DrawLines(p, open
+                    ? new[] { new PointF(cx - d / 2, cy - d), new PointF(cx + d / 2, cy), new PointF(cx - d / 2, cy + d) }
+                    : new[] { new PointF(cx + d / 2, cy - d), new PointF(cx - d / 2, cy), new PointF(cx + d / 2, cy + d) });
+            TextRenderer.DrawText(g, fb.Text, fnt, new Rectangle(S(20), 0, fb.Width - S(24), fb.Height), col,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        };
+        fb.TextChanged += (_, _) => fb.Invalidate();
+        fb.MouseEnter += (_, _) => { hot = true; fb.Invalidate(); };
+        fb.MouseLeave += (_, _) => { hot = false; fb.Invalidate(); };
+        foldBtn = fb;
+        foldBtn.Click += (_, _) => SetFolded(!folded);
+        foldBtn.VisibleChanged += (_, _) => gap.Visible = foldBtn.Visible;
+        grip.Controls.Add(gap); gap.BringToFront();
+        grip.Controls.Add(foldBtn); foldBtn.BringToFront();
+        grip.Invalidate();
+    }
+
+    /// <summary>효율표를 접으면 오른쪽 칸이 사라지고 창이 원래 너비로 줄어든다. 펼치면 다시 늘어난다 (보던 화면은 그대로)</summary>
+    void SetFolded(bool on)
+    {
+        if (wearPane == null || wearDiv == null || folded == on) return;
+        folded = on;
+        int add = wearPane.Width + wearDiv.Width;
+        SuspendLayout();
+        if (on)
+        {
+            wearPane.Visible = false; wearDiv.Visible = false;
+            if (WindowState == FormWindowState.Normal && widened > 0) { Width -= widened; widened = 0; }
+        }
+        else
+        {
+            if (WindowState == FormWindowState.Normal)
+            {
+                var wa = Screen.FromControl(this).WorkingArea;
+                int want = Math.Min(Width + add, wa.Width);
+                widened = want - Width;
+                int x = Math.Max(wa.Left, Math.Min(Left, wa.Right - want));
+                Bounds = new Rectangle(x, Top, want, Height);
+            }
+            wearPane.Visible = true; wearDiv.Visible = true;
+        }
+        ResumeLayout();
+        if (foldBtn != null) foldBtn.Text = on ? "펼치기" : "접기";
+        grip.Invalidate();
+    }
+
+    void RemoveWearPane()
+    {
+        wearChild = null;
+        folded = false;
+        if (foldBtn != null && !foldBtn.IsDisposed) { foldBtn.Text = "접기"; foldBtn.Visible = false; }
+        if (IsDisposed || Disposing) return;
+        if (wearPane != null) { Controls.Remove(wearPane); wearPane.Dispose(); wearPane = null; }
+        if (wearDiv != null) { Controls.Remove(wearDiv); wearDiv.Dispose(); wearDiv = null; }
+        if (widened > 0 && WindowState == FormWindowState.Normal) Width -= widened;
+        widened = 0;
+    }
+
+    /// <summary>경매장과 배율표 사이의 작은 칸막이. 잡고 옆으로 끌면 배율표 너비가 바뀐다</summary>
+    sealed class WearDivider : Panel
+    {
+        public event Action<int>? Dragged;
+        int? downX;
+        public WearDivider(int width)
+        {
+            Dock = DockStyle.Right; Width = width; Cursor = Cursors.SizeWE;
+            BackColor = Color.FromArgb(243, 244, 246);
+            DoubleBuffered = true;
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            // 양옆 얇은 선 + 가운데 작은 손잡이(둥근 직사각형)
+            using var line = new Pen(Color.FromArgb(222, 225, 230));
+            g.DrawLine(line, 0, 0, 0, Height); g.DrawLine(line, Width - 1, 0, Width - 1, Height);
+            int hw = Math.Max(3, Width / 3), hh = Math.Max(24, Width * 4), x = (Width - hw) / 2, y = (Height - hh) / 2;
+            using var b = new SolidBrush(Color.FromArgb(196, 200, 207));
+            using var path = new System.Drawing.Drawing2D.GraphicsPath();
+            int r = 2;
+            path.AddArc(x, y, r * 2, r * 2, 180, 90); path.AddArc(x + hw - r * 2, y, r * 2, r * 2, 270, 90);
+            path.AddArc(x + hw - r * 2, y + hh - r * 2, r * 2, r * 2, 0, 90); path.AddArc(x, y + hh - r * 2, r * 2, r * 2, 90, 90);
+            path.CloseFigure();
+            g.FillPath(b, path);
+        }
+        protected override void OnMouseDown(MouseEventArgs e) { if (e.Button == MouseButtons.Left) { downX = Cursor.Position.X; Capture = true; } base.OnMouseDown(e); }
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (downX is int x0) { int x = Cursor.Position.X; if (x != x0) { Dragged?.Invoke(x - x0); downX = x; } }
+            base.OnMouseMove(e);
+        }
+        protected override void OnMouseUp(MouseEventArgs e) { downX = null; Capture = false; base.OnMouseUp(e); }
+    }
+
+    static async Task AddThenReload(WebWindow via, string script, List<WebWindow> reload)
+    {
+        try
+        {
+            await via.web.CoreWebView2.ExecuteScriptAsync(script);
+            foreach (var w in reload) if (!w.IsDisposed) w.web.CoreWebView2?.Reload();
+        }
+        catch (Exception ex) { Log.Write("web", "환산 보관함에 넣지 못함", ex); }
+    }
+
     static void OpenExternal(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
@@ -574,7 +876,7 @@ public partial class WebWindow : Form
 
     void DragMove()
     {
-        if (WindowState == FormWindowState.Maximized) return;
+        if (WindowState == FormWindowState.Maximized || !TopLevel) return; // 경매장 창 안에 붙은 배율표는 옮기지 않는다
         DragWindow(Handle);
     }
 
@@ -599,7 +901,7 @@ public partial class WebWindow : Form
 
     void ToggleMax()
     {
-        if (FixedSize) return;
+        if (FixedSize || !TopLevel) return;
         if (WindowState == FormWindowState.Maximized) { WindowState = FormWindowState.Normal; Padding = new Padding(edge); }
         else
         {
@@ -637,7 +939,7 @@ public partial class WebWindow : Form
     protected override void WndProc(ref Message m)
     {
         base.WndProc(ref m);
-        if (m.Msg != 0x84 /*WM_NCHITTEST*/ || (int)m.Result != 1 /*HTCLIENT*/ || WindowState == FormWindowState.Maximized) return;
+        if (m.Msg != 0x84 /*WM_NCHITTEST*/ || (int)m.Result != 1 /*HTCLIENT*/ || WindowState == FormWindowState.Maximized || !TopLevel) return;
         var p = PointToClient(new Point((short)((long)m.LParam & 0xFFFF), (short)(((long)m.LParam >> 16) & 0xFFFF)));
         // 테두리: 바깥 얇은 줄은 크기 조절, 그 안쪽은 잡고 옮기기. 모서리는 넓게 크기 조절
         int W = ClientSize.Width, H = ClientSize.Height, rz = S(4), cz = S(14);
@@ -694,7 +996,10 @@ public partial class WebWindow : Form
         if (smallBounds is Rectangle r) { Bounds = r; smallBounds = null; return; }
         smallBounds = Bounds;
         var wa = Screen.FromControl(this).WorkingArea;
-        int w = Math.Min(BigSize.Width, wa.Width), h = Math.Min(BigSize.Height, wa.Height);
+        var big = BigSize;
+        // 경매장은 크게 보기에서 사이트 원래 화면(1100px)이 다 들어가게 연다
+        if (Nexon.IsAuction(web.Source?.ToString() ?? startUrl)) { float d = DeviceDpi / 96f; big = new Size((int)Math.Round(1140 * d), (int)Math.Round(820 * d)); }
+        int w = Math.Min(big.Width, wa.Width), h = Math.Min(big.Height, wa.Height);
         int x = Math.Max(wa.Left, Math.Min(Left, wa.Right - w)), y = Math.Max(wa.Top, Math.Min(Top, wa.Bottom - h));
         Bounds = new Rectangle(x, y, w, h);
     }
@@ -723,6 +1028,7 @@ public partial class WebWindow : Form
         if (string.IsNullOrEmpty(url)) return null;
         var k = KindOf(url);
         if (k is SiteKind.Music or SiteKind.YouTubeComments or SiteKind.LiveChat) return null;
+        if (Nexon.IsAuction(url)) return "Auction"; // 예전에 크게 늘려 둔 자리(site:…) 대신 새 기본 크기로 한 번 다시 시작한다
         if (k == SiteKind.YouTubePlayer) return YouTube.IsShorts(url) ? "Shorts" : "YouTubePlayer";
         if (k != SiteKind.Other) return k.ToString();
         return Uri.TryCreate(url, UriKind.Absolute, out var u) ? "site:" + u.Host.ToLowerInvariant() : null;
@@ -730,10 +1036,10 @@ public partial class WebWindow : Form
 
     void RememberPlace()
     {
-        if (WindowState != FormWindowState.Normal || smallBounds != null) return; // 크게 보기·최대화 상태는 기억하지 않는다
+        if (WindowState != FormWindowState.Normal || smallBounds != null || !TopLevel) return; // 크게 보기·최대화 상태, 경매장 안 배율표는 기억하지 않는다
         var key = PlaceKey(startUrl);
         if (key == null) return;
-        settings.WinPlaces[key] = new[] { Left, Top, Width, Height };
+        settings.WinPlaces[key] = new[] { Left, Top, Width - widened, Height }; // 배율표로 넓힌 만큼은 빼고 기억한다
         settings.Save();
     }
 
@@ -756,6 +1062,15 @@ public partial class WebWindow : Form
             Park();
             return;
         }
+        // 경매장 창은 ✕를 눌러도 숨기기만 한다. 다시 열면 보던 화면 그대로 보여 준다
+        if (TopLevel && !reallyClose && e.CloseReason == CloseReason.UserClosing && Nexon.IsAuction(web.Source?.ToString() ?? startUrl))
+        {
+            e.Cancel = true;
+            RememberPlace();
+            settings.Save();
+            Hide();
+            return;
+        }
         base.OnFormClosing(e);
     }
 
@@ -764,6 +1079,16 @@ public partial class WebWindow : Form
         if (kind == SiteKind.Music) { musicTimer.Dispose(); MusicChanged?.Invoke(null); }
         else RememberPlace(); // 닫을 때 자리를 기억해서 다음에 같은 자리에 연다
         open.Remove(this);
+        if (wearChild is { IsDisposed: false } wc) wc.Close(); // 경매장 창을 닫으면 안의 배율표도 닫는다 (착용 아이템 지우기)
+        // 착용 창을 닫으면 '착용 해보기'로 만든 아이템만 지운다 (다른 환산 창이 있으면 거기서 지우고 다시 읽게 한다.
+        // 없으면 다음에 환산 페이지가 열릴 때 WearViewScript가 지운다)
+        if (wearWin && !open.Any(w => w.wearWin && !w.IsDisposed))
+        {
+            var others = open.Where(w => !w.IsDisposed && w.web.CoreWebView2 != null && w.web.Source != null && IsSite(w.web.Source.ToString())).ToList();
+            if (others.Count > 0)
+                _ = AddThenReload(others[0], Nexon.ClearWearScript,
+                    others.Where(w => w.web.Source!.AbsolutePath.TrimEnd('/') is SiteMenu.BossCutPath or "/ko/item").ToList());
+        }
         // 미뤄 둔 투명도 저장이 있으면 지금 저장한다
         if (alphaSaveTimer.Enabled) { alphaSaveTimer.Stop(); settings.Save(); }
         alphaSaveTimer.Dispose();

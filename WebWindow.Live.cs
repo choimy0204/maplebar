@@ -180,13 +180,17 @@ public partial class WebWindow
             string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
             if (m == null || !m.StartsWith("mb:live:", StringComparison.Ordinal)) return;
             var u = m[8..];
-            if (Live.IsPlayer(u) && !IsDisposed) BeginInvoke(() => ShowLive(u, settings, sc));
+            if (!Live.IsPlayer(u) || IsDisposed) return;
+            // '현재 창' 모드면 목록 창에서 그대로 연다
+            if (settings.LiveSameWindow) BeginInvoke(() => web.CoreWebView2?.Navigate(u));
+            else BeginInvoke(() => ShowLive(u, settings, sc));
         };
         // 놓친 경우: 목록 창이 방송 화면으로 가면 재생 창으로 넘기고 목록으로 돌아온다
         cw.SourceChanged += (_, _) =>
         {
             var s = cw.Source;
-            if (!Live.IsPlayer(s)) return;
+            if (ytModeBox != null && ytModeGap != null) ytModeBox.Visible = ytModeGap.Visible = !Live.IsPlayer(s); // 방송 보는 중엔 숨긴다
+            if (!Live.IsPlayer(s) || settings.LiveSameWindow) return;
             try { _ = cw.ExecuteScriptAsync("document.querySelectorAll('video').forEach(v=>{try{v.muted=true;v.pause()}catch(e){}})"); } catch { }
             ShowLive(s, settings, sc);
             if (cw.CanGoBack) cw.GoBack(); else cw.Navigate(Live.IsLive(startUrl) ? startUrl : Live.Soop);

@@ -324,15 +324,22 @@ public class BarForm : Form
     /// <summary>닉네임을 받는 페이지면 검색칸의 닉네임을 붙인다.</summary>
     string WithName(string path)
     {
-        var name = search.Text.Trim();
+        var name = NameOrStar();
         return SiteMenu.NamePages.Contains(path) && name.Length > 0
             ? path + "?name=" + Uri.EscapeDataString(name)
             : path;
     }
 
-    void Search(string path)
+    /// <summary>검색칸의 닉네임. 비어 있으면 별표한 캐릭터.</summary>
+    string NameOrStar()
     {
         var name = search.Text.Trim();
+        return name.Length > 0 ? name : (settings.StarNick ?? "").Trim();
+    }
+
+    void Search(string path)
+    {
+        var name = NameOrStar();
         if (name.Length == 0)
         {
             search.Focus();
@@ -355,6 +362,8 @@ public class BarForm : Form
     void Navigate(string path)
     {
         HideMega();
+        // 헥사 강화 계산기: 헥사코어 화면을 닉네임으로 열고 그 위에 계산기를 띄운다
+        if (path.StartsWith(HexaCalc.Path)) { HexaCalc.Open(path, settings, sc); return; }
         // 뮤직은 이미 열린 창에서 페이지만 바꾼다 (노래가 두 곳에서 겹쳐 나오지 않게)
         if (Music.IsMusic(path))
         {
@@ -368,6 +377,8 @@ public class BarForm : Form
         }
         // 유튜브 영상·쇼츠는 재생 창 하나에서 바꿔 가며 본다
         if (YouTube.IsVideo(path)) { WebWindow.ShowYouTube(path, settings, sc); return; }
+        // 경매장은 닫을 때 숨겨 두었으니 그 창을 다시 보여 준다
+        if (Nexon.IsAuction(path) && WebWindow.ShowHiddenAuction()) return;
         try { new WebWindow(path.StartsWith("http") ? path : SiteMenu.Base + path, settings, sc).Show(); }
         catch (Exception ex)
         {
@@ -378,15 +389,48 @@ public class BarForm : Form
     void ShowRecentMenu()
     {
         var cms = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 10f * UI.Z), ShowImageMargin = false });
-        if (settings.Recent.Count == 0)
+        // 별표한 캐릭터는 기록에서 밀려나거나 지워져도 목록에 남긴다
+        var names = settings.Recent.ToList();
+        var star = settings.StarNick;
+        if (star != null && !names.Any(x => string.Equals(x, star, StringComparison.OrdinalIgnoreCase))) names.Insert(0, star);
+        if (names.Count == 0)
         {
             cms.Items.Add(new ToolStripMenuItem("검색 기록이 없어요") { Enabled = false });
         }
-        foreach (var name in settings.Recent)
+        // 별 칸: 글 왼쪽의 ★/☆. 누르면 메뉴를 닫지 않고 별만 바꾼다
+        var tip = new ToolTip { InitialDelay = 0, ShowAlways = true };
+        cms.Disposed += (_, _) => tip.Dispose();
+        var items = new List<(ToolStripMenuItem mi, string n)>();
+        long starAt = 0; bool tipOn = false;
+        bool StarHit() => Environment.TickCount64 - starAt < 600;
+        int StarW() => TextRenderer.MeasureText("★ ", cms.Font).Width + S(6);
+        bool IsStarred(string n) => string.Equals(settings.StarNick, n, StringComparison.OrdinalIgnoreCase);
+        void Paint() { foreach (var (m, n) in items) m.Text = (IsStarred(n) ? "★  " : "☆  ") + n; }
+        cms.Closing += (_, e) => { if (StarHit() && e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true; };
+        foreach (var name in names)
         {
             var n = name;
             var mi = new ToolStripMenuItem(n);
-            EventHandler openInfo = (_, _) => { search.Text = n; Search(SiteMenu.InfoPath); };
+            items.Add((mi, n));
+            mi.MouseMove += (_, e) =>
+            {
+                bool on = e.X < StarW();
+                if (on == tipOn) return;
+                tipOn = on;
+                if (on) tip.Show("별표한 캐릭터는 검색칸이 비어 있을 때\n기본으로 불러와요", cms, cms.PointToClient(Cursor.Position) + new Size(S(14), S(18)));
+                else tip.Hide(cms);
+            };
+            mi.MouseLeave += (_, _) => { if (tipOn) { tipOn = false; tip.Hide(cms); } };
+            mi.MouseDown += (_, e) =>
+            {
+                if (e.Button != MouseButtons.Left || e.X >= StarW()) return;
+                starAt = Environment.TickCount64;
+                // 다른 캐릭터를 누르면 그쪽으로 옮기고, 같은 캐릭터를 다시 누르면 끈다
+                settings.StarNick = IsStarred(n) ? null : n;
+                settings.Save();
+                Paint();
+            };
+            EventHandler openInfo = (_, _) => { if (StarHit()) return; search.Text = n; Search(SiteMenu.InfoPath); };
             mi.Click += openInfo;
             var info = new ToolStripMenuItem("캐릭터정보");
             info.Click += openInfo;
@@ -396,6 +440,7 @@ public class BarForm : Form
             mi.DropDownItems.Add(boss);
             cms.Items.Add(mi);
         }
+        Paint();
         if (settings.Recent.Count > 0)
         {
             cms.Items.Add(new ToolStripSeparator());

@@ -32,6 +32,8 @@ public class Settings
     public bool ClockOn { get; set; } = false;
     // 유튜브 목록 창에서 영상을 누르면 재생 창을 따로 띄우지 않고 그 창에서 본다
     public bool YtSameWindow { get; set; }
+    // 실시간 방송 창에서 방송을 누르면 재생 창을 따로 띄우지 않고 그 창에서 본다
+    public bool LiveSameWindow { get; set; }
     public bool ClockSeconds { get; set; } = true;
     public bool ClockDate { get; set; } = true;
     public bool Clock24 { get; set; } = false;
@@ -83,6 +85,8 @@ public class Settings
     public List<DopeSlot> Dopes { get; set; } = new(); // 위의 도핑 하나짜리 칸은 예전 설정을 옮기는 데만 쓴다
     // 정령의 펜던트 확인: 고른 버프가 도는 동안 maple.gg에서 장비를 보고, 안 꼈으면 20초마다 알린다
     public string? MapleNick { get; set; }
+    // 최근 검색에서 별표한 캐릭터: 검색칸이 비어 있을 때 이 캐릭터로 연다
+    public string? StarNick { get; set; }
     public bool PendantOn { get; set; }
     public int PendantBuff { get; set; }           // 버프 칸 번호 (0~2)
     // 반복 주기 알림 3칸: 키를 누르면 정한 주기마다 정한 색으로 알린다

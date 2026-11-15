@@ -118,13 +118,15 @@ public partial class WebWindow
         grip.Visible = show;
     }
 
-    /// <summary>유튜브 목록 창 제목 줄에 영상을 어디서 볼지 고르는 버튼을 단다 (새 창 ↔ 이 창)</summary>
-    void AddYtModeButton()
+    /// <summary>유튜브·방송 목록 창 제목 줄에 영상을 어디서 볼지 고르는 버튼을 단다 (새 창 ↔ 이 창)</summary>
+    void AddYtModeButton(bool live)
     {
         var box = new Panel { Dock = DockStyle.Right, Width = S(96), BackColor = Color.White };
         var btnFont = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
         owned.Add(btnFont);
-        string Label() => settings.YtSameWindow ? "영상: 현재 창" : "영상: 새 창";
+        string what = live ? "방송" : "영상";
+        bool Same() => live ? settings.LiveSameWindow : settings.YtSameWindow;
+        string Label() => Same() ? what + ": 현재 창" : what + ": 새 창";
         var b = new RoundLabel
         {
             Dock = DockStyle.Fill, AutoSize = false, Text = Label(), TextAlign = ContentAlignment.MiddleCenter,
@@ -135,11 +137,15 @@ public partial class WebWindow
         b.MouseLeave += (_, _) => b.Fill = UI.SoftAccent;
         var btnTip = new ToolTip();
         owned.Add(btnTip);
-        void Tip() => btnTip.SetToolTip(b, settings.YtSameWindow
-            ? "영상을 현재 창에서 봐요. 누르면 새 창으로 따로 봐요."
-            : "영상을 새 창으로 따로 봐요. 누르면 현재 창에서 봐요.");
+        void Tip() => btnTip.SetToolTip(b, Same()
+            ? what + "을 현재 창에서 봐요. 누르면 새 창으로 따로 봐요."
+            : what + "을 새 창으로 따로 봐요. 누르면 현재 창에서 봐요.");
         Tip();
-        b.Click += (_, _) => { settings.YtSameWindow = !settings.YtSameWindow; settings.Save(); b.Text = Label(); Tip(); };
+        b.Click += (_, _) =>
+        {
+            if (live) settings.LiveSameWindow = !settings.LiveSameWindow; else settings.YtSameWindow = !settings.YtSameWindow;
+            settings.Save(); b.Text = Label(); Tip();
+        };
         box.Controls.Add(b);
         var gap = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
         grip.Controls.Add(gap); gap.BringToFront();

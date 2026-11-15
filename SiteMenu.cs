@@ -40,6 +40,7 @@ public static class SiteMenu
             H("효율 / 시뮬레이터"),
             I("스펙업 순서", "/ko/spec-order"), I("내실메이커", "/ko/base"),
             I("아이템메이커", "/ko/item"), I("헥사코어 순서", "/ko/hexa"),
+            I("헥사 강화 계산기", HexaCalc.Path), // 헥사코어 화면 위에 바가 계산기를 덮어 띄운다
             I("스타포스 효율", "/ko/starforce"), I("잠재∙추가옵션 효율", "/ko/cube-fire"),
             I("어빌리티 효율", "/ko/ability"), I("심볼 효율", "/ko/tax"),
             H("경험치 분석"),
@@ -69,6 +70,8 @@ public static class SiteMenu
             H("계정"),
             I("네이버 로그인", Webtoon.LoginUrl),
         }),
+        // 메이플 옥션: 웹 경매장. 넥슨 ID 로그인·OTP는 사용자가 직접 한다 (200레벨 이상, 수령은 게임 안에서)
+        new("경매장", Nexon.Auction, null),
         // 메애기 코디 (드레스룸에서 꾸며 보고, 코디 분석·룩북에서 다른 사람 코디를 본다)
         new("👗 코디", null, new[]
         {
