@@ -261,7 +261,7 @@ sealed class JanusForm : Form, IMessageFilter
 
         foot = new Label
         {
-            Text = "키 칸을 누른 뒤 원하는 키를 누르세요 · Del 지우기 · Esc 취소",
+            Text = "키 칸을 누른 뒤 원하는 키를 누르세요 · Backspace 지우기 · Esc 취소",
             Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(W - pad * 2, 0), Location = new Point(pad, y),
         };
         Controls.Add(foot);
@@ -1355,7 +1355,7 @@ sealed class JanusForm : Form, IMessageFilter
                 // 한글 입력 상태면 키가 ProcessKey로 온다 → 실제로 누른 키를 찾는다
                 if (k == Keys.ProcessKey) k = RealKey(ref msg);
                 if (k == Keys.ProcessKey) return true; // 못 찾으면 다시 누르게 기다린다
-                int vk = k is Keys.Delete or Keys.Back ? 0 : (int)k;
+                int vk = k == Keys.Back ? 0 : (int)k; // Del은 스킬 키로 쓰는 사람이 있어 지우기는 Backspace만
                 switch (capturing)
                 {
                     case 1: st.JanusKey = vk; break;

@@ -209,6 +209,12 @@ public partial class WebWindow : Form
             };
             if (yt) musicTimer.Interval = 400; // 가사의 지금 줄을 늦지 않게 따라간다
             musicTimer.Start();
+            // 로그인 안 했거나 프리미엄이 아니면 유튜브 뮤직이 가입 안내·로그인 페이지로 넘어간다.
+            // 그 페이지엔 재생 막대가 없어 바에 칸이 안 생기므로, 숨겨 둔 창을 보여 줘야 눌렀을 때 반응이 있다
+            if (yt) web.SourceChanged += (_, _) =>
+            {
+                if (parked && !Music.IsYtMusic(web.Source?.ToString())) { Unpark(); Activate(); }
+            };
         }
 
         var menuFont = new Font("맑은 고딕", 9.5f * UI.Z);

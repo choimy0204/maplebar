@@ -78,6 +78,8 @@ public partial class WebWindow
             w.Show();
         }
         else if (show) { ShowMusic(url); return w; }
+        // 이미 켜져 있는데 바에 칸이 없으면(가입 안내 페이지 등) 숨긴 채 두면 눌러도 아무 일이 없어 보인다 → 창을 보여 준다
+        else if (w.lastInfo == null) show = true;
         if (show) { w.Unpark(); w.Activate(); }
         return w;
     }

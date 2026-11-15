@@ -497,6 +497,7 @@ sealed class JanusWatch
         >= Keys.D0 and <= Keys.D9 => ((char)vk).ToString(),
         Keys.Prior => "PageUp",
         Keys.Next => "PageDown",
+        Keys.Delete => "Del",
         Keys.Oemtilde => "`",
         Keys.OemMinus => "-",
         Keys.Oemplus => "=",
