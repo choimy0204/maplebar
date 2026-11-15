@@ -45,7 +45,7 @@ sealed class UpdateWindow : Form
         };
         sub = new Label
         {
-            Text = $"{mine.ToString(3)}  →  {ver.ToString(3)}", ForeColor = Color.FromArgb(130, 130, 130), AutoSize = false,
+            Text = $"{UpdateCheck.Show(mine)}  →  {UpdateCheck.Show(ver)}", ForeColor = Color.FromArgb(130, 130, 130), AutoSize = false,
             Location = new Point(S(22), S(52)), Size = new Size(S(316), S(22)),
         };
         status = new Label

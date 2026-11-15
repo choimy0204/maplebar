@@ -114,7 +114,7 @@ sealed class DevInfo : Form
         var ver = typeof(DevInfo).Assembly.GetName().Version;
         var verLabel = new Label
         {
-            Text = ver == null ? "" : $"v{ver.Major}.{ver.Minor}.{Math.Max(0, ver.Build)}",
+            Text = ver == null ? "" : "v" + UpdateCheck.Show(ver),
             Font = F(8.5f), ForeColor = Gray, AutoSize = true,
         };
         verLabel.Location = new Point(title.Left + title.PreferredWidth + S(6), title.Top + title.PreferredHeight - verLabel.PreferredHeight - S(1));

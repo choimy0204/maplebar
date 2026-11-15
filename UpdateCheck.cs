@@ -21,7 +21,7 @@ static class UpdateCheck
         if (latest == null) return true;
         var (ver, url, sha) = latest.Value;
         var mine = Mine();
-        if (Norm(ver) <= mine) return true;
+        if (Key(ver) <= Key(mine)) return true;
 
         using var w = new UpdateWindow(mine, ver, url, sha, ask: true);
         w.ShowDialog();
@@ -45,7 +45,7 @@ static class UpdateCheck
             var latest = await Task.Run(LatestTag);
             busy = false;
             var mine = Mine();
-            if (latest == null || Norm(latest.Value.ver) <= mine || asked != null) return;
+            if (latest == null || Key(latest.Value.ver) <= Key(mine) || asked != null) return;
             asked = latest.Value.ver;
             watchTimer?.Stop(); // 한 번 물어본 뒤로는 더 확인하지 않으므로 타이머도 멈춘다
             var (ver, url, sha) = latest.Value;
@@ -130,7 +130,7 @@ static class UpdateCheck
                 if (name == null || url == null) return;
                 var m = SetupName.Match(name);
                 if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return;
-                if (best == null || Norm(v) > Norm(best.Value.ver)) best = (v, url, sha);
+                if (best == null || Key(v) > Key(best.Value.ver)) best = (v, url, sha);
             }
             // 두 주소를 한꺼번에 묻는다 (차례로 물으면 응답이 없을 때 켜지는 데 두 배로 걸린다). 결과는 아래에서 예전 순서대로 본다
             var relTask = Task.Run(() => http.GetStringAsync(ReleaseUrl));
@@ -165,4 +165,21 @@ static class UpdateCheck
 
     // 1.0.4 와 1.0.4.0 을 같게 본다
     static Version Norm(Version v) => new(v.Major, v.Minor, Math.Max(0, v.Build), Math.Max(0, v.Revision));
+
+    /// <summary>비교용 값: 셋째 자리는 소수처럼 읽는다 (1.1.41 = 1.1.4.1 &lt; 1.1.5 = 1.1.50 &lt; 1.1.51 &lt; 1.1.6).
+    /// 작은 수정은 끝에 한 자리를 붙이고, 새 기능은 셋째 자리를 올리는 번호 규칙에 맞춘 것.</summary>
+    public static Version Key(Version v)
+    {
+        var b = Math.Max(0, v.Build).ToString();
+        b = b.Length >= 4 ? b[..4] : b.PadRight(4, '0');
+        return new(v.Major, v.Minor, int.Parse(b), Math.Max(0, v.Revision));
+    }
+
+    /// <summary>보여 줄 버전: 1.1.50은 1.1.5로 줄여 보여 준다</summary>
+    public static string Show(Version v)
+    {
+        var b = Math.Max(0, v.Build).ToString();
+        if (b.Length > 1) b = b.TrimEnd('0');
+        return $"{v.Major}.{v.Minor}.{b}";
+    }
 }

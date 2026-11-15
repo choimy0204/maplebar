@@ -140,7 +140,7 @@ sealed class PatchNotesWindow : Form
             side.SuspendLayout();
             foreach (var n in notes)
             {
-                bool isNew = Version.TryParse(n.Ver, out var v) && v > mine;
+                bool isNew = Version.TryParse(n.Ver, out var v) && UpdateCheck.Key(v) > UpdateCheck.Key(mine);
                 bool now = v != null && v.Major == mine.Major && v.Minor == mine.Minor && Math.Max(0, v.Build) == Math.Max(0, mine.Build);
                 var row = new RoundLabel
                 {
@@ -183,7 +183,7 @@ sealed class PatchNotesWindow : Form
         else
             foreach (var n in notes)
             {
-                bool isNew = Version.TryParse(n.Ver, out var v) && v > mine;
+                bool isNew = Version.TryParse(n.Ver, out var v) && UpdateCheck.Key(v) > UpdateCheck.Key(mine);
                 // 버전 줄: 1.1.2  2026.11.12  (새 버전이면 주황)
                 var head = Line(n.Ver + (isNew ? "  새 버전" : ""), isNew ? UI.Accent : UI.Text, 11.5f, true);
                 head.Margin = new Padding(0, list.Controls.Count == 1 ? S(2) : S(14), 0, 0);
