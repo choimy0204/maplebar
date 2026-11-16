@@ -1,26 +1,45 @@
 # 메이플 바
 
-maplescouter 메뉴를 화면 위쪽 막대로 띄워 두는 Windows 프로그램입니다.
+재획하면서 자주 쓰는 알림과 사이트를 메이플 화면 위에 모아 보여 주는 Windows 프로그램입니다.
 
-- 메뉴를 누르면 사이트가 작은 창으로 열립니다.
-- 캐릭터 이름을 검색하면 캐릭터 정보가 바로 열립니다.
-- 메애기 브금을 바에서 재생하고 넘기고 볼륨을 조절할 수 있습니다.
-- 인벤 새 글 알림을 보여 줍니다.
+- 최신 버전: **1.1.61**
+- 버전별 바뀐 점: [메이플 바 패치 노트](https://choimy0204.github.io/maplebar/)
 
 ## 설치
 
-[MapleBar-Setup-1.0.2.exe 다운로드](https://github.com/choimy0204/maplebar/raw/main/dist/MapleBar-Setup-1.0.2.exe)
+[최신 설치 파일 받기](https://github.com/choimy0204/maplebar/releases/latest) (Releases에서 `MapleBar-Setup-버전.exe`)
 
 - Windows 10/11 64비트용입니다.
-- 처음 실행할 때 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
-- 새 버전은 지우지 않고 그대로 덮어 설치하면 됩니다.
-- 단축키 Ctrl+Alt+M으로 숨긴 바를 다시 열 수 있습니다.
+- 처음 설치할 때 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
+- 1.0.8부터는 켤 때 새 버전 안내가 뜨면 [확인]만 누르면 알아서 설치하고 다시 켜집니다.
+- 숨긴 바는 **Ctrl+Alt+M**으로 다시 열 수 있습니다.
+
+## 주요 기능
+
+**알림**
+- 룬, 솔 야누스, 아이템 회수 시간을 화면 가운데와 바의 타이머 칸으로 알려 줍니다.
+- 버프·도핑 알림, 정한 주기마다 반복하는 알림, 조합 키, 알림 띄울 모니터를 정할 수 있습니다.
+- 버프가 도는 동안 정령의 펜던트를 꼈는지 확인해 줍니다.
+- 메이플 창에서 누른 키만 읽습니다. 게임에는 아무것도 보내지 않습니다.
+
+**사이트를 게임 위 창으로**
+- 캐릭터 이름을 검색하면 환산 주스탯 같은 캐릭터 정보가 바로 열립니다.
+- 경매장: 찾기, 검색 결과 저장, [착용 해보기]로 보스 배율 효율표 보기.
+- 헥사 강화 계산기, 코디, 인벤, 네이버 웹툰, 유튜브·쇼츠, 실시간 방송.
+- 주소를 직접 넣는 웹 창, 뒤로·앞으로 가기, 투명도 조절.
+- 창은 메뉴마다 닫은 자리에서 다시 열립니다.
+
+**그 밖에**
+- 메이플 BGM 듣기, 인벤 자유게시판 새 글 알림, 자기계발 카드.
+- 바 메뉴를 끌어서 순서 바꾸기, 메이플 창 크기 따라가기, 다크 모드.
 
 ## 직접 빌드
 
 .NET 7 SDK와 Inno Setup 6이 필요합니다.
 
 ```
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -p:DebugType=none -o publish
+dotnet publish MapleBar.csproj -c Release -r win-x64 --self-contained true -o publish
 ISCC installer\MapleBar.iss
 ```
+
+태그(`v버전`)를 올리면 GitHub Actions가 설치 파일을 만들어 Releases에 올립니다.
