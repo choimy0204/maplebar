@@ -44,6 +44,7 @@ public class BarForm : Form
         // 메이플이 켜져 있으면 게임 화면 가로를, 없으면 모니터 가로를 기준으로 한다
         UI.Z = Game.Area() is Rectangle game ? Game.ZoomFor(game, DeviceDpi) : UI.FitZoom(Screen.PrimaryScreen!, DeviceDpi);
         sc = DeviceDpi / 96f * UI.Z;
+        UI.Dark = settings.DarkMode; // 이 바와 앞으로 여는 창이 쓸 색
         Text = "메이플 바";
         FormBorderStyle = FormBorderStyle.None;
         TopMost = true;
@@ -57,7 +58,7 @@ public class BarForm : Form
 
         left = MakeFlow(DockStyle.Left);
         right = MakeFlow(DockStyle.Right);
-        var filler = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+        var filler = new Panel { Dock = DockStyle.Fill, BackColor = UI.Back };
         filler.MouseDown += DragMove;
         Controls.Add(left);
         Controls.Add(right);
@@ -68,35 +69,46 @@ public class BarForm : Form
         var grip = new Label
         {
             Text = "⠿", AutoSize = true, Cursor = Cursors.SizeAll,
-            ForeColor = Color.FromArgb(170, 170, 170), Font = OwnFont(new Font("Segoe UI Symbol", 12f * UI.Z)),
+            ForeColor = UI.T(Color.FromArgb(170, 170, 170)), Font = OwnFont(new Font("Segoe UI Symbol", 12f * UI.Z)),
             Margin = new Padding(0, 0, S(4), 0),
         };
         grip.MouseDown += DragMove;
         left.Controls.Add(pin = MakePin());
         left.Controls.Add(grip);
 
-        foreach (var top in SiteMenu.Top)
-        {
-            if (top.Name == "직접입력") continue; // 바에서는 안 쓴다
+        // 저장된 순서대로 놓고, 저장 목록에 없는 메뉴는 원래 순서대로 뒤에 붙인다
+        var tops = SiteMenu.Top.Where(t => t.Name != "직접입력").ToList(); // 바에서는 직접입력을 안 쓴다
+        var orderedTops = settings.BarOrder
+            .Select(name => tops.FirstOrDefault(t => t.Name == name))
+            .Where(t => t != null).Distinct()
+            .Concat(tops)
+            .Distinct()
+            .ToList();
 
+        foreach (var top in orderedTops)
+        {
             Label nav = null!;
-            if (top.Items == null)
+            if (top!.Items == null)
             {
-                nav = UI.Button(top.Name, "", () => Navigate(WithName(top.Path!)), sc);
-                nav.MouseEnter += (_, _) => HideMega();
+                nav = UI.Button(top.Name, "", () => { if (!navDragged) Navigate(WithName(top.Path!)); }, sc);
+                nav.MouseEnter += (_, _) => { if (!navDragging) HideMega(); };
             }
             else
             {
-                var mega = new MegaMenuForm(top.Items, sc, p => Navigate(WithName(p))) { Owner = this };
+                MakeMega(top);
                 // 주소가 있는 메뉴(유튜브)는 글자를 누르면 바로 그 페이지를 연다. 올리면 펼친 메뉴는 그대로 나온다
                 nav = UI.Button(top.Name, "", top.Path != null
-                    ? () => { HideMega(); Navigate(WithName(top.Path)); }
-                    : () => OpenMega(mega, nav), sc);
-                nav.MouseEnter += (_, _) => OpenMega(mega, nav);
+                    ? () => { if (navDragged) return; HideMega(); Navigate(WithName(top.Path)); }
+                    : () => { if (!navDragged) OpenMegaOf(top, nav); }, sc);
+                nav.MouseEnter += (_, _) => { if (!navDragging) OpenMegaOf(top, nav); };
             }
             nav.Margin = new Padding(S(6), 0, S(6), 0);
             if (top.Name == "영상&음악") AddPlayIcon(nav);
+            nav.Tag = top.Name; // 순서 저장에 쓴다
+            nav.Visible = SiteMenu.ShowTop(top, settings);
+            HookNavDrag(nav);
             left.Controls.Add(nav);
+            navs.Add((top, nav));
         }
 
         // 마우스가 메뉴 글자와 펼친 메뉴 밖으로 나가면 닫는다
@@ -112,7 +124,7 @@ public class BarForm : Form
         // ── 오른쪽: 뮤직 컨트롤(듣는 중일 때만), 닉네임 검색, 최근 기록, 설정/숨기기/종료 ──
         AddMusicControls();
 
-        searchBox = new Panel { Size = new Size(S(230), S(36)), BackColor = Color.White, Margin = new Padding(S(10), 0, S(4), 0) };
+        searchBox = new Panel { Size = new Size(S(230), S(36)), BackColor = UI.Back, Margin = new Padding(S(10), 0, S(4), 0) };
         searchBox.Paint += PaintSearchBorder;
         search.BorderStyle = BorderStyle.None;
         search.PlaceholderText = "닉네임을 입력하세요";
@@ -141,7 +153,7 @@ public class BarForm : Form
 
 
         recentChip = UI.Button("", "최근 검색한 캐릭터", ShowRecentMenu, sc,
-            fore: Color.FromArgb(150, 80, 0), back: Color.FromArgb(255, 243, 224));
+            fore: UI.T(Color.FromArgb(150, 80, 0)), back: UI.T(Color.FromArgb(255, 243, 224)));
         recentChip.Margin = new Padding(S(8), 0, S(4), 0);
         right.Controls.Add(recentChip);
         UpdateRecentChip();
@@ -278,11 +290,70 @@ public class BarForm : Form
     {
         var f = new FlowLayoutPanel
         {
-            Dock = dock, AutoSize = true, WrapContents = false, BackColor = Color.White,
+            Dock = dock, AutoSize = true, WrapContents = false, BackColor = UI.Back,
             Padding = new Padding(S(8), 0, S(8), 0),
         };
         f.MouseDown += DragMove;
         return f;
+    }
+
+    // ── 메뉴 버튼 끌어서 순서 바꾸기 ──
+    bool navDragging;  // 지금 끌고 있는 중
+    bool navDragged;   // 이번 누름이 끌기로 끝났다 (끝난 뒤 클릭을 막는다)
+    Point navDownAt;   // 누른 자리 (화면 좌표)
+    bool navDown;
+
+    void HookNavDrag(Label nav)
+    {
+        var normalCursor = nav.Cursor;
+        nav.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            navDown = true;
+            navDragged = false;
+            navDownAt = Cursor.Position;
+        };
+        nav.MouseMove += (_, e) =>
+        {
+            if (!navDown) return;
+            if (!navDragging)
+            {
+                if (Math.Abs(Cursor.Position.X - navDownAt.X) < SystemInformation.DragSize.Width) return;
+                navDragging = true;
+                navDragged = true;
+                HideMega();
+                nav.Cursor = Cursors.SizeWE;
+            }
+            MoveNavTo(nav, left.PointToClient(Cursor.Position).X);
+        };
+        nav.MouseUp += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            navDown = false;
+            if (!navDragging) return;
+            navDragging = false;
+            nav.Cursor = normalCursor;
+            settings.BarOrder = left.Controls.OfType<Label>().Where(c => c.Tag is string).Select(c => (string)c.Tag!).ToList();
+            settings.Save();
+        };
+    }
+
+    /// <summary>커서 x 위치에 맞게 바로 옆 칸과 자리를 바꾼다 (손잡이 앞으로는 못 간다).</summary>
+    void MoveNavTo(Label nav, int x)
+    {
+        // 숨긴 메뉴는 건너뛰고 보이는 옆 칸과 자리를 바꾼다
+        int index = left.Controls.GetChildIndex(nav);
+        int n = index + 1;
+        while (n < left.Controls.Count && !left.Controls[n].Visible) n++;
+        if (n < left.Controls.Count && left.Controls[n] is Label next && x > next.Right - nav.Width / 2)
+        {
+            left.Controls.SetChildIndex(nav, n);
+            return;
+        }
+        int p = index - 1;
+        while (p >= 2 && !left.Controls[p].Visible) p--;
+        if (p >= 2 && left.Controls[p] is Label prev && x < prev.Left + nav.Width / 2)
+            left.Controls.SetChildIndex(nav, p);
     }
 
     // ── 펼침 메뉴 ──
@@ -299,6 +370,35 @@ public class BarForm : Form
         nav.ForeColor = UI.Accent;
         mega.ShowUnder(this);
         megaTimer.Start();
+    }
+
+    // 바의 메뉴 버튼과 그 펼침 메뉴 (고정 바 설정에서 숨기면 다시 만든다)
+    readonly List<(TopMenu Top, Label Nav)> navs = new();
+    readonly Dictionary<string, MegaMenuForm> megas = new();
+
+    /// <summary>숨긴 항목을 뺀 펼침 메뉴를 만든다. 남은 항목이 없으면 만들지 않는다.</summary>
+    void MakeMega(TopMenu top)
+    {
+        if (megas.Remove(top.Name, out var old)) old.Dispose();
+        var items = SiteMenu.VisibleItems(top, settings.BarHiddenItems);
+        if (items.Length > 0) megas[top.Name] = new MegaMenuForm(items, sc, p => Navigate(WithName(p))) { Owner = this };
+    }
+
+    void OpenMegaOf(TopMenu top, Label nav)
+    {
+        if (megas.TryGetValue(top.Name, out var mega)) OpenMega(mega, nav); else HideMega();
+    }
+
+    /// <summary>고정 바 설정을 바꾸면 바로 바에 반영한다</summary>
+    void ApplyBarItems()
+    {
+        HideMega();
+        foreach (var (top, nav) in navs)
+        {
+            if (top.Items != null) MakeMega(top);
+            nav.Visible = SiteMenu.ShowTop(top, settings);
+        }
+        LayoutBar();
     }
 
     void HideMega()
@@ -343,9 +443,9 @@ public class BarForm : Form
         if (name.Length == 0)
         {
             search.Focus();
-            searchBox.BackColor = Color.FromArgb(255, 240, 230);
+            searchBox.BackColor = UI.T(Color.FromArgb(255, 240, 230));
             var t = new System.Windows.Forms.Timer { Interval = 400 };
-            t.Tick += (_, _) => { searchBox.BackColor = Color.White; t.Dispose(); };
+            t.Tick += (_, _) => { searchBox.BackColor = UI.Back; t.Dispose(); };
             t.Start();
             return;
         }
@@ -371,6 +471,12 @@ public class BarForm : Form
             if (path == Music.Home) { MusicPicker.Open(this, settings, sc, false); return; }
             if (path == Music.Home + "/search") { MusicPicker.Open(this, settings, sc, true); return; }
             // 유튜브 뮤직은 창을 숨긴 채 열고 뮤직 칸만 띄운다 (칸을 누르면 창이 뜬다)
+            // 구글 로그인이 안 된 걸 알면 로그인 화면부터 연다 (모르면 그냥 연다)
+            if (Music.IsYtMusic(path) && Logins.IsIn("google") == false)
+            {
+                OpenLogin("https://accounts.google.com/ServiceLogin?service=youtube&continue=" + Uri.EscapeDataString(Music.YtHome));
+                return;
+            }
             if (Music.IsYtMusic(path)) { WebWindow.EnsureMusic(settings, sc, path, false); return; }
             WebWindow.EnsureMusic(settings, sc, path, true); // 내 목록(로그인 필요)은 창으로 연다
             return;
@@ -379,7 +485,18 @@ public class BarForm : Form
         if (YouTube.IsVideo(path)) { WebWindow.ShowYouTube(path, settings, sc); return; }
         // 경매장은 닫을 때 숨겨 두었으니 그 창을 다시 보여 준다
         if (Nexon.IsAuction(path) && WebWindow.ShowHiddenAuction()) return;
+        // 넥슨 로그인이 안 된 걸 알면 로그인 화면부터 연다 (로그인 뒤 경매장으로 넘어간다)
+        if (Nexon.IsAuction(path) && Logins.IsIn("nexon") == false) { OpenLogin(Nexon.LoginUrl); return; }
         try { new WebWindow(path.StartsWith("http") ? path : SiteMenu.Base + path, settings, sc).Show(); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "창을 열지 못했어요.\n\n" + ex, "메이플 바", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    void OpenLogin(string url)
+    {
+        try { new WebWindow(url, settings, sc).Show(); }
         catch (Exception ex)
         {
             MessageBox.Show(this, "창을 열지 못했어요.\n\n" + ex, "메이플 바", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -489,75 +606,40 @@ public class BarForm : Form
     void ShowSettingsMenu(Control anchor)
     {
         HideMega();
-        var cms = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 10f * UI.Z), ShowImageMargin = false, ShowCheckMargin = true });
-        var top = new ToolStripMenuItem("사이트 창 항상 위") { Checked = settings.WinTopMost };
-        top.Click += (_, _) =>
-        {
-            settings.WinTopMost = !settings.WinTopMost;
-            settings.Save();
-            WebWindow.SetTopMost(settings.WinTopMost);
-        };
-        cms.Items.Add(top);
-        var fx = new ToolStripMenuItem("곡 넘김 효과음 (레코드)") { Checked = settings.MusicFx };
-        fx.Click += (_, _) =>
-        {
-            settings.MusicFx = !settings.MusicFx;
-            settings.Save();
-            WebWindow.SetMusicFx(settings.MusicFx);
-        };
-        cms.Items.Add(fx);
-        var fold = new ToolStripMenuItem("바 고정 (끄면 3초 뒤 접힘)") { Checked = !settings.BarAutoHide };
-        fold.Click += (_, _) => SetPinned(settings.BarAutoHide);
-        cms.Items.Add(fold);
-        var closeAll = new ToolStripMenuItem("사이트 창 모두 닫기") { Enabled = WebWindow.AnyOpen };
-        closeAll.Click += (_, _) => WebWindow.CloseAll();
-        cms.Items.Add(closeAll);
-
-        // 인벤 자유게시판 알림: 체크한 목록에 새 글이 올라오면 화면 오른쪽 아래에 알려 준다
+        var look = new CardMenuRenderer(sc);
+        var cms = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 10f * UI.Z), ShowImageMargin = false, Renderer = look });
+        cms.Padding = new Padding(S(4), S(6), S(4), S(6));
+        // 켜고 끄는 항목은 프로그램 설정 창에 탭으로 나눠 두고, 메뉴에는 여는 것만 남긴다
+        // 아이콘은 Segoe 아이콘 글꼴: 톱니·종·책·키보드·눈 감기·정보
+        cms.Items.Add(look.Item("", "프로그램 설정", "바 · 로그인 · 창 · 화면", () => OpenProgramSettings()));
+        cms.Items.Add(look.Item("", "알림 설정", "야누스 · 룬 · 버프", () => { if (janus != null) JanusForm.Open(this, settings, janus, sc); }));
+        cms.Items.Add(look.Item("", "자기계발 카드", "재획하며 보는 공부 카드", () => StudyForm.Open(this, settings, sc)));
+        cms.Items.Add(look.Item("", "웹툰·쇼츠 키", "넘기는 키 정하기", () => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); }));
         cms.Items.Add(new ToolStripSeparator());
-        var headerFont = new Font("맑은 고딕", 9f * UI.Z, FontStyle.Bold);
-        cms.Disposed += (_, _) => headerFont.Dispose(); // 메뉴를 치울 때 헤더 글꼴도 함께 푼다
-        cms.Items.Add(new ToolStripMenuItem("자유게시판 알림 (인벤)")
-        {
-            Enabled = false, Font = headerFont,
-        });
-        const string WatchTag = "watch";
-        foreach (var f in Inven.Feeds)
-        {
-            var key = f.Key;
-            var mi = new ToolStripMenuItem(f.Label) { Checked = settings.InvenWatch.Contains(key), Tag = WatchTag };
-            mi.Click += (_, _) =>
-            {
-                mi.Checked = !mi.Checked;
-                settings.InvenWatch.Remove(key);
-                if (mi.Checked) settings.InvenWatch.Add(key);
-                settings.Save();
-                inven?.PollNow();
-            };
-            cms.Items.Add(mi);
-        }
-        cms.Items.Add("인벤 로그인", null, (_, _) => Navigate(Inven.LoginUrl));
-        cms.Items.Add(new ToolStripSeparator());
-        cms.Items.Add("알림 설정 (야누스·룬·버프)…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc); });
-        cms.Items.Add("자기계발 카드…", null, (_, _) => StudyForm.Open(this, settings, sc));
-        cms.Items.Add("웹툰·쇼츠 키 설정…", null, (_, _) => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); });
-        cms.Items.Add(ClockItem());
-        // 알림 항목은 눌러도 메뉴를 닫지 않아서 여러 개를 바로 고를 수 있게 한다
-        bool keepOpen = false;
-        cms.ItemClicked += (_, e) => keepOpen = (e.ClickedItem?.Tag as string) == WatchTag;
-        cms.Closing += (_, e) =>
-        {
-            if (keepOpen && e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
-            keepOpen = false;
-        };
-
-        cms.Items.Add(new ToolStripSeparator());
-        cms.Items.Add("바 숨기기 (Ctrl+Alt+M)", null, (_, _) => HideAll());
-        cms.Items.Add(AlertWhenHiddenItem());
-        cms.Items.Add(AutoStartItem());
-        cms.Items.Add(new ToolStripSeparator());
-        cms.Items.Add("개발자 정보", null, (_, _) => DevInfo.Open(this));
+        cms.Items.Add(look.Item("", "바 숨기기", "단축키로 다시 꺼내요", HideAll, "Ctrl+Alt+M"));
+        cms.Items.Add(look.Item("", "개발자 정보", "공지사항 · 문의", () => DevInfo.Open(this)));
+        cms.Closed += (_, _) => BeginInvoke(look.Dispose);
         ShowBelowBar(cms, anchor);
+    }
+
+    void OpenProgramSettings(int tab = 0) =>
+        ProgramForm.Open(this, settings, sc, new ProgramForm.Hooks(
+            SetPinned: SetPinned,
+            SyncClock: SyncClock,
+            InvenPoll: () => inven?.PollNow(),
+            InvenLogin: () => Navigate(Inven.LoginUrl),
+            RebuildForTheme: RebuildForTheme,
+            ApplyBarItems: ApplyBarItems,
+            OpenUrl: url => Navigate(url)), tab);
+
+    /// <summary>다크 모드를 바꾸면 바와 작은 창을 새 색으로 다시 만든다 (해상도가 바뀔 때와 같은 길).
+    /// 사이트 창·뮤직 창은 그대로 두고, 다시 만든 바에서 프로그램 설정 창의 화면 탭을 다시 연다.</summary>
+    void RebuildForTheme()
+    {
+        UI.Dark = settings.DarkMode;
+        Program.ReopenSettingsTab = 5; // 화면 탭
+        Program.RestartRequested = true;
+        Close();
     }
 
     // 게임에 맞춰 저절로 숨기고 보이기
@@ -684,6 +766,7 @@ public class BarForm : Form
         dragging = true;
         SendMessage(Handle, 0xA1 /*WM_NCLBUTTONDOWN*/, (IntPtr)2 /*HTCAPTION*/, IntPtr.Zero); // 놓을 때까지 돌아오지 않는다
         dragging = false;
+        guide?.Hide();
         // 게임 화면 안에 놓으면 그 자리를 게임 기준으로 기억하고 따라다닌다. 밖에 놓으면 따라다니지 않는다
         if (Game.Area() is Rectangle g)
         {
@@ -696,6 +779,24 @@ public class BarForm : Form
             }
             settings.Save();
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct MoveRect { public int L, T, R, B; }
+    DragGuide? guide;
+
+    /// <summary>끄는 동안: 게임 화면 가운데에 세로선을 보이고, 가까이 오면 가운데에 딱 붙인다.
+    /// 게임 화면 밖이면(놓아도 따라다니지 않는 자리) 선을 숨긴다.</summary>
+    void OnDragMoving(IntPtr lp)
+    {
+        var r = Marshal.PtrToStructure<MoveRect>(lp);
+        // 바가 게임 창 위쪽 테두리 근처에 걸쳐 있어도 보이게 넉넉히 본다
+        int mx = (r.L + r.R) / 2;
+        if (Game.Area() is not Rectangle g || mx < g.Left || mx > g.Right || r.B < g.Top - S(60) || r.T > g.Bottom) { guide?.Hide(); return; }
+        int gc = g.Left + g.Width / 2, cx = (r.L + r.R) / 2;
+        bool on = Math.Abs(cx - gc) <= S(14);
+        if (on && cx != gc) { int d = gc - cx; r.L += d; r.R += d; Marshal.StructureToPtr(r, lp, false); }
+        guide ??= new DragGuide();
+        guide.Place(gc, r.B + S(4), Math.Min(g.Bottom, r.B + S(70)), Math.Max(2, S(2)), on);
     }
 
     // ── 메이플 창 따라가기 ──
@@ -811,6 +912,12 @@ public class BarForm : Form
         StartInvenWatch();
         UpdateCheck.StartWatching(); // 켜져 있는 동안 새 버전이 나오면 물어본다
         if (!Program.Rebuilt) RunArgs(Environment.GetCommandLineArgs().Skip(1).ToArray());
+        if (Program.ReopenSettingsTab is int tab)
+        {
+            Program.ReopenSettingsTab = null;
+            BeginInvoke(() => OpenProgramSettings(tab));
+        }
+        Logins.RefreshSoon(); // 로그인 여부를 일찍 알아 둔다
     }
 
     /// <summary>글자 왼쪽에 빨간 둥근 칸 속 흰 재생 세모를 그린다 (유튜브 메뉴)</summary>
@@ -958,7 +1065,7 @@ public class BarForm : Form
 
     Panel MakePin()
     {
-        var p = new Panel { Size = new Size(S(28), S(28)), Cursor = Cursors.Hand, BackColor = Color.White, Margin = new Padding(0, 0, S(2), 0) };
+        var p = new Panel { Size = new Size(S(28), S(28)), Cursor = Cursors.Hand, BackColor = UI.Back, Margin = new Padding(0, 0, S(2), 0) };
         bool hot = false;
         p.MouseEnter += (_, _) => { hot = true; p.Invalidate(); };
         p.MouseLeave += (_, _) => { hot = false; p.Invalidate(); };
@@ -972,7 +1079,7 @@ public class BarForm : Form
             float cx = p.Width / 2f, cy = p.Height / 2f, u = S(5);
             if (on || hot)
                 using (var b = new SolidBrush(Color.FromArgb(on ? 40 : 25, UI.Accent))) g.FillEllipse(b, cx - S(12), cy - S(12), S(24), S(24));
-            var col = on ? UI.Accent : Color.FromArgb(165, 150, 135);
+            var col = on ? UI.Accent : UI.T(Color.FromArgb(165, 150, 135));
             // 꽂혀 있으면 똑바로, 빼 두면 비스듬히 눕힌다
             g.TranslateTransform(cx, cy);
             if (!on) g.RotateTransform(45);
@@ -1120,6 +1227,7 @@ public class BarForm : Form
             ToggleBar();
             return;
         }
+        if (m.Msg == 0x0216 /*WM_MOVING*/ && dragging) { OnDragMoving(m.LParam); m.Result = (IntPtr)1; return; }
         base.WndProc(ref m);
     }
 
@@ -1132,6 +1240,7 @@ public class BarForm : Form
         UnregisterHotKey(Handle, HotkeyId);
         if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
         clock?.Close(); clock = null;
+        guide?.Close(); guide = null;
         base.OnFormClosing(e);
     }
 

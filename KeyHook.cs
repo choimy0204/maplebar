@@ -12,7 +12,21 @@ namespace MapleBar;
 /// </summary>
 static class KeyHook
 {
-    public readonly record struct Press(int Vk, DateTime At, uint Pid);
+    /// <summary>Combo: 누를 때 조합 키(ComboVk)가 눌려 있었는지</summary>
+    public readonly record struct Press(int Vk, DateTime At, uint Pid, bool Combo);
+
+    /// <summary>조합 키 (설정 값, 0이면 없음). 알림 쪽이 바꿔 준다</summary>
+    public static volatile int ComboVk;
+
+    // Shift·Ctrl·Alt는 왼쪽·오른쪽 키로 따로 오므로 둘 중 하나라도 눌려 있으면 눌린 것으로 본다
+    static bool IsDown(int vk) => vk switch
+    {
+        0 => false,
+        16 => down[16] || down[160] || down[161],
+        17 => down[17] || down[162] || down[163],
+        18 => down[18] || down[164] || down[165],
+        _ => vk < 256 && down[vk],
+    };
 
     static readonly ConcurrentQueue<Press> queue = new();
     static readonly bool[] down = new bool[256];
@@ -67,9 +81,10 @@ static class KeyHook
                 // 꾹 누르고 있을 때 반복해서 오는 것은 한 번으로 센다
                 if (!down[vk])
                 {
+                    bool combo = IsDown(ComboVk); // 이 키를 누르기 전에 조합 키가 눌려 있었는지
                     down[vk] = true;
                     GetWindowThreadProcessId(GetForegroundWindow(), out uint pid);
-                    if (queue.Count < 512) queue.Enqueue(new Press(vk, DateTime.Now, pid));
+                    if (queue.Count < 512) queue.Enqueue(new Press(vk, DateTime.Now, pid, combo));
                 }
             }
             else if (msg == 0x101 || msg == 0x105) down[vk] = false; // 뗌

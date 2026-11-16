@@ -17,7 +17,7 @@ sealed class AlphaSlider : Control
     public AlphaSlider()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        BackColor = Color.White;
+        BackColor = UI.Back;
         Cursor = Cursors.Hand;
     }
 

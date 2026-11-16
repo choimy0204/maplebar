@@ -18,7 +18,7 @@ sealed class StudyForm : Form
         open.Activate();
     }
 
-    static readonly Color Gray = Color.FromArgb(135, 135, 135);
+    static Color Gray => UI.T(Color.FromArgb(135, 135, 135));
     static readonly Color Deep = Color.FromArgb(200, 95, 0);
     static readonly Color Red = Color.FromArgb(225, 60, 60);
 
@@ -39,7 +39,7 @@ sealed class StudyForm : Form
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
         TopMost = true;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         ForeColor = UI.Text;
         Font = F(10);
         DoubleBuffered = true;
@@ -279,7 +279,7 @@ sealed class StudyForm : Form
         var f = new Form
         {
             FormBorderStyle = FormBorderStyle.None, StartPosition = FormStartPosition.Manual, ShowInTaskbar = false, TopMost = true,
-            BackColor = Color.White, ForeColor = UI.Text, Font = F(10), AutoScaleMode = AutoScaleMode.None, KeyPreview = true,
+            BackColor = UI.Back, ForeColor = UI.Text, Font = F(10), AutoScaleMode = AutoScaleMode.None, KeyPreview = true,
         };
         f.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) f.Close(); };
         f.MouseDown += (_, e) => Drag(f, e);
@@ -311,7 +311,7 @@ sealed class StudyForm : Form
         var box = new RoundLabel { AutoSize = false, Radius = S(8), Fill = UI.HoverBack, Bounds = r };
         var tb = new TextBox
         {
-            BorderStyle = BorderStyle.None, BackColor = UI.HoverBack, Font = F(10), PlaceholderText = placeholder,
+            BorderStyle = BorderStyle.None, BackColor = UI.HoverBack, ForeColor = UI.Text, Font = F(10), PlaceholderText = placeholder,
             Multiline = multi, ScrollBars = multi ? ScrollBars.Vertical : ScrollBars.None, AcceptsReturn = multi,
             // 둥근 칸(Label)은 입력기를 끄는 게 기본이라, 그대로 두면 한글이 안 써진다
             ImeMode = ImeMode.NoControl,
@@ -354,7 +354,7 @@ sealed class StudyForm : Form
         var lb = new ListBox
         {
             DrawMode = DrawMode.OwnerDrawFixed, BorderStyle = BorderStyle.None, IntegralHeight = false, ItemHeight = S(30),
-            Bounds = new Rectangle(pad, y, inner, S(420)), Font = F(9.5f), SelectionMode = SelectionMode.None,
+            Bounds = new Rectangle(pad, y, inner, S(420)), BackColor = UI.Back, Font = F(9.5f), SelectionMode = SelectionMode.None,
         };
         foreach (var it in d.Items) lb.Items.Add(it);
         lb.DrawItem += (_, e) =>
@@ -362,7 +362,7 @@ sealed class StudyForm : Form
             if (e.Index < 0) return;
             var it = (string[])lb.Items[e.Index];
             var g = e.Graphics;
-            using (var bg = new SolidBrush(e.Index % 2 == 1 ? Color.FromArgb(248, 248, 250) : Color.White)) g.FillRectangle(bg, e.Bounds);
+            using (var bg = new SolidBrush(e.Index % 2 == 1 ? UI.T(Color.FromArgb(248, 248, 250)) : UI.Back)) g.FillRectangle(bg, e.Bounds);
             var flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
             if (d.Starred(it))
                 TextRenderer.DrawText(g, "★", lb.Font, new Rectangle(e.Bounds.X, e.Bounds.Y, starW, e.Bounds.Height), Color.FromArgb(255, 170, 0),

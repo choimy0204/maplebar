@@ -26,7 +26,7 @@ public sealed class TextField : Control
                  ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.IBeam;
-        tb.BackColor = Fill;
+        tb.BackColor = Fill; tb.ForeColor = UI.Text;
         Controls.Add(tb);
         tb.TextChanged += (_, e) => OnTextChanged(e);
         tb.KeyPress += (_, e) => { if (DigitsOnly && !char.IsDigit(e.KeyChar) && !char.IsControl(e.KeyChar)) e.Handled = true; };
@@ -37,7 +37,7 @@ public sealed class TextField : Control
 
     void Repaint()
     {
-        tb.BackColor = tb.Focused ? Color.White : Fill;
+        tb.BackColor = tb.Focused ? UI.Back : Fill;
         Invalidate();
     }
 
@@ -60,7 +60,7 @@ public sealed class TextField : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         bool focus = tb.Focused;
         using var path = UI.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), Radius);
-        using (var b = new SolidBrush(focus ? Color.White : Fill)) g.FillPath(b, path);
+        using (var b = new SolidBrush(focus ? UI.Back : Fill)) g.FillPath(b, path);
         if (focus) { using var pen = new Pen(UI.Accent, 1.5f); g.DrawPath(pen, path); }
     }
 

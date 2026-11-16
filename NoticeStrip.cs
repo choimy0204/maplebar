@@ -83,7 +83,7 @@ public sealed class NoticeStrip : Form
         ShowInTaskbar = false;
         // TopMost 속성은 창을 띄울 때 활성화까지 시켜 입력 중인 칸의 포커스를 뺏는다. 항상 위는 CreateParams로 준다.
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         DoubleBuffered = true;
         Cursor = Cursors.Hand;
         Opacity = 0;
@@ -164,7 +164,7 @@ public sealed class NoticeStrip : Form
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(hover ? Color.FromArgb(255, 250, 243) : Color.White);
+        g.Clear(hover ? UI.T(Color.FromArgb(255, 250, 243)) : UI.Back);
         g.DrawRectangle(linePen, 0, 0, Width - 1, Height - 1);
         if (Width < H * 2) return;
 
@@ -188,7 +188,7 @@ public sealed class NoticeStrip : Form
             right -= S(4);
         }
         if (hoverClose) g.FillEllipse(hoverBrush, CloseRect);
-        TextRenderer.DrawText(g, "✕", subFont, CloseRect, Color.FromArgb(150, 150, 150),
+        TextRenderer.DrawText(g, "✕", subFont, CloseRect, UI.T(Color.FromArgb(150, 150, 150)),
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
 
         // 말머리(게시판 분류)는 회색으로 오른쪽에, 제목은 남는 칸에
@@ -196,7 +196,7 @@ public sealed class NoticeStrip : Form
         if (item.Sub != "")
         {
             subW = Math.Min(TextRenderer.MeasureText(item.Sub, subFont).Width, S(90));
-            TextRenderer.DrawText(g, item.Sub, subFont, new Rectangle(right - subW, 0, subW, H), Color.FromArgb(140, 140, 140),
+            TextRenderer.DrawText(g, item.Sub, subFont, new Rectangle(right - subW, 0, subW, H), UI.T(Color.FromArgb(140, 140, 140)),
                 TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
             subW += S(8);
         }

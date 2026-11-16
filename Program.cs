@@ -6,6 +6,8 @@ static class Program
     public static bool RestartRequested;
     /// <summary>해상도 때문에 바를 한 번 이상 다시 만들었으면 true (처음 켤 때만 할 일을 건너뛴다).</summary>
     public static bool Rebuilt;
+    /// <summary>다크 모드를 바꿔 바를 다시 만들었으면, 새 바가 이 탭으로 프로그램 설정 창을 다시 연다.</summary>
+    public static int? ReopenSettingsTab;
 
     /// <summary>두 번째로 실행하면 이 신호가 켜진다 → 켜져 있던 바가 앞으로 나온다.</summary>
     const string ShowEventName = "MapleBar_Show";

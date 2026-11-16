@@ -15,7 +15,7 @@ sealed class PendantAsk : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         AutoScaleMode = AutoScaleMode.None;
         ClientSize = new Size(S(360), S(128));
 
@@ -28,7 +28,7 @@ sealed class PendantAsk : Form
         var sub = new Label
         {
             Text = "maple.gg는 늦게 바뀔 수 있어요. 꼈다면 '착용 완료'를 눌러 주세요.",
-            Font = F(8.5f), ForeColor = Color.FromArgb(130, 130, 136), AutoSize = true, Location = new Point(S(18), S(46)),
+            Font = F(8.5f), ForeColor = UI.T(Color.FromArgb(130, 130, 136)), AutoSize = true, Location = new Point(S(18), S(46)),
             MaximumSize = new Size(S(360) - S(36), 0), // 창 폭을 넘으면 줄을 바꾼다
         };
         RoundLabel Btn(string text, Color fore, Color back, Action act)

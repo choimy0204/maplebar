@@ -56,7 +56,7 @@ public partial class WebWindow : Form
         public TitleStrip(WebWindow owner)
         {
             this.owner = owner;
-            DoubleBuffered = true; ResizeRedraw = true; BackColor = Color.White;
+            DoubleBuffered = true; ResizeRedraw = true; BackColor = UI.Back;
         }
 
         protected override void Dispose(bool disposing)
@@ -92,7 +92,7 @@ public partial class WebWindow : Form
             if (sub.Length == 0) return;
             x += TextRenderer.MeasureText(g, main, bold, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width + owner.S(8);
             if (x < right)
-                TextRenderer.DrawText(g, sub, normal, new Rectangle(x, 0, right - x, Height), Color.FromArgb(140, 140, 140), flags);
+                TextRenderer.DrawText(g, sub, normal, new Rectangle(x, 0, right - x, Height), UI.T(Color.FromArgb(140, 140, 140)), flags);
         }
     }
     readonly float sc;
@@ -106,11 +106,83 @@ public partial class WebWindow : Form
     // 경매장 '착용 해보기'로 연 효율·보스컷 창. 바의 캐릭터 검색으로 바뀌지 않고, 경매장에서 고른 캐릭터만 보여 준다
     readonly bool wearWin;
 
+    // 주소 칸이 있는 브라우저 창 (처음 주소가 Browser.Home)
+    readonly bool browser;
+    TextField? addr;       // 브라우저 창의 주소 칸
+    Action? updateNav;     // 뒤로·앞으로 버튼 모양 새로고침
+
+    /// <summary>창 아래쪽 줄: 오른쪽에 뒤로·앞으로, 브라우저 창은 왼쪽에 주소 칸</summary>
+    Panel BuildNavBar()
+    {
+        var bar = new Panel { Dock = DockStyle.Bottom, Height = S(34), BackColor = UI.Back, Padding = new Padding(S(6), S(4), S(6), S(4)) };
+        var tip = new ToolTip();
+        owned.Add(tip);
+
+        RoundLabel MakeBtn(bool forward)
+        {
+            var b = new RoundLabel
+            {
+                Dock = DockStyle.Right, AutoSize = false, Width = S(30), Text = "", Cursor = Cursors.Default,
+                Fill = UI.HoverBack, Radius = S(6), UseMnemonic = false,
+            };
+            b.Paint += (_, e) =>
+            {
+                var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                bool usable = forward ? web.CanGoForward : web.CanGoBack;
+                float cx = b.Width / 2f, cy = b.Height / 2f, d = S(5), s = forward ? -1f : 1f; // s=1이면 왼쪽을 가리킨다
+                using var p = new Pen(usable ? UI.Text : UI.Sub, Math.Max(1.5f, S(2) * 0.8f)) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+                g.DrawPolygon(p, new[] { new PointF(cx + s * d * 0.6f, cy - d), new PointF(cx - s * d * 0.7f, cy), new PointF(cx + s * d * 0.6f, cy + d) });
+            };
+            b.MouseEnter += (_, _) => b.Fill = UI.T(Color.FromArgb(225, 225, 230));
+            b.MouseLeave += (_, _) => b.Fill = UI.HoverBack;
+            b.Click += (_, _) =>
+            {
+                if (forward) { if (web.CanGoForward) web.GoForward(); }
+                else if (web.CanGoBack) web.GoBack();
+            };
+            tip.SetToolTip(b, forward ? "앞으로" : "뒤로");
+            return b;
+        }
+        var fwd = MakeBtn(true);
+        var back = MakeBtn(false);
+        bar.Controls.Add(fwd); fwd.BringToFront();
+        var gap = new Panel { Dock = DockStyle.Right, Width = S(6), BackColor = Color.Transparent };
+        bar.Controls.Add(gap); gap.BringToFront();
+        bar.Controls.Add(back); back.BringToFront();
+
+        updateNav = () =>
+        {
+            if (IsDisposed) return;
+            fwd.Cursor = web.CanGoForward ? Cursors.Hand : Cursors.Default;
+            back.Cursor = web.CanGoBack ? Cursors.Hand : Cursors.Default;
+            fwd.Invalidate(); back.Invalidate();
+        };
+        web.SourceChanged += (_, _) => updateNav?.Invoke();
+
+        if (browser)
+        {
+            var addrFont = new Font("맑은 고딕", 9.5f * UI.Z);
+            owned.Add(addrFont);
+            var box = new TextField { Dock = DockStyle.Fill, Radius = S(8), PlaceholderText = "주소나 검색어를 넣고 Enter", Font = addrFont };
+            addr = box;
+            bar.Height = Math.Max(S(34), box.Height + S(8));
+            bar.Controls.Add(box); box.BringToFront();
+            // 주소 칸을 누르고 있지 않을 때만 지금 주소를 보여 준다
+            web.SourceChanged += (_, _) =>
+            {
+                if (box.ContainsFocus || web.Source == null) return;
+                box.Text = web.Source.ToString();
+            };
+        }
+        return bar;
+    }
+
     public WebWindow(string url, Settings settings, float scale, string? initScript = null, bool wear = false)
     {
         this.settings = settings;
         this.initScript = initScript;
         wearWin = wear;
+        browser = string.Equals(url, Browser.Home, StringComparison.Ordinal);
         sc = scale;
         yt = Music.IsYtMusic(url);
         edge = S(9); // 바깥 4는 크기 조절, 안쪽은 잡고 옮기기
@@ -119,7 +191,7 @@ public partial class WebWindow : Form
         ShowInTaskbar = !Music.IsMusic(url); // 뮤직 창은 화면 밖에 있으므로 작업 표시줄에 안 보이게
         StartPosition = FormStartPosition.Manual;
         MinimumSize = new Size(S(300), S(240));
-        BackColor = Color.White; // 테두리(크기 조절 영역)가 따로 보이지 않게 흰색
+        BackColor = UI.Back; // 테두리(크기 조절 영역)가 따로 보이지 않게 바탕색
         Padding = new Padding(edge);
         TopMost = settings.WinTopMost || Webtoon.IsWebtoon(url); // 웹툰은 늘 맨 위
         if (UI.AppIcon is { } appIcon) Icon = appIcon;
@@ -166,7 +238,7 @@ public partial class WebWindow : Form
         var growTip = new ToolTip();
         owned.Add(growTip);
         growTip.SetToolTip(grow, "크게 보기");
-        grow.MouseEnter += (_, _) => grow.Fill = Color.FromArgb(255, 226, 196);
+        grow.MouseEnter += (_, _) => grow.Fill = UI.T(Color.FromArgb(255, 226, 196));
         grow.MouseLeave += (_, _) => grow.Fill = UI.SoftAccent;
         grow.Click += (_, _) =>
         {
@@ -249,6 +321,8 @@ public partial class WebWindow : Form
 
         Controls.Add(web);
         Controls.Add(grip);
+        if (KindOf(url) is SiteKind.Other or SiteKind.Webtoon or SiteKind.Coordi or SiteKind.YouTube or SiteKind.Live && !wearWin && !Nexon.IsAuction(url))
+            Controls.Add(BuildNavBar());
         web.BringToFront();
 
         Bounds = NextBounds(url);
@@ -283,6 +357,8 @@ public partial class WebWindow : Form
         }
         // 방송은 영상과 채팅이 옆으로 놓이니 가로로 넓게 연다
         if (KindOf(url) == SiteKind.Live) { w = Math.Min(W(800), wa.Width); h = Math.Min(W(500), wa.Height); }
+        // 브라우저는 주소 칸과 넓은 사이트를 보니 조금 크게 연다
+        if (string.Equals(url, Browser.Home, StringComparison.Ordinal)) { w = Math.Min(W(900), wa.Width); h = Math.Min(W(650), wa.Height); }
         // 경매장: 사이트가 700px 이하면 모바일 화면이 되므로 그보다 넓게, 1100px 전체보다는 작게 연다 (그 사이 폭은 AuctionScript가 맞춘다)
         if (Nexon.IsAuction(url)) { float d = DeviceDpi / 96f; w = Math.Min((int)Math.Round(900 * d), wa.Width); h = Math.Min((int)Math.Round(680 * d), wa.Height); }
 
@@ -363,7 +439,11 @@ public partial class WebWindow : Form
                 // Esc도 창을 닫는다. 페이지가 먼저 쓴 Esc(팝업 닫기 등)는 건드리지 않는다
                 "addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.defaultPrevented&&!e.isComposing&&!document.fullscreenElement){" +
                 "try{chrome.webview.postMessage('mb:close')}catch(_){}}});");
+            // 구글 페이지에 뜨는 "Chrome을 선택하세요" 권유 창을 숨긴다 (사용자 요청)
+            await cw.AddScriptToExecuteOnDocumentCreatedAsync(NoChromePromoScript);
             cw.DOMContentLoaded += (_, _) => Lift(); // 새 페이지에도 영상 밝기 보정을 다시 건다
+            cw.HistoryChanged += (_, _) => updateNav?.Invoke(); // 뒤로·앞으로 버튼 모양
+            cw.NavigationCompleted += (_, _) => Logins.RefreshSoon(); // 로그인 상태 다시 확인 (몰아서 한 번)
             cw.WebMessageReceived += (_, e) =>
             {
                 string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
@@ -406,6 +486,7 @@ public partial class WebWindow : Form
             }
             else if (kind is SiteKind.YouTube or SiteKind.YouTubePlayer or SiteKind.YouTubeComments) await InitYouTube(cw); // 유튜브는 광고를 막지 않는다
             else if (kind is SiteKind.Live or SiteKind.LivePlayer or SiteKind.LiveChat) await InitLive(cw); // 방송 사이트도 광고를 막지 않는다
+            else if (browser) { } // 브라우저 창은 광고를 막지 않는다
             else if (kind != SiteKind.Music) await BlockAds(cw, env); // 숨김 스크립트 등록이 끝난 뒤에 페이지를 연다
             else if (yt) await cw.AddScriptToExecuteOnDocumentCreatedAsync(YtMusicScript); // 유튜브 뮤직: 광고는 그대로 둔다
             else
@@ -424,8 +505,11 @@ public partial class WebWindow : Form
             if (initScript != null) await cw.AddScriptToExecuteOnDocumentCreatedAsync(initScript);
             if (wearWin) await cw.AddScriptToExecuteOnDocumentCreatedAsync("window.__mbWearWin = true;");
             if (IsSite(startUrl)) await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.WearViewScript); // '착용 해보기'로 연 보스컷 창
+            await cw.AddScriptToExecuteOnDocumentCreatedAsync(CtrlWheelScript); // Ctrl을 누른 채 휠을 굴려도 화면 배율은 그대로
+            cw.Settings.IsZoomControlEnabled = false; // 배율은 프로그램 설정에서만 바꾼다
+            ApplyZoom();
             // 인벤은 작은 창에 맞는 모바일 화면으로 보이게 한다
-            if (Inven.IsInven(startUrl) || kind == SiteKind.Webtoon)
+            if (!browser && (Inven.IsInven(startUrl) || kind == SiteKind.Webtoon))
                 cw.Settings.UserAgent = Inven.MobileUA;
             // 새 창 링크: 사이트 안이면 또 새 창으로, 바깥이면 기본 브라우저로
             cw.NewWindowRequested += async (_, e) =>
@@ -465,6 +549,7 @@ public partial class WebWindow : Form
                     if (kind == SiteKind.Live && settings.LiveSameWindow) cw.Navigate(e.Uri); else ShowLive(e.Uri, settings, sc);
                     return;
                 }
+                if (browser) { cw.Navigate(e.Uri); return; } // 브라우저 창은 새 창 링크도 이 창에서 연다
                 if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri) || YouTube.IsYouTube(e.Uri) || Live.IsLive(e.Uri) || Nexon.IsNexon(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
                 else OpenExternal(e.Uri);
             };
@@ -531,6 +616,17 @@ public partial class WebWindow : Form
     }
 
     // ── 설정 메뉴에서 쓰는 기능 ──
+    public const int ZoomMin = 50, ZoomMax = 200;
+
+    void ApplyZoom()
+    {
+        if (web.IsDisposed || web.CoreWebView2 == null) return;
+        try { web.ZoomFactor = Math.Clamp(settings.WebZoom, ZoomMin, ZoomMax) / 100.0; } catch { }
+    }
+
+    /// <summary>열린 사이트 창 모두에 화면 배율을 바로 적용한다</summary>
+    public static void SetZoom() { foreach (var w in open.ToList()) w.ApplyZoom(); }
+
     public static void SetTopMost(bool on)
     {
         foreach (var w in open.ToList()) w.TopMost = on || w.kind == SiteKind.Webtoon;
@@ -619,6 +715,29 @@ public partial class WebWindow : Form
         return true;
     }
 
+    /// <summary>게임에서 Ctrl을 스킬 키로 누른 채 휠을 굴리면 창 배율이 바뀌던 것을 막고, 그냥 스크롤되게 한다</summary>
+    const string CtrlWheelScript = """
+        (() => {
+          if (window.__mbCtrlWheel) return; window.__mbCtrlWheel = 1;
+          const can = (n, dy, dx) => {
+            const s = getComputedStyle(n);
+            const y = dy && /(auto|scroll|overlay)/.test(s.overflowY) && n.scrollHeight > n.clientHeight + 1 &&
+              (dy < 0 ? n.scrollTop > 0 : n.scrollTop + n.clientHeight < n.scrollHeight - 1);
+            const x = dx && /(auto|scroll|overlay)/.test(s.overflowX) && n.scrollWidth > n.clientWidth + 1;
+            return y || x;
+          };
+          addEventListener('wheel', e => {
+            if (!e.ctrlKey) return;
+            e.preventDefault();
+            const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? innerHeight : 1, dy = e.deltaY * k, dx = e.deltaX * k;
+            let n = e.target instanceof Element ? e.target : null;
+            while (n && n !== document.body && n !== document.documentElement && !can(n, dy, dx)) n = n.parentElement;
+            const t = n && n !== document.body && n !== document.documentElement ? n : (document.scrollingElement || document.documentElement);
+            t.scrollBy({ top: dy, left: dx });
+          }, { passive: false, capture: true });
+        })();
+        """;
+
     static bool IsLoginPopup(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) &&
         (u.Host == "accounts.google.com" || u.Host == "appleid.apple.com");
@@ -630,7 +749,27 @@ public partial class WebWindow : Form
 
     /// <summary>경매장에서 고른 아이템을 환산 보관함(아이템메이커가 쓰는 곳)에 넣고 효율·보스컷을 보여 준다.
     /// 열린 효율·보스컷 창이 있으면 거기에 넣고 다시 읽고, 없으면 새 창을 열면서 넣는다.</summary>
+    bool sendingWear;
+    string? nextWear;
+
+    // 넣는 사이에 '착용 해보기'를 또 누르면 겹쳐 돌리지 않고, 끝난 뒤 마지막으로 누른 아이템만 이어서 넣는다
     async Task SendToScouter(string json)
+    {
+        if (sendingWear) { nextWear = json; return; }
+        sendingWear = true;
+        try
+        {
+            for (string? cur = json; cur != null && !IsDisposed; )
+            {
+                nextWear = null;
+                await SendToScouterOnce(cur);
+                cur = nextWear;
+            }
+        }
+        finally { sendingWear = false; nextWear = null; }
+    }
+
+    async Task SendToScouterOnce(string json)
     {
         try
         {
@@ -706,7 +845,7 @@ public partial class WebWindow : Form
                 int x = Math.Max(wa.Left, Math.Min(Left, wa.Right - want));
                 Bounds = new Rectangle(x, Top, want, Height);
             }
-            wearPane = new Panel { Dock = DockStyle.Right, Width = pw, BackColor = Color.White };
+            wearPane = new Panel { Dock = DockStyle.Right, Width = pw, BackColor = UI.Back };
             wearDiv = div;
             div.Dragged += dx =>
             {
@@ -747,7 +886,7 @@ public partial class WebWindow : Form
         if (foldBtn != null) { foldBtn.Visible = true; return; }
         var gap = new Panel { Dock = DockStyle.Right, Width = S(8), BackColor = Color.Transparent };
         // 옅은 회색 둥근 네모 + 화살표 + 짧은 글자 (주황 버튼들 옆에서 튀지 않게)
-        var fb = new Panel { Dock = DockStyle.Right, Width = S(64), Text = "접기", Cursor = Cursors.Hand, BackColor = Color.White };
+        var fb = new Panel { Dock = DockStyle.Right, Width = S(64), Text = "접기", Cursor = Cursors.Hand, BackColor = UI.Back };
         bool hot = false;
         var fnt = new Font("맑은 고딕", 9f);
         owned.Add(fnt);
@@ -758,12 +897,12 @@ public partial class WebWindow : Form
             var r = new RectangleF(0.5f, 0.5f, fb.Width - 1.5f, fb.Height - 1.5f);
             using (var box = UI.RoundRect(r, S(6)))
             {
-                using var bg = new SolidBrush(hot ? Color.FromArgb(234, 236, 240) : Color.FromArgb(244, 245, 247));
-                using var pen = new Pen(Color.FromArgb(220, 223, 228));
+                using var bg = new SolidBrush(hot ? UI.T(Color.FromArgb(234, 236, 240)) : UI.T(Color.FromArgb(244, 245, 247)));
+                using var pen = new Pen(UI.T(Color.FromArgb(220, 223, 228)));
                 g.FillPath(bg, box); g.DrawPath(pen, box);
             }
             bool open = fb.Text == "접기";
-            var col = Color.FromArgb(85, 90, 98);
+            var col = UI.T(Color.FromArgb(85, 90, 98));
             // 접기: 오른쪽으로 접히는 화살표(›) / 펼치기: 왼쪽으로 펼치는 화살표(‹)
             float cx = S(13), cy = fb.Height / 2f, d = S(3);
             using (var p = new Pen(col, Math.Max(1.4f, S(2) * 0.75f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
@@ -833,7 +972,7 @@ public partial class WebWindow : Form
         public WearDivider(int width)
         {
             Dock = DockStyle.Right; Width = width; Cursor = Cursors.SizeWE;
-            BackColor = Color.FromArgb(243, 244, 246);
+            BackColor = UI.T(Color.FromArgb(243, 244, 246));
             DoubleBuffered = true;
         }
         protected override void OnPaint(PaintEventArgs e)
@@ -841,10 +980,10 @@ public partial class WebWindow : Form
             base.OnPaint(e);
             var g = e.Graphics; g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             // 양옆 얇은 선 + 가운데 작은 손잡이(둥근 직사각형)
-            using var line = new Pen(Color.FromArgb(222, 225, 230));
+            using var line = new Pen(UI.T(Color.FromArgb(222, 225, 230)));
             g.DrawLine(line, 0, 0, 0, Height); g.DrawLine(line, Width - 1, 0, Width - 1, Height);
             int hw = Math.Max(3, Width / 3), hh = Math.Max(24, Width * 4), x = (Width - hw) / 2, y = (Height - hh) / 2;
-            using var b = new SolidBrush(Color.FromArgb(196, 200, 207));
+            using var b = new SolidBrush(UI.T(Color.FromArgb(196, 200, 207)));
             using var path = new System.Drawing.Drawing2D.GraphicsPath();
             int r = 2;
             path.AddArc(x, y, r * 2, r * 2, 180, 90); path.AddArc(x + hw - r * 2, y, r * 2, r * 2, 270, 90);
@@ -1023,6 +1162,14 @@ public partial class WebWindow : Form
     {
         if (keyData == Keys.F5) { web.CoreWebView2?.Reload(); return true; }
         if (keyData == (Keys.Alt | Keys.Left)) { if (web.CanGoBack) web.GoBack(); return true; }
+        // 주소 칸에서: Enter는 열기, Esc는 창을 닫지 않고 원래 주소로 되돌린 뒤 페이지로 돌아간다
+        if (addr != null && addr.ContainsFocus && (keyData == Keys.Enter || keyData == Keys.Escape))
+        {
+            if (keyData == Keys.Enter) web.CoreWebView2?.Navigate(Browser.ToUrl(addr.Text));
+            else if (web.Source != null) addr.Text = web.Source.ToString();
+            web.Focus();
+            return true;
+        }
         if (keyData == (Keys.Control | Keys.W) || keyData == Keys.Escape) { Close(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
     }
@@ -1034,6 +1181,7 @@ public partial class WebWindow : Form
         if (string.IsNullOrEmpty(url)) return null;
         var k = KindOf(url);
         if (k is SiteKind.Music or SiteKind.YouTubeComments or SiteKind.LiveChat) return null;
+        if (string.Equals(url, Browser.Home, StringComparison.Ordinal)) return "Browser"; // 브라우저는 자기 자리를 따로 기억한다
         if (Nexon.IsAuction(url)) return "Auction"; // 예전에 크게 늘려 둔 자리(site:…) 대신 새 기본 크기로 한 번 다시 시작한다
         if (k == SiteKind.YouTubePlayer) return YouTube.IsShorts(url) ? "Shorts" : "YouTubePlayer";
         if (k != SiteKind.Other) return k.ToString();
@@ -1101,6 +1249,7 @@ public partial class WebWindow : Form
         foreach (var d in owned) d.Dispose();
         owned.Clear();
         alphaTip.Dispose();
+        Logins.RefreshSoon(); // 창이 닫히면 로그인 상태를 다시 확인한다
         base.OnFormClosed(e);
     }
 }

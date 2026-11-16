@@ -121,7 +121,7 @@ public partial class WebWindow
     /// <summary>유튜브·방송 목록 창 제목 줄에 영상을 어디서 볼지 고르는 버튼을 단다 (새 창 ↔ 이 창)</summary>
     void AddYtModeButton(bool live)
     {
-        var box = new Panel { Dock = DockStyle.Right, Width = S(96), BackColor = Color.White };
+        var box = new Panel { Dock = DockStyle.Right, Width = S(96), BackColor = UI.Back };
         var btnFont = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
         owned.Add(btnFont);
         string what = live ? "방송" : "영상";
@@ -133,7 +133,7 @@ public partial class WebWindow
             Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6),
             Font = btnFont,
         };
-        b.MouseEnter += (_, _) => b.Fill = Color.FromArgb(255, 226, 196);
+        b.MouseEnter += (_, _) => b.Fill = UI.T(Color.FromArgb(255, 226, 196));
         b.MouseLeave += (_, _) => b.Fill = UI.SoftAccent;
         var btnTip = new ToolTip();
         owned.Add(btnTip);
@@ -159,7 +159,7 @@ public partial class WebWindow
     void AddCommentsButton(string text)
     {
         // 제목 글자가 버튼 밑으로 들어가지 않게 흰 상자에 담는다
-        var box = new Panel { Dock = DockStyle.Right, Width = S(46), BackColor = Color.White };
+        var box = new Panel { Dock = DockStyle.Right, Width = S(46), BackColor = UI.Back };
         var btnFont = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
         owned.Add(btnFont); // 창이 닫힐 때 해제
         var b = new RoundLabel
@@ -168,7 +168,7 @@ public partial class WebWindow
             Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6),
             Font = btnFont,
         };
-        b.MouseEnter += (_, _) => b.Fill = Color.FromArgb(255, 226, 196);
+        b.MouseEnter += (_, _) => b.Fill = UI.T(Color.FromArgb(255, 226, 196));
         b.MouseLeave += (_, _) => b.Fill = UI.SoftAccent;
         b.Click += (_, _) => ToggleComments();
         var btnTip = new ToolTip();

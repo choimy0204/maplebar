@@ -25,7 +25,7 @@ public class MegaMenuForm : Form
 
         groups = new FlowLayoutPanel
         {
-            AutoSize = true, WrapContents = false, BackColor = Color.White,
+            AutoSize = true, WrapContents = false, BackColor = UI.Back,
             Padding = new Padding(S(28), S(16), S(28), S(18)), Location = new Point(1, 1),
         };
 
@@ -60,25 +60,25 @@ public class MegaMenuForm : Form
         var box = new FlowLayoutPanel
         {
             AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false,
-            BackColor = Color.White, Margin = Padding.Empty,
+            BackColor = UI.Back, Margin = Padding.Empty,
         };
         box.Controls.Add(new Label
         {
             Text = title, AutoSize = true, UseMnemonic = false,
-            Font = titleFont, ForeColor = Color.FromArgb(120, 120, 120),
+            Font = titleFont, ForeColor = UI.T(Color.FromArgb(120, 120, 120)),
             Margin = new Padding(0, 0, 0, S(12)),
         });
 
         var cols = new FlowLayoutPanel
         {
-            AutoSize = true, WrapContents = false, BackColor = Color.White, Margin = Padding.Empty,
+            AutoSize = true, WrapContents = false, BackColor = UI.Back, Margin = Padding.Empty,
         };
         for (int start = 0; start < items.Count; start += MaxRows)
         {
             var col = new FlowLayoutPanel
             {
                 AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false,
-                BackColor = Color.White, Margin = new Padding(0, 0, start + MaxRows < items.Count ? S(22) : 0, 0),
+                BackColor = UI.Back, Margin = new Padding(0, 0, start + MaxRows < items.Count ? S(22) : 0, 0),
             };
             foreach (var it in items.Skip(start).Take(MaxRows))
                 col.Controls.Add(MakeItem(it, onPick));

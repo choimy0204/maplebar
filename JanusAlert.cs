@@ -44,6 +44,9 @@ static class JanusAlert
         AlertSound.Play(sound);
         Played?.Invoke();
         stop?.Invoke();
+        if (AlertSound.St is { AlertVisual: false }) return; // 화면 알림을 끄면 소리만 낸다
+        // 알림 방식: 화면 플래시(물듦) · 테두리 강조(한 바퀴). 둘 다 끄면 글씨만 뜬다
+        bool doFlash = AlertSound.St?.AlertFlash ?? true, doEdge = AlertSound.St?.AlertEdge ?? true;
         Text = text;
         Main = main ?? Color.FromArgb(150, 80, 255);
         Light = light ?? Color.FromArgb(228, 205, 255);
@@ -68,7 +71,7 @@ static class JanusAlert
         int t = Math.Max(8, (int)Math.Round(64 * sc));
         var sets = areas.Select(area =>
         {
-            var rects = new[]
+            var rects = !doEdge ? Array.Empty<Rectangle>() : new[]
             {
                 new Rectangle(0, 0, area.Width, t),
                 new Rectangle(0, area.Height - t, area.Width, t),
@@ -78,12 +81,16 @@ static class JanusAlert
             var strips = rects.Select(_ => new Splash()).ToArray();
             var bmps = rects.Select(r => new Bitmap(Math.Max(1, r.Width), Math.Max(1, r.Height))).ToArray();
             // 화면 전체를 물들이는 막: 가운데는 옅고 가장자리는 진하게 한 번만 그려 두고, 투명도만 바꾼다
-            var tint = new Splash();
-            using (var tb = Tint(area.Size, Main)) tint.Present(tb, area.Location);
-            tint.SetAlpha(0);
+            Splash? tint = null;
+            if (doFlash)
+            {
+                tint = new Splash();
+                using (var tb = Tint(area.Size, Main)) tint.Present(tb, area.Location);
+                tint.SetAlpha(0);
+            }
             // 잠깐 바뀌는 색이 있으면 그 색 막도 하나 더 만들어 두고 투명도로 섞는다
             Splash? tint2 = null;
-            if (FlashMain is Color fc)
+            if (doFlash && FlashMain is Color fc)
             {
                 tint2 = new Splash();
                 using (var tb = Tint(area.Size, fc)) tint2.Present(tb, area.Location);
@@ -99,7 +106,7 @@ static class JanusAlert
             timer.Stop(); timer.Dispose();
             foreach (var x in sets)
             {
-                x.tint.Dispose();
+                x.tint?.Dispose();
                 x.tint2?.Dispose();
                 foreach (var s in x.strips) s.Dispose();
                 foreach (var b in x.bmps) b.Dispose();
@@ -123,7 +130,7 @@ static class JanusAlert
             foreach (var (area, rects, strips, bmps, tint, tint2, pill) in sets)
             {
                 double tc = Math.Clamp(ta, 0, 1);
-                tint.SetAlpha((byte)(255 * tc * (1 - mix)));
+                tint?.SetAlpha((byte)(255 * tc * (1 - mix)));
                 tint2?.SetAlpha((byte)(255 * tc * mix));
                 for (int i = 0; i < rects.Length; i++)
                 {

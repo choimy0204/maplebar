@@ -37,7 +37,7 @@ sealed class PatchNotesWindow : Form
         StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
         TopMost = true;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         Font = new Font("맑은 고딕", 9.5f);
         AutoScaleMode = AutoScaleMode.None;
         int sideW = picker ? S(150) : 0, bodyX = picker ? S(12) + sideW + S(8) : S(8);
@@ -60,7 +60,7 @@ sealed class PatchNotesWindow : Form
         list = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.White, Location = new Point(S(14), 0),
+            AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = UI.Back, Location = new Point(S(14), 0),
         };
         body = new SlimScroll(list, sc)
         {
@@ -72,7 +72,7 @@ sealed class PatchNotesWindow : Form
             side = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.White, Location = Point.Empty,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = UI.Back, Location = Point.Empty,
             };
             sideBox = new SlimScroll(side, sc) { Location = new Point(S(12), S(58)), Size = new Size(sideW, ClientSize.Height - S(70)) };
             Controls.Add(sideBox);
@@ -84,7 +84,7 @@ sealed class PatchNotesWindow : Form
         KeyPreview = true; // ESC나 Ctrl+W로 닫기
         KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape || (e.Control && e.KeyCode == Keys.W)) { e.Handled = true; Close(); } };
 
-        Line("불러오고 있어요…", Color.FromArgb(130, 130, 130));
+        Line("불러오고 있어요…", UI.T(Color.FromArgb(130, 130, 130)));
         Shown += async (_, _) => Fill(await Load());
         Paint += (_, e) => e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         HandleCreated += (_, _) => UI.RoundCorners(Handle);
@@ -146,14 +146,14 @@ sealed class PatchNotesWindow : Form
                 {
                     Text = "v" + n.Ver + (now ? "  (지금)" : isNew ? "  (새 버전)" : "") + (n.Date != "" ? "\n" + n.Date : ""),
                     AutoSize = false, Size = new Size(rowW, S(44)), Radius = S(8),
-                    Fill = Color.White, ForeColor = isNew ? UI.Accent : UI.Text, Font = new Font("맑은 고딕", 9f),
+                    Fill = UI.Back, ForeColor = isNew ? UI.Accent : UI.Text, Font = new Font("맑은 고딕", 9f),
                     TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(S(8), 0, 0, 0), Margin = new Padding(0, 0, 0, S(4)),
                     Cursor = Cursors.Hand, UseMnemonic = false,
                 };
                 var note = n;
                 row.Click += (_, _) => Pick(row, note);
                 row.MouseEnter += (_, _) => { sideBox?.Focus(); if (row != picked) row.Fill = UI.HoverBack; };
-                row.MouseLeave += (_, _) => { if (row != picked) row.Fill = Color.White; };
+                row.MouseLeave += (_, _) => { if (row != picked) row.Fill = UI.Back; };
                 side.Controls.Add(row);
             }
             side.ResumeLayout();
@@ -165,7 +165,7 @@ sealed class PatchNotesWindow : Form
 
     void Pick(RoundLabel row, Note n)
     {
-        if (picked != null) { picked.Fill = Color.White; picked.Font = new Font(picked.Font, FontStyle.Regular); }
+        if (picked != null) { picked.Fill = UI.Back; picked.Font = new Font(picked.Font, FontStyle.Regular); }
         picked = row;
         row.Fill = UI.SoftAccent;
         row.Font = new Font(row.Font, FontStyle.Bold);
@@ -179,7 +179,7 @@ sealed class PatchNotesWindow : Form
         var old = list.Controls.Cast<Control>().ToList();
         list.Controls.Clear();
         foreach (var c in old) { var f = c.Font; c.Dispose(); f.Dispose(); } // 라벨마다 전용 글꼴이 있다
-        if (notes == null) Line("패치노트를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.", Color.FromArgb(130, 130, 130));
+        if (notes == null) Line("패치노트를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.", UI.T(Color.FromArgb(130, 130, 130)));
         else
             foreach (var n in notes)
             {
@@ -188,12 +188,12 @@ sealed class PatchNotesWindow : Form
                 var head = Line(n.Ver + (isNew ? "  새 버전" : ""), isNew ? UI.Accent : UI.Text, 11.5f, true);
                 head.Margin = new Padding(0, list.Controls.Count == 1 ? S(2) : S(14), 0, 0);
                 var sub = string.Join("  ·  ", new[] { n.Date, n.Title }.Where(t => t != ""));
-                if (sub != "") Line(sub, Color.FromArgb(130, 130, 130));
+                if (sub != "") Line(sub, UI.T(Color.FromArgb(130, 130, 130)));
                 foreach (var g in n.Groups)
                 {
                     var tag = new RoundLabel
                     {
-                        Text = g.Tag, AutoSize = true, Fill = UI.SoftAccent, ForeColor = Color.FromArgb(200, 95, 0),
+                        Text = g.Tag, AutoSize = true, Fill = UI.SoftAccent, ForeColor = UI.T(Color.FromArgb(200, 95, 0)),
                         Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold), Radius = S(6),
                         Padding = new Padding(S(6), S(2), S(6), S(2)), Margin = new Padding(0, S(8), 0, S(2)),
                     };

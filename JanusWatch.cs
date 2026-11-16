@@ -25,11 +25,12 @@ sealed class JanusWatch
     DateTime? endsAt => st.JanusStart is DateTime s
         ? (st.PetOn ? PetRun(s, st.PetGatherAt ?? s, st.JanusSec).end : s.AddSeconds(st.JanusSec)) : null;
     const double IgnoreSec = 50;     // 첫 설치 후 이 시간 안에 누른 건 추가 설치로 보고 무시
+    const double ReinstallSec = 15;  // 남은 시간이 이만큼 이하일 때 누르면 50초 안이어도 다시 깐 것으로 센다
     /// <summary>끝나지 않는 경우는 세지도 알리지도 않는다.
-    /// 121초 이상(무한대로 고른 것), 루나 익스텐션 + 30레벨(120초), 또는 5석펫에서 지속시간이 게더링 주기(90초) 이상일 때.</summary>
+    /// 121초 이상(무한대로 고른 것), 또는 5석펫(루나 익스텐션)에서 지속시간이 게더링 주기(90초) 이상일 때.</summary>
     public static bool Endless(Settings st) => Endless(st, st.JanusSec);
     /// <summary>지속시간을 sec초로 했을 때 끝나지 않는지 (설정 창의 '무한대' 표시도 이걸 쓴다).</summary>
-    public static bool Endless(Settings st, int sec) => sec > 120 || (st.PetOn ? sec >= GatherSec : st.LunaExt && sec >= 120);
+    public static bool Endless(Settings st, int sec) => sec > 120 || (st.PetOn && sec >= GatherSec);
 
     // 5석펫: 게더링은 쿨타임 90초. 야누스가 있고 쿨이 돌았으면 바로 쓰고, 그 뒤로 90초마다 쓴다.
     // 게더링마다 남은 시간에 지속시간을 더하고 최대 300초. 설치 때 쿨이 돌아 있으면 20레벨은 160초로 시작한다.
@@ -110,8 +111,39 @@ sealed class JanusWatch
     /// <summary>NPC 키 뒤에 지금까지 누른 방향키 수 (설정 창 표시용)</summary>
     public int RuneProgress => npcAt is DateTime t && (DateTime.Now - t).TotalSeconds < RuneWindow ? arrowCount : -1;
 
+    bool ComboOnBuff(int i) => st.ComboKey != 0 && st.Buffs[i].Combo;
+    bool ComboOnDope(int i) => st.ComboKey != 0 && st.Dopes[i].Combo;
+    bool ComboOnRepeat(int i) => st.ComboKey != 0 && st.Repeats[i].Combo;
+
+    /// <summary>키 하나를 눌렀을 때 셀 버프·도핑 칸.
+    /// 조합 키를 켠 칸은 조합 키를 누른 채로 눌렀을 때만 센다.
+    /// 조합 키를 안 켠 칸은 평소처럼 세지만, 같은 키를 조합 키로 쓰는 칸이 있으면 조합 키를 누른 채일 땐 그 칸에 양보한다.</summary>
+    (int buff, int dope, int rep) SlotMasks(int vk, bool held)
+    {
+        if (vk == 0) return (0, 0, 0);
+        bool comboTaken = false;
+        if (held)
+        {
+            for (int i = 0; i < BuffSlots; i++) if (ComboOnBuff(i) && st.Buffs[i].Key == vk) comboTaken = true;
+            for (int i = 0; i < DopeSlots; i++) if (ComboOnDope(i) && st.Dopes[i].Key == vk) comboTaken = true;
+            for (int i = 0; i < RepeatSlots; i++) if (ComboOnRepeat(i) && st.Repeats[i].Key == vk) comboTaken = true;
+        }
+        bool Hit(int key, bool combo) => key == vk && (combo ? held : !comboTaken);
+        int b = 0, d = 0, r = 0;
+        for (int i = 0; i < BuffSlots; i++) if (Hit(st.Buffs[i].Key, ComboOnBuff(i))) b |= 1 << i;
+        for (int i = 0; i < DopeSlots; i++) if (Hit(st.Dopes[i].Key, ComboOnDope(i))) d |= 1 << i;
+        for (int i = 0; i < RepeatSlots; i++) if (Hit(st.Repeats[i].Key, ComboOnRepeat(i))) r |= 1 << i;
+        return (b, d, r);
+    }
+
+    static readonly bool Debug = Environment.GetEnvironmentVariable("MB_DEBUG") == "1" || TestFlag("test-keylog");
+    bool hookOffLogged;
+    // 바는 관리자 권한으로 켜져 환경 변수가 안 넘어올 수 있어, 설정 폴더의 test-keylog 파일로도 키 기록을 켠다
+    static bool TestFlag(string name) => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar", name));
+
     void Tick()
     {
+        KeyHook.ComboVk = st.ComboKey;
         if (KeyHook.Active)
         {
             // 누른 키를 하나씩, 누른 순서와 시각 그대로 처리한다 (2와 엔터가 한꺼번에 와도 둘 다 센다)
@@ -121,29 +153,31 @@ sealed class JanusWatch
                 int vk = p.Vk switch { 160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, var v => v };
                 if (vk == 0) continue;
                 bool g = Game.IsGame(p.Pid);
-                for (int i = 0; i < RepeatSlots; i++) if (vk == st.Repeats[i].Key) RepeatKey(i, p.At, g);
-                int mask = 0;
-                for (int i = 0; i < BuffSlots; i++) if (vk == st.Buffs[i].Key) mask |= 1 << i;
-                int dmask = 0;
-                for (int i = 0; i < DopeSlots; i++) if (vk == st.Dopes[i].Key) dmask |= 1 << i;
+                var (mask, dmask, rmask) = SlotMasks(vk, p.Combo);
+                if (Debug && (vk == st.ComboKey || st.Buffs.Any(b => b.Key == vk) || st.Dopes.Any(d => d.Key == vk) || vk == 0x0D))
+                    Log.Write("키", $"vk={vk} 조합={p.Combo} 게임={g} pid={p.Pid} 버프칸={mask} 도핑칸={dmask}");
+                for (int i = 0; i < RepeatSlots; i++) if ((rmask >> i & 1) != 0) RepeatKey(i, p.At, g);
                 Step(p.At, g, vk == st.JanusKey, vk == st.NpcKey, mask, vk == 0x0D,
                     dmask, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
             }
             Step(DateTime.Now, false, false, false, 0, false, 0, 0); // 시간이 다 됐는지만 본다
             return;
         }
+        if (Debug && !hookOffLogged) { hookOffLogged = true; Log.Write("키", "키 훅이 꺼져 있어 직접 확인 방식으로 봐요"); }
         // 키 알림을 못 받으면: 키를 뗐는지 계속 봐 두어야 다음 누름을 한 번으로 센다
         bool janus = Pressed(st.JanusKey, ref janusDown);
         bool npc = Pressed(st.NpcKey, ref npcDown);
+        bool held = st.ComboKey != 0 && (GetAsyncKeyState(st.ComboKey) & 0x8000) != 0;
         int buff = 0;
-        for (int i = 0; i < BuffSlots; i++) if (Pressed(st.Buffs[i].Key, ref buffDown[i])) buff |= 1 << i;
+        for (int i = 0; i < BuffSlots; i++) if (Pressed(st.Buffs[i].Key, ref buffDown[i])) buff |= SlotMasks(st.Buffs[i].Key, held).buff & (1 << i);
         bool enter = Pressed(0x0D, ref enterDown);
         int dope = 0;
-        for (int i = 0; i < DopeSlots; i++) if (Pressed(st.Dopes[i].Key, ref dopeDown[i])) dope |= 1 << i;
+        for (int i = 0; i < DopeSlots; i++) if (Pressed(st.Dopes[i].Key, ref dopeDown[i])) dope |= SlotMasks(st.Dopes[i].Key, held).dope & (1 << i);
         int arrows = 0;
         for (int i = 0; i < 4; i++) if (Pressed(Arrows[i], ref arrowDown[i])) arrows++;
         bool fg = Game.Foreground();
-        for (int i = 0; i < RepeatSlots; i++) if (Pressed(st.Repeats[i].Key, ref repeatDown[i])) RepeatKey(i, DateTime.Now, fg);
+        for (int i = 0; i < RepeatSlots; i++)
+            if (Pressed(st.Repeats[i].Key, ref repeatDown[i]) && (SlotMasks(st.Repeats[i].Key, held).rep >> i & 1) != 0) RepeatKey(i, DateTime.Now, fg);
         Step(DateTime.Now, fg, janus, npc, buff, enter, dope, arrows);
     }
 
@@ -164,6 +198,25 @@ sealed class JanusWatch
         r.Start = at; st.Save();
         repeatNext[i] = null; // 아래에서 새로 계산
         LastRepeat = i; LastRepeatAt = at;
+        // 엔터 기다리기: 키 뒤 10초 안에 엔터를 누르면 엔터 때부터 다시 센다
+        repeatKeyAt[i] = r.WaitEnter && r.Key != 0x0D ? at : null;
+    }
+
+    readonly DateTime?[] repeatKeyAt = new DateTime?[RepeatSlots];
+
+    void RepeatEnter(DateTime now, bool inGame)
+    {
+        if (!inGame) return;
+        for (int i = 0; i < RepeatSlots; i++)
+        {
+            if (repeatKeyAt[i] is not DateTime k) continue;
+            repeatKeyAt[i] = null;
+            var r = st.Repeats[i];
+            if (!r.On || !r.WaitEnter || r.Start == null || (now - k).TotalSeconds > BuffEnterSec) continue;
+            r.Start = now; st.Save();
+            repeatNext[i] = null;
+            LastRepeat = i; LastRepeatAt = now;
+        }
     }
 
     void RepeatTick(DateTime now)
@@ -214,6 +267,7 @@ sealed class JanusWatch
 
     void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, int dope, int arrows)
     {
+        if (enter) RepeatEnter(now, inGame);
         RepeatTick(now);
         RuneTick(now, inGame, npc, arrows);
         BuffTick(now, inGame, buff, enter);
@@ -225,15 +279,16 @@ sealed class JanusWatch
             return;
         }
 
-        // 여러 개를 이어서 설치하는 동안(첫 설치 후 50초)은 새 설치로 세지 않는다
-        if (janus && inGame && !(lastInstall is DateTime li && (now - li).TotalSeconds < IgnoreSec))
+        // 여러 개를 이어서 설치하는 동안(첫 설치 후 50초)은 새 설치로 세지 않는다.
+        // 단, 꺼지기 직전(남은 시간 15초 이내)에 깐 건 다시 깐 것으로 센다 (지속시간이 짧으면 50초 안에 꺼지기 직전이 온다)
+        bool nearEnd = endsAt is DateTime ne && (ne - now).TotalSeconds <= ReinstallSec;
+        if (janus && inGame && (nearEnd || !(lastInstall is DateTime li && (now - li).TotalSeconds < IgnoreSec)))
         {
             lastInstall = now;
             LastKey = now; LastKind = "설치";
             if (st.PickupOn) pickups.Add(now.AddSeconds(PickupSec));
-            // 루나 익스텐션이 없으면 도는 중에 다시 깔아도 갱신하지 않고 첫 설치만 센다
-            bool running = endsAt is DateTime cur && cur > now;
-            if (!Endless(st) && (st.LunaExt || !running))
+            // 도는 중에 다시 깔면 그때부터 새로 센다
+            if (!Endless(st))
             {
                 // 5석펫: 게더링 쿨(90초)이 돌아 있으면 설치하자마자 한 번 더하고 지금부터 새 박자로 센다.
                 // 도는 중에 다시 깔았거나 막 꺼진 뒤라 쿨이 남아 있으면 원래 박자대로 다음 게더링을 기다린다.
@@ -260,12 +315,24 @@ sealed class JanusWatch
             ClearJanus(now);
             return;
         }
-        if (endsAt is DateTime end && now >= end)
+        if (endsAt is not DateTime end) return;
+        // 켜 두면 꺼지기 5초 전에 먼저 알린다 (칩은 진짜 꺼질 때까지 남는다)
+        if (st.JanusEarly && now < end && now >= end.AddSeconds(-EarlySec) && earlyFor != end)
         {
+            earlyFor = end;
+            if (!Mute) JanusAlert.Play(sc, "곧 야누스가 사라져요.");
+        }
+        if (now >= end)
+        {
+            bool told = earlyFor == end;
+            earlyFor = null;
             ClearJanus(end);
-            if (!Mute) JanusAlert.Play(sc);
+            if (!Mute && !told) JanusAlert.Play(sc);
         }
     }
+
+    const int EarlySec = 5;
+    DateTime? earlyFor; // 미리 알림을 울린 야누스의 끝 시각 (같은 끝에 두 번 울리지 않게)
 
     /// <summary>바의 칩을 눌렀을 때: 세던 시간을 지운다.</summary>
     public void Stop() { poll.Stop(); poll.Dispose(); } // 끝낸 감시는 다시 켜지 않는다 (바를 새로 만들 때 새 감시가 생긴다)

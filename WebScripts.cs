@@ -109,6 +109,16 @@ static partial class WebScripts
     public const string MapleOnlyCss = ",div:has(> main) > div:first-child,div:has(> main) > footer";
     public const string HideRule = "{display:none!important;height:0!important;min-height:0!important}";
 
+    // 구글 페이지의 "Chrome을 선택하세요" 권유 창: 'Chrome 사용 안함' 같은 단추가 든 떠 있는 상자를 찾아 숨긴다
+    public const string NoChromePromoScript =
+        "(()=>{if(!/(^|\\.)google\\.[a-z.]+$/.test(location.hostname))return;" +
+        "const re=/Chrome\\s*(사용 안함|다운로드)|(Download|Get|Use)\\s+Chrome|No thanks/i;let busy=0;" +
+        "const run=()=>{busy=0;for(const b of document.querySelectorAll('a,button,[role=button]')){" +
+        "if(!re.test((b.textContent||'').trim()))continue;let e=b;" +
+        "while(e&&e!==document.body){const s=getComputedStyle(e);if(e.getAttribute('role')==='dialog'||s.position==='fixed'){" +
+        "if(/Chrome/.test(e.textContent||''))e.style.setProperty('display','none','important');break}e=e.parentElement}}};" +
+        "new MutationObserver(()=>{if(!busy){busy=1;requestAnimationFrame(run)}}).observe(document.documentElement,{childList:true,subtree:true});})();";
+
     // 웹툰 스크롤·회차 이동 (WebWindow.Webtoon.cs의 SendScroll·SendEpisode가 부른다)
     public const string ScrollScript =
         "(()=>{let dir=0,speed=900,raf=0,last=0,start=0,el=null,pos=0,keys=[];" +

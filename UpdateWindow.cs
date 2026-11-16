@@ -32,7 +32,7 @@ sealed class UpdateWindow : Form
         StartPosition = FormStartPosition.CenterScreen;
         ShowInTaskbar = true;
         TopMost = true;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         Font = new Font("맑은 고딕", 10f);
         AutoScaleMode = AutoScaleMode.None;
         ClientSize = new Size(S(360), S(178));
@@ -45,7 +45,7 @@ sealed class UpdateWindow : Form
         };
         sub = new Label
         {
-            Text = $"{UpdateCheck.Show(mine)}  →  {UpdateCheck.Show(ver)}", ForeColor = Color.FromArgb(130, 130, 130), AutoSize = false,
+            Text = $"{UpdateCheck.Show(mine)}  →  {UpdateCheck.Show(ver)}", ForeColor = UI.T(Color.FromArgb(130, 130, 130)), AutoSize = false,
             Location = new Point(S(22), S(52)), Size = new Size(S(316), S(22)),
         };
         status = new Label
@@ -56,7 +56,7 @@ sealed class UpdateWindow : Form
         bar = new ProgressLine { Location = new Point(S(22), S(116)), Size = new Size(S(316), S(8)) };
         row = new FlowLayoutPanel
         {
-            FlowDirection = FlowDirection.RightToLeft, AutoSize = false, BackColor = Color.White,
+            FlowDirection = FlowDirection.RightToLeft, AutoSize = false, BackColor = UI.Back,
             Location = new Point(S(14), S(134)), Size = new Size(S(332), S(32)),
         };
         Controls.AddRange(new Control[] { title, sub, status, bar, row });
@@ -202,7 +202,7 @@ sealed class UpdateWindow : Form
         public ProgressLine()
         {
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-            BackColor = Color.White;
+            BackColor = UI.Back;
         }
         protected override void OnPaint(PaintEventArgs e)
         {

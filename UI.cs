@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
 namespace MapleBar;
@@ -42,11 +42,60 @@ public static class UI
     public static float Balance(float ratio) =>
         ratio >= 1f ? Math.Min(ratio, 1.5f) : Math.Max(0.7f, 0.45f + 0.55f * ratio);
 
+    /// <summary>다크 모드. 바를 만들 때 설정에서 읽는다. 창은 만들 때의 색을 쓰므로 바꾸면 바와 작은 창을 다시 만든다.</summary>
+    public static bool Dark;
+
     public static readonly Color Accent = Color.FromArgb(255, 138, 0);
-    public static readonly Color Text = Color.FromArgb(31, 31, 31);
-    public static readonly Color Line = Color.FromArgb(226, 226, 226);
-    public static readonly Color HoverBack = Color.FromArgb(242, 242, 242);
-    public static readonly Color SoftAccent = Color.FromArgb(255, 243, 224);
+    public static Color Text => Dark ? Color.FromArgb(232, 232, 234) : Color.FromArgb(31, 31, 31);
+    public static Color Line => Dark ? Color.FromArgb(76, 82, 90) : Color.FromArgb(226, 226, 226);
+    public static Color HoverBack => Dark ? Color.FromArgb(64, 70, 77) : Color.FromArgb(242, 242, 242);
+    public static Color SoftAccent => Dark ? Color.FromArgb(74, 50, 22) : Color.FromArgb(255, 243, 224);
+    /// <summary>창·카드 바탕 (밝은 모드에서는 흰색)</summary>
+    public static Color Back => Dark ? Color.FromArgb(49, 54, 60) : Color.White;
+    /// <summary>흐린 글자 (설명·꺼진 값)</summary>
+    public static Color Sub => Dark ? Color.FromArgb(150, 150, 158) : Color.FromArgb(135, 135, 135);
+
+    /// <summary>
+    /// 밝은 모드 기준으로 정한 색을 지금 모드에 맞게 바꾼다. 밝은 모드면 그대로 돌려준다.
+    /// 다크 모드에서는 흰색·회색·옅은 바탕색처럼 밝기가 중요한 색은 밝기를 뒤집고,
+    /// 주황·파랑 같은 뚜렷한 색은 그대로 둔다.
+    /// </summary>
+    public static Color T(Color c)
+    {
+        if (!Dark || c.A == 0) return c;
+        float h = c.GetHue(), s = c.GetSaturation(), l = c.GetBrightness();
+        bool vivid = s >= 0.25f && l > 0.3f && l < 0.78f;
+        if (vivid) return c;
+        // 흰색(1) → 어두운 바탕, 거의 검정(0.12) → 밝은 글자
+        float nl = 0.2f + (1 - l) * 0.79f;
+        float ns = l > 0.78f ? s * 0.45f : s; // 옅은 색 바탕은 어두워지면 너무 진해 보여서 채도를 낮춘다
+        if (nl < 0.5f && ns < 0.1f) { h = 210; ns = 0.1f; } // 어두운 회색 바탕은 살짝 푸른 차콜색으로
+        return FromHsl(c.A, h, ns, Math.Clamp(nl, 0, 1));
+    }
+
+    static Color FromHsl(int a, float h, float s, float l)
+    {
+        float q = l < 0.5f ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+        float hk = h / 360f;
+        int Ch(float t)
+        {
+            if (t < 0) t += 1; if (t > 1) t -= 1;
+            float v = t < 1 / 6f ? p + (q - p) * 6 * t : t < 0.5f ? q : t < 2 / 3f ? p + (q - p) * (2 / 3f - t) * 6 : p;
+            return Math.Clamp((int)Math.Round(v * 255), 0, 255);
+        }
+        return s == 0 ? Color.FromArgb(a, (int)Math.Round(l * 255), (int)Math.Round(l * 255), (int)Math.Round(l * 255))
+                      : Color.FromArgb(a, Ch(hk + 1 / 3f), Ch(hk), Ch(hk - 1 / 3f));
+    }
+
+    [DllImport("dwmapi.dll", EntryPoint = "DwmSetWindowAttribute")] static extern int DwmSetBool(IntPtr h, int attr, ref int val, int size);
+    /// <summary>테두리가 있는 창의 제목줄을 다크 모드에 맞춘다.</summary>
+    public static void DarkTitle(IntPtr handle)
+    {
+        if (!Dark) return;
+        int on = 1;
+        try { DwmSetBool(handle, 20, ref on, sizeof(int)); }
+        catch (Exception ex) { Log.Write("UI", "제목줄을 어둡게 못 바꿈", ex); }
+    }
 
     static readonly ToolTip tip = new();
 
@@ -160,7 +209,7 @@ public class RoundMenuRenderer : ToolStripProfessionalRenderer
     public RoundMenuRenderer() { RoundedEdges = true; }
 
     protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) =>
-        e.Graphics.Clear(Color.White);
+        e.Graphics.Clear(UI.Back);
 
     protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { } // 테두리는 윈도우가 둥글게 그린다
 
@@ -178,7 +227,8 @@ public class RoundMenuRenderer : ToolStripProfessionalRenderer
 
     protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
     {
-        if (e.Item.Enabled) e.TextColor = e.Item.Selected ? Color.FromArgb(200, 95, 0) : UI.Text;
+        if (e.Item.Enabled) e.TextColor = e.Item.Selected ? (UI.Dark ? Color.FromArgb(255, 176, 90) : Color.FromArgb(200, 95, 0)) : UI.Text;
+        else e.TextColor = UI.Sub;
         base.OnRenderItemText(e);
     }
 
@@ -204,7 +254,101 @@ public class RoundMenuRenderer : ToolStripProfessionalRenderer
 
     protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
     {
-        e.ArrowColor = Color.FromArgb(140, 140, 140);
+        e.ArrowColor = UI.Sub;
         base.OnRenderArrow(e);
+    }
+}
+
+/// <summary>카드형 메뉴 칸의 모양: 아이콘 글자, 아래 설명, 오른쪽 단축키</summary>
+public sealed record MenuLook(string Glyph, string Sub, string? Key = null);
+
+/// <summary>톱니 메뉴처럼 칸마다 아이콘과 짧은 설명을 붙여 그리는 메뉴.</summary>
+public sealed class CardMenuRenderer : RoundMenuRenderer, IDisposable
+{
+    public void Dispose() { title.Dispose(); sub.Dispose(); icon.Dispose(); }
+
+    readonly float sc;
+    readonly Font title, sub, icon;
+
+    public CardMenuRenderer(float sc)
+    {
+        this.sc = sc;
+        title = new Font("맑은 고딕", 10f * UI.Z, FontStyle.Bold);
+        sub = new Font("맑은 고딕", 8.5f * UI.Z);
+        // 윈도우 11은 Segoe Fluent Icons, 10은 Segoe MDL2 Assets에 같은 아이콘이 있다
+        string fam = FontFamily.Families.Any(f => f.Name == "Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
+        icon = new Font(fam, 11f * UI.Z);
+    }
+
+    int S(float v) => UI.Scale(v, sc);
+
+    /// <summary>카드 칸 하나를 만든다</summary>
+    public ToolStripItem Item(string glyph, string text, string desc, Action onClick, string? key = null)
+    {
+        var size = new Size(S(270), S(50));
+        var it = new CardItem(size) { Text = text, AutoSize = false, Size = size, Tag = new MenuLook(glyph, desc, key), DisplayStyle = ToolStripItemDisplayStyle.Text };
+        it.Click += (_, _) => { (it.Owner as ToolStripDropDown)?.Close(ToolStripDropDownCloseReason.ItemClicked); onClick(); };
+        return it;
+    }
+
+    // 메뉴 항목(ToolStripMenuItem)은 메뉴가 너비를 글자 길이로 다시 재서 오른쪽이 잘린다.
+    // 버튼 칸은 정해 둔 크기를 그대로 쓴다
+    sealed class CardItem : ToolStripButton
+    {
+        readonly Size fixedSize;
+        public CardItem(Size s) { fixedSize = s; }
+        public override Size GetPreferredSize(Size constrainingSize) => fixedSize;
+    }
+
+    protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e)
+    {
+        if (e.Item.Tag is not MenuLook) { base.OnRenderButtonBackground(e); return; }
+        OnRenderMenuItemBackground(e);
+    }
+
+    protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+    {
+        if (!e.Item.Selected || !e.Item.Enabled) return;
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = UI.RoundRect(new RectangleF(S(3), S(1), e.Item.Width - S(6), e.Item.Height - S(2)), S(8));
+        using var b = new SolidBrush(UI.HoverBack);
+        e.Graphics.FillPath(b, path);
+    }
+
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+    {
+        if (e.Item.Tag is not MenuLook look) { base.OnRenderItemText(e); return; }
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        int h = e.Item.Height;
+        bool hot = e.Item.Selected;
+
+        // 왼쪽 아이콘 칸 (둥근 직사각형)
+        int box = S(32), x = S(10), y = (h - box) / 2;
+        using (var path = UI.RoundRect(new RectangleF(x, y, box, box), S(8)))
+        using (var b = new SolidBrush(hot ? UI.Accent : UI.SoftAccent))
+            g.FillPath(b, path);
+        TextRenderer.DrawText(g, look.Glyph, icon, new Rectangle(x, y, box, box), hot ? Color.White : UI.Accent,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+        // 제목과 설명
+        int tx = x + box + S(12);
+        int th = TextRenderer.MeasureText(g, "가", title, Size.Empty, TextFormatFlags.NoPadding).Height;
+        int sh = TextRenderer.MeasureText(g, "가", sub, Size.Empty, TextFormatFlags.NoPadding).Height;
+        int ty = (h - th - sh - S(2)) / 2;
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+        TextRenderer.DrawText(g, e.Item.Text, title, new Point(tx, ty), UI.Text, flags);
+        TextRenderer.DrawText(g, look.Sub, sub, new Point(tx, ty + th + S(2)), UI.Sub, flags);
+
+        // 오른쪽 단축키
+        if (look.Key != null)
+        {
+            var size = TextRenderer.MeasureText(g, look.Key, sub, Size.Empty, flags);
+            var r = new Rectangle(e.Item.Width - S(12) - size.Width - S(12), (h - size.Height - S(6)) / 2, size.Width + S(12), size.Height + S(6));
+            using (var path = UI.RoundRect(r, S(6)))
+            using (var pen = new Pen(UI.Line))
+                g.DrawPath(pen, path);
+            TextRenderer.DrawText(g, look.Key, sub, r, UI.Sub, flags | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
     }
 }

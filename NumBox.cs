@@ -41,7 +41,7 @@ public sealed class NumBox : Control
                  ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
         Cursor = Cursors.IBeam;
-        tb.BackColor = Fill;
+        tb.BackColor = Fill; tb.ForeColor = UI.Text;
         Controls.Add(tb);
         hold.Tick += (_, _) => { hold.Interval = 60; Value += holdDir; };
 
@@ -93,7 +93,7 @@ public sealed class NumBox : Control
 
     void Paint2()
     {
-        tb.BackColor = tb.Focused ? Color.White : Fill;
+        tb.BackColor = tb.Focused ? UI.Back : Fill;
         Invalidate();
     }
 
@@ -115,7 +115,7 @@ public sealed class NumBox : Control
         bool focus = tb.Focused;
         using (var path = UI.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), Radius))
         {
-            using var b = new SolidBrush(focus ? Color.White : Fill);
+            using var b = new SolidBrush(focus ? UI.Back : Fill);
             g.FillPath(b, path);
             if (focus) { using var pen = new Pen(UI.Accent, 1.5f); g.DrawPath(pen, path); }
         }
@@ -125,7 +125,7 @@ public sealed class NumBox : Control
         {
             int dir = k == 0 ? 1 : -1;
             bool can = dir > 0 ? value < max : value > min;
-            var c = !can ? Color.FromArgb(200, 200, 206) : hover == dir ? UI.Accent : Color.FromArgb(120, 120, 128);
+            var c = !can ? UI.T(Color.FromArgb(200, 200, 206)) : hover == dir ? UI.Accent : UI.T(Color.FromArgb(120, 120, 128));
             int cy = k == 0 ? Height / 2 - s - 1 : Height / 2 + s + 1;
             var pts = dir > 0
                 ? new[] { new Point(cx - s, cy + s / 2), new Point(cx, cy - s / 2), new Point(cx + s, cy + s / 2) }

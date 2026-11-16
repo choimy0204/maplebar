@@ -14,9 +14,9 @@ namespace MapleBar;
 sealed class StudyCard : Form
 {
     static readonly Color Deep = Color.FromArgb(200, 95, 0);
-    static readonly Color Gray = Color.FromArgb(130, 130, 136);
-    static readonly Color RowGray = Color.FromArgb(120, 120, 126);
-    static readonly Color Soft = Color.FromArgb(255, 245, 232);
+    static Color Gray => UI.T(Color.FromArgb(130, 130, 136));
+    static Color RowGray => UI.T(Color.FromArgb(120, 120, 126));
+    static Color Soft => UI.T(Color.FromArgb(255, 245, 232));
     const double AnimSec = 0.6;
     const int Keep = 200;        // 뒤로 가기용으로 기억하는 카드 수
 
@@ -61,7 +61,7 @@ sealed class StudyCard : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         AutoScaleMode = AutoScaleMode.None;
         Cursor = Cursors.Hand;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
@@ -335,7 +335,7 @@ sealed class StudyCard : Form
     {
         var r = PauseRect;
         using (var path = UI.RoundRect(new RectangleF(r.X, r.Y, r.Width, r.Height), S(6)))
-        using (var bg = new SolidBrush(paused ? UI.Accent : hover == 5 ? Color.FromArgb(255, 226, 190) : UI.SoftAccent))
+        using (var bg = new SolidBrush(paused ? UI.Accent : hover == 5 ? UI.T(Color.FromArgb(255, 226, 190)) : UI.SoftAccent))
             g.FillPath(bg, path);
         float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f, h = S(10);
         using var fg = new SolidBrush(paused ? Color.White : Deep);

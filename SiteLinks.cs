@@ -14,6 +14,26 @@ public static class Webtoon
         (u.Host.Equals("naver.com", StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith(".naver.com", StringComparison.OrdinalIgnoreCase));
 }
 
+/// <summary>브라우저: 구글로 시작하고, 창 위 주소 칸으로 다른 사이트도 연다</summary>
+public static class Browser
+{
+    public const string Home = "https://www.google.com/";
+    public static bool IsGoogle(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) &&
+        (u.Host.Equals("google.com", StringComparison.OrdinalIgnoreCase) || u.Host.Equals("www.google.com", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>주소 칸에 쓴 글을 열 주소로 바꾼다. 주소처럼 보이면 https://를 붙이고, 아니면 구글에서 찾는다.</summary>
+    public static string ToUrl(string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0) return Home;
+        if (Uri.TryCreate(text, UriKind.Absolute, out var u) && (u.Scheme == "http" || u.Scheme == "https")) return u.ToString();
+        bool looksLikeHost = !text.Contains(' ') && (text.Contains('.') || text.StartsWith("localhost", StringComparison.OrdinalIgnoreCase));
+        if (looksLikeHost && Uri.TryCreate("https://" + text, UriKind.Absolute, out var h) && h.Host.Contains('.')) return h.ToString();
+        return "https://www.google.com/search?q=" + Uri.EscapeDataString(text);
+    }
+}
+
 public static class Music
 {
     public const string Home = "https://meaegi.com/music";
@@ -142,6 +162,7 @@ public static class Coordi
 public static class Nexon
 {
     public const string Auction = "https://auction.maplestory.nexon.com/character-select";
+    public static string LoginUrl => "https://nxlogin.nexon.com/common/login.aspx?redirect=" + Uri.EscapeDataString(Auction);
     // 로그인·OTP 등 넥슨 쪽 새 창은 기본 브라우저로 보내지 않고 앱 창에서 연다 (로그인이 앱 창에 남게)
     public static bool IsNexon(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) &&
@@ -1414,10 +1435,23 @@ public static class Nexon
           const onPage = () => location.pathname.replace(/\/$/, '').endsWith('/result');
           // 착용 창은 앱이 따로 표시한다(__mbWearWin). 다른 환산 창은 착용 아이템을 받지 않는다
           const mine = !!window.__mbWearWin;
+          // 착용 창은 계산이 다 끝날 때까지 화면 전체를 '계산하는 중'으로 덮는다 (중간에 바뀌는 화면을 보이지 않게)
+          let done = true, lastTxt = '', sameAt = 0, onNow = false;
+          const cover = (on) => {
+            const d = document.documentElement;
+            if (!d) return;
+            if (!on) { if (d.classList.contains('mbwL')) d.classList.remove('mbwL'); return; }
+            if (!document.getElementById('mbwCover')) {
+              const s = document.createElement('style'); s.id = 'mbwCover';
+              s.textContent = "html.mbwL::after{content:'아이템 착용해서 계산하는 중…';position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#fff;font:14px sans-serif;color:#888;pointer-events:auto}";
+              (document.head || d).appendChild(s);
+            }
+            if (!d.classList.contains('mbwL')) d.classList.add('mbwL');
+          };
           try {
             if (mine) {
               const t = localStorage.getItem('mb-wear-it');
-              if (t && onPage()) { sessionStorage.setItem('mb-wear', '1'); sessionStorage.setItem('mb-wear-it', t); }
+              if (t && onPage()) { sessionStorage.setItem('mb-wear', '1'); sessionStorage.setItem('mb-wear-it', t); done = false; cover(true); }
               // 착용 창이 살아 있다고 알린다 (닫히면 다른 창이 남은 착용 아이템을 지운다)
               const beat = () => { try { localStorage.setItem('mb-wear-live', String(Date.now())); } catch (_) {} };
               beat(); setInterval(beat, 2000);
@@ -1438,6 +1472,8 @@ public static class Nexon
           let full = false, onAt = 0, retry = 0, stores = null, findTry = 0, findAt = 0, holding = false, why = '';
           // 가볍게 돌리려고 기억해 두는 것들 (0.25초마다 페이지 전체를 다시 훑지 않게)
           let itCache = null, bgColor = '', resCache = null, lastToggle = 0, needToggle = false, applies = 0, okSeen = false;
+          // 결과가 나온 뒤에는 1초에 한 번만 살핀다 (계속 0.25초마다 돌면 창을 오래 열어 둘 때 무거워진다)
+          let calm = false, lastRun = 0;
           const startAt = Date.now();
           // 사이트의 장비 목록(원래 장비, 보관함)을 찾는다. 무거운 일이라 1초에 한 번, 몇 번만 해 본다
           const getStores = () => {
@@ -1497,16 +1533,23 @@ public static class Nexon
             #mbwHold{position:fixed;left:8px;right:96px;overflow:hidden;z-index:2147483002;display:flex;align-items:center;gap:10px;font:12px sans-serif;color:#888}
             #mbwHold button{flex:none;padding:6px 12px;border-radius:6px;border:1px solid #bbb;background:#fff;color:#333;font:12px sans-serif;cursor:pointer;user-select:none;touch-action:none}
             #mbwHold button[data-on]{background:#ff8a3d;border-color:#ff8a3d;color:#fff}
-            html.mbw body{overflow:hidden!important}`;
+            html.mbw body{overflow:hidden!important}
+            [data-mbw-wait]{visibility:hidden!important}
+            #mbwCalc{position:fixed;left:8px;right:8px;z-index:2147483002;padding:28px 0;text-align:center;font:13px sans-serif;color:#888}`;
           const setOn = (sw) => { if (sw && sw.getAttribute('aria-checked') !== 'true' && !sw.disabled) sw.click(); };
-          const tick = () => {
+          const tick = (force) => {
             try {
               const btn = document.getElementById('mbwBtn');
               if (window.__mbFrozen) return; // 새 아이템으로 다시 여는 중: 옛 아이템을 다시 끼지 않는다
+              const now = Date.now();
+              if (force !== true && calm && now - lastRun < 1000) return;
+              lastRun = now;
+              if (!done && now - startAt > 30000) done = true; // 오래 걸리면 그냥 보여 준다
               if (sessionStorage.getItem('mb-wear') !== '1' || !onPage() || !document.body) {
+                cover(false);
                 document.documentElement.classList.remove('mbw');
                 document.getElementById('mbwBg')?.remove(); document.getElementById('mbwCss')?.remove(); btn?.remove();
-                document.getElementById('mbwHold')?.remove(); holding = false;
+                document.getElementById('mbwHold')?.remove(); document.getElementById('mbwCalc')?.remove(); holding = false;
                 return;
               }
               // 사람 확인 화면은 절대 가리거나 누르지 않는다
@@ -1528,6 +1571,7 @@ public static class Nexon
                 const ready = !!document.querySelector('img[alt="boss"]');
                 const ti = document.getElementById('toggleItem');
                 const on = sw && ti && sw.getAttribute('aria-checked') === 'true' && ti.getAttribute('aria-checked') === 'true';
+                onNow = !!on;
                 // 착용은 캐릭터를 다 불러온 뒤에 한다 (불러올 때 사이트가 착용을 풀기 때문). 켜진 뒤에 바뀌면 다시 계산하게 한다
                 // '원래 아이템 장착하기'를 누르고 있는 동안은 아이템 적용하기를 꺼 둔다
                 // 사이트가 계속 착용을 풀면 끝없이 다시 계산하지 않게 몇 번만 다시 낀다
@@ -1546,6 +1590,7 @@ public static class Nexon
                   else okSeen = true;
                 }
               }
+              calm = !!h4 && !holding && !needToggle && (okSeen || retry >= 3);
               // 표시할 곳 찾기
               const img = document.querySelector('img[alt="boss"]');
               const grid = img && img.closest('.flex-wrap');
@@ -1575,9 +1620,18 @@ public static class Nexon
               }
               document.querySelectorAll('[data-mbw=res]').forEach(e => { if (e !== res) delete e.dataset.mbw; });
               if (res && res.dataset.mbw !== 'res') res.dataset.mbw = 'res';
+              // 덮개 걷기: 아이템이 켜진 채 결과가 0이 아니고 1초 넘게 그대로면 다 끝난 것으로 본다.
+              // 사람 확인 화면이 뜨거나, '전체 보기'를 눌렀거나, 여러 번 해 봐도 0이면 바로 걷는다
+              if (!done) {
+                const txt = res ? res.textContent : '';
+                if (txt !== lastTxt) { lastTxt = txt; sameAt = now; }
+                const ok = !!grid && !!res && !holding && !needToggle && onNow && onAt && now - onAt > 1500 && !/0\.000%/.test(txt) && now - lastToggle > 1200 && now - sameAt > 1000;
+                if (human || full || ok || (retry >= 3 && onAt && now - onAt > 2500)) done = true;
+              }
+              cover(!done && !human);
               // 버튼
               let b = btn;
-              if (!b) { b = document.createElement('button'); b.id = 'mbwBtn'; b.onclick = () => { full = !full; tick(); }; document.body.appendChild(b); }
+              if (!b) { b = document.createElement('button'); b.id = 'mbwBtn'; b.onclick = () => { full = !full; tick(true); }; document.body.appendChild(b); }
               const small = !full && !human && grid;
               // 보스표가 뜨기 전에는 원래 화면 대신 '불러오는 중'으로 가린다 (오래 걸리면 그냥 보여 준다)
               const loading = !full && !human && !grid && Date.now() - startAt < 15000;
@@ -1589,7 +1643,8 @@ public static class Nexon
               if (!small && !loading) {
                 document.documentElement.classList.remove('mbw');
                 document.getElementById('mbwBg')?.remove(); document.getElementById('mbwCss')?.remove();
-                document.getElementById('mbwHold')?.remove(); holding = false;
+                document.getElementById('mbwHold')?.remove(); document.getElementById('mbwCalc')?.remove(); holding = false;
+                document.querySelectorAll('[data-mbw-wait]').forEach(e => delete e.dataset.mbwWait);
                 return;
               }
               // 보스컷 안내 창은 닫는다
@@ -1605,6 +1660,16 @@ public static class Nexon
               if (bg.textContent !== msg) bg.textContent = msg;
               if (!document.documentElement.classList.contains('mbw')) document.documentElement.classList.add('mbw');
               if (res && grid) { const rt = (8 + grid.getBoundingClientRect().height + 10) + 'px'; if (res.style.top !== rt) res.style.top = rt; }
+              // 아이템을 넣고 계산이 끝나기 전에는 결과가 0으로 보여서, 0인 동안은 결과를 가리고 '계산하는 중'을 띄운다
+              // (원래 아이템으로 볼 때, 여러 번 해 봐도 0일 때, 1분이 넘었을 때는 그대로 보여 준다)
+              const gaveUp = retry >= 3 && onAt && Date.now() - onAt > 2500;
+              const wait = !!res && !!grid && !holding && !gaveUp && Date.now() - startAt < 60000 && /0\.000%/.test(res.textContent);
+              if (res) { if (wait) { if (res.dataset.mbwWait !== '1') res.dataset.mbwWait = '1'; } else if (res.dataset.mbwWait) delete res.dataset.mbwWait; }
+              let cb = document.getElementById('mbwCalc');
+              if (!cb) { cb = document.createElement('div'); cb.id = 'mbwCalc'; cb.textContent = '아이템 넣고 계산하는 중…'; document.body.appendChild(cb); }
+              const cd = wait ? '' : 'none';
+              if (cb.style.display !== cd) cb.style.display = cd;
+              if (wait && cb.style.top !== res.style.top) cb.style.top = res.style.top;
               // 결과 아래: 누를 때마다 원래 아이템 ↔ 고른 아이템으로 바꿔 계산 + 주의문
               let hb = document.getElementById('mbwHold');
               if (!hb) {

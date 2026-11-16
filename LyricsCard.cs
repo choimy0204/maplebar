@@ -30,7 +30,7 @@ sealed class LyricsCard : Form
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         TopMost = true;
-        BackColor = Color.FromArgb(255, 253, 250);
+        BackColor = UI.T(Color.FromArgb(255, 253, 250));
         DoubleBuffered = true;
         font = new Font("맑은 고딕", 9.5f * UI.Z);
         bold = new Font("맑은 고딕", 10f * UI.Z, FontStyle.Bold);
@@ -155,10 +155,10 @@ sealed class LyricsCard : Form
         // 머리: 주황 점 + 옅은 '가사'
         using (var dot = new SolidBrush(UI.Accent))
             g.FillEllipse(dot, S(14), S(13), S(6), S(6));
-        TextRenderer.DrawText(g, "가사", head, new Point(S(24), S(8)), Color.FromArgb(150, 140, 130), TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(g, "가사", head, new Point(S(24), S(8)), UI.T(Color.FromArgb(150, 140, 130)), TextFormatFlags.NoPrefix);
         // ✕ (가사 보기 끄기)
         var c = CloseRect;
-        using (var p = new Pen(Color.FromArgb(185, 180, 175), Math.Max(1.2f, S(2) * 0.6f)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+        using (var p = new Pen(UI.T(Color.FromArgb(185, 180, 175)), Math.Max(1.2f, S(2) * 0.6f)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
         {
             float cx = c.X + c.Width / 2f, cy = c.Y + c.Height / 2f, d = S(4);
             g.DrawLine(p, cx - d, cy - d, cx + d, cy + d);
@@ -188,8 +188,8 @@ sealed class LyricsCard : Form
             }
             // 시간 맞춘 가사: 지난 줄은 아주 옅게, 다음 줄은 회색, 지금 줄은 주황 굵게
             var col = now ? UI.Accent
-                : cur < 0 ? Color.FromArgb(70, 66, 62)
-                : i < cur ? Color.FromArgb(200, 196, 192) : Color.FromArgb(125, 120, 115);
+                : cur < 0 ? UI.T(Color.FromArgb(70, 66, 62))
+                : i < cur ? UI.T(Color.FromArgb(200, 196, 192)) : UI.T(Color.FromArgb(125, 120, 115));
             TextRenderer.DrawText(g, lines[i], now ? bold : font, lr, col, Flags);
         }
         // 위아래 끝은 잘리지 않고 스르륵 사라지게

@@ -52,7 +52,7 @@ sealed class DevInfo : Form
 
     int S(float v) => UI.Scale(v, sc);
     Font F(float size, FontStyle style = FontStyle.Regular) => new("맑은 고딕", size * UI.Z, style);
-    static readonly Color Gray = Color.FromArgb(130, 130, 136);
+    static Color Gray => UI.T(Color.FromArgb(130, 130, 136));
 
     DevInfo()
     {
@@ -62,7 +62,7 @@ sealed class DevInfo : Form
         TopMost = true;
         KeyPreview = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         AutoScaleMode = AutoScaleMode.None;
 
         int leftW = S(264), mid = S(18) + leftW + S(18), rightX = mid + S(18), rightW = S(370); // 공지 제목이 한 줄에 들어가게 넉넉히
@@ -79,7 +79,7 @@ sealed class DevInfo : Form
         // ── 왼쪽: 개발자 정보
         var title = new Label { Text = "개발자 정보", Font = F(11.5f, FontStyle.Bold), ForeColor = UI.Text, AutoSize = true, Location = new Point(S(18), S(18)) };
         // 코디: 배경 없이 캐릭터만 잘라서 크게 보여 준다
-        avatar = new PictureBox { Location = new Point(S(18), S(50)), Size = new Size(S(116), S(160)), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = Color.White };
+        avatar = new PictureBox { Location = new Point(S(18), S(50)), Size = new Size(S(116), S(160)), SizeMode = PictureBoxSizeMode.CenterImage, BackColor = UI.Back };
         var card = avatar;
 
         int tx = card.Right + S(14);
@@ -95,7 +95,7 @@ sealed class DevInfo : Form
 
         ask = new Label
         {
-            Font = F(9.5f), ForeColor = UI.Text, BackColor = Color.FromArgb(247, 247, 249), AutoSize = false,
+            Font = F(9.5f), ForeColor = UI.Text, BackColor = UI.T(Color.FromArgb(247, 247, 249)), AutoSize = false,
             Location = new Point(S(18), card.Bottom + S(12)), Size = new Size(leftW, S(56)),
             Padding = new Padding(S(12), 0, S(12), 0), TextAlign = ContentAlignment.MiddleLeft,
         };
@@ -301,7 +301,7 @@ sealed class DevInfo : Form
             }
             if (nt.Body.Length > 0)
             {
-                var b = new Label { Text = nt.Body, Font = F(9), ForeColor = Color.FromArgb(80, 80, 86), AutoSize = true, MaximumSize = new Size(w, 0), Location = new Point(0, y) };
+                var b = new Label { Text = nt.Body, Font = F(9), ForeColor = UI.T(Color.FromArgb(80, 80, 86)), AutoSize = true, MaximumSize = new Size(w, 0), Location = new Point(0, y) };
                 notes.Controls.Add(b); y += b.PreferredSize.Height;
             }
             y += S(12);

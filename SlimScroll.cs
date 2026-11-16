@@ -15,7 +15,7 @@ sealed class SlimScroll : Panel
         this.sc = sc;
         Content = content;
         DoubleBuffered = true;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         SetStyle(ControlStyles.Selectable, true);
         bar = new Bar(this) { Width = S(12) };
         Controls.Add(content);
@@ -50,7 +50,7 @@ sealed class SlimScroll : Panel
         {
             this.box = box;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-            BackColor = Color.White;
+            BackColor = UI.Back;
             Cursor = Cursors.Hand;
         }
 
@@ -64,7 +64,7 @@ sealed class SlimScroll : Panel
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             int w = hot || drag ? box.S(8) : box.S(5), x = Width - w - box.S(2);
-            var c = drag ? Color.FromArgb(150, 150, 150) : hot ? Color.FromArgb(185, 185, 185) : Color.FromArgb(215, 215, 215);
+            var c = drag ? UI.T(Color.FromArgb(150, 150, 150)) : hot ? UI.T(Color.FromArgb(185, 185, 185)) : UI.T(Color.FromArgb(215, 215, 215));
             using var b = new SolidBrush(c);
             using var p = UI.RoundRect(new Rectangle(x, ThumbY, w, ThumbH), w / 2f);
             g.FillPath(b, p);

@@ -9,7 +9,8 @@ namespace MapleBar;
 sealed partial class MusicDock
 {
     // ── 그리기 ──
-    static readonly Color Fill = UI.SoftAccent, Edge = Color.FromArgb(255, 214, 160);
+    static Color Fill => UI.SoftAccent;
+    static Color Edge => UI.T(Color.FromArgb(255, 214, 160));
 
     Bitmap? fxBmp; // Render가 15ms마다 쓰는 판
 

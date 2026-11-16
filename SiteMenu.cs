@@ -27,6 +27,28 @@ public static class SiteMenu
     static MenuEntry H(string t) => new(t, null);
     static MenuEntry I(string t, string p) => new(t, p);
 
+    /// <summary>숨김 설정에 쓰는 이름 ("메뉴/항목")</summary>
+    public static string ItemKey(TopMenu top, MenuEntry it) => top.Name + "/" + it.Title;
+
+    /// <summary>숨긴 항목을 뺀 펼침 메뉴. 항목이 하나도 안 남은 구역 제목도 뺀다.</summary>
+    public static MenuEntry[] VisibleItems(TopMenu top, ICollection<string> hidden)
+    {
+        var list = new List<MenuEntry>();
+        MenuEntry? head = null;
+        foreach (var it in top.Items ?? Array.Empty<MenuEntry>())
+        {
+            if (it.Path == null) { head = it; continue; }
+            if (hidden.Contains(ItemKey(top, it))) continue;
+            if (head != null) { list.Add(head); head = null; }
+            list.Add(it);
+        }
+        return list.ToArray();
+    }
+
+    /// <summary>바에 이 메뉴 버튼을 보일지: 숨기지 않았고, 펼침 메뉴라면 남은 항목이 있을 때</summary>
+    public static bool ShowTop(TopMenu top, Settings st) =>
+        !st.BarHiddenTops.Contains(top.Name) && (top.Items == null || top.Path != null || VisibleItems(top, st.BarHiddenItems).Length > 0);
+
     public static readonly TopMenu[] Top =
     {
         new("직접입력", "/ko/manual/input", null),
@@ -53,22 +75,20 @@ public static class SiteMenu
             H("해방 시뮬레이터"),
             I("제네시스 해방", "/ko/genesis"), I("데스티니 해방", "/ko/destiny"),
         }),
-        // 메이플스토리 인벤 (주소 전체를 그대로 연다)
-        new("인벤", null, new[]
+        // 웹: 메이플스토리 인벤 · 네이버 웹툰 · 브라우저 (주소 전체를 그대로 연다. 로그인은 사용자가 직접 한다)
+        new("웹", null, new[]
         {
-            H("자유게시판"),
+            H("인벤 자유게시판"),
             I("전체 글", Inven.Board), I("10추 글", Inven.Board + "?my=chu"),
             I("30추 글", Inven.Board + "?my=chuchu"), I("인증 30추 글", Inven.Board + "?my=chuver"),
-            H("계정"),
             I("인벤 로그인", Inven.LoginUrl),
-        }),
-        // 네이버 웹툰 (작은 창에 맞는 모바일 화면, 로그인은 사용자가 직접 한다)
-        new("웹툰", null, new[]
-        {
+            // 네이버 웹툰 (작은 창에 맞는 모바일 화면)
             H("네이버 웹툰"),
             I("웹툰 홈", Webtoon.Home),
-            H("계정"),
             I("네이버 로그인", Webtoon.LoginUrl),
+            // 브라우저: 구글로 시작하고, 창 위 주소 칸에 다른 주소를 넣어 옮겨 간다
+            H("브라우저"),
+            I("브라우저 (구글)", Browser.Home),
         }),
         // 메이플 옥션: 웹 경매장. 넥슨 ID 로그인·OTP는 사용자가 직접 한다 (200레벨 이상, 수령은 게임 안에서)
         new("경매장", Nexon.Auction, null),

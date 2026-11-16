@@ -16,7 +16,7 @@ sealed class UpdateToast : Form
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.White;
+        BackColor = UI.Back;
         Font = new Font("맑은 고딕", 10f);
         AutoScaleMode = AutoScaleMode.None;
         ClientSize = new Size(S(280), S(104));
@@ -33,7 +33,7 @@ sealed class UpdateToast : Form
         var row = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft, AutoSize = false,
-            Location = new Point(S(12), S(62)), Size = new Size(S(256), S(32)), BackColor = Color.White,
+            Location = new Point(S(12), S(62)), Size = new Size(S(256), S(32)), BackColor = UI.Back,
         };
         row.Controls.Add(no);
         row.Controls.Add(yes);

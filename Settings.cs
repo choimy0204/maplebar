@@ -6,6 +6,9 @@ namespace MapleBar;
 public class Settings
 {
     public List<string> Recent { get; set; } = new();
+    public List<string> BarOrder { get; set; } = new(); // 바 메뉴 버튼 순서 (메뉴 이름 목록)
+    public List<string> BarHiddenTops { get; set; } = new();  // 바에서 숨긴 메뉴 이름
+    public List<string> BarHiddenItems { get; set; } = new(); // 펼침 메뉴에서 숨긴 항목 ("메뉴/항목")
     public int? BarX { get; set; }
     public int? BarY { get; set; }
     public int? BarCX { get; set; } // 바의 가운데 x (폭이 바뀌어도 자리가 밀리지 않게)
@@ -21,6 +24,7 @@ public class Settings
     public int WinW { get; set; }
     public int WinH { get; set; }
     public bool WinTopMost { get; set; } = true;
+    public int WebZoom { get; set; } = 100; // 사이트 창 화면 배율(%)
     public int WinOpacity { get; set; } = 100; // 사이트 창 투명도(%), 마지막으로 고른 값
     // 뮤직: 곡이 바뀔 때 레코드 효과음
     public bool MusicFx { get; set; } = true;
@@ -30,6 +34,8 @@ public class Settings
     public bool AlertWhenHidden { get; set; } = true;
     // 시계: 켜기, 초·날짜·24시간 보기, 게임 창 안에서의 자리(비율, 없으면 오른쪽 위)
     public bool ClockOn { get; set; } = false;
+    // 다크 모드 (프로그램 설정 → 화면)
+    public bool DarkMode { get; set; }
     // 유튜브 목록 창에서 영상을 누르면 재생 창을 따로 띄우지 않고 그 창에서 본다
     public bool YtSameWindow { get; set; }
     // 실시간 방송 창에서 방송을 누르면 재생 창을 따로 띄우지 않고 그 창에서 본다
@@ -42,6 +48,13 @@ public class Settings
     // 알림 소리: 켜기와 크기(%)
     public bool SoundOn { get; set; } = true;
     public int SoundVol { get; set; } = 60;
+    /// <summary>화면 가장자리 빛·글자 알림. 끄면 소리만 난다</summary>
+    public bool AlertVisual { get; set; } = true;
+    /// <summary>알림 방식: 화면 전체가 물드는 효과 / 가장자리를 빛이 한 바퀴 도는 효과</summary>
+    public bool AlertFlash { get; set; } = true;
+    public bool AlertEdge { get; set; } = true;
+    // 조합 키: 이 키를 누른 채로 버프·도핑 키를 눌러야 세는 칸이 있다 (0이면 없음)
+    public int ComboKey { get; set; }
     // 뮤직 칸을 바에서 꺼내 따로 둔 자리 (MusicFloat가 false면 바 안에 있다)
     public bool MusicFloat { get; set; }
     public int? MusicX { get; set; }
@@ -56,8 +69,9 @@ public class Settings
     public bool JanusOn { get; set; }
     public int JanusKey { get; set; }   // 가상 키 코드 (0이면 없음)
     public int JanusSec { get; set; } = 80;
-    public bool LunaExt { get; set; } = true;   // 루나 익스텐션: 있으면 다시 깔 때 시간을 새로 센다
+    public bool LunaExt { get; set; } = true;   // 안 쓴다 (5석펫 스위치로 합침). 예전 설정 파일과 맞추려고 남겨 둔다
     public bool PickupOn { get; set; } = true;  // 설치 65초 뒤 아이템 회수 알림
+    public bool JanusEarly { get; set; }        // 야누스가 꺼지기 5초 전에 미리 알림 (다시 깔 여유)
     public bool PetOn { get; set; }             // 5석펫: 게더링(쿨 90초)마다 야누스 시간이 더해진다
     public DateTime? PetGatherAt { get; set; }   // 지금 세는 야누스의 게더링 박자 기준 (이 시각 + 90초×k)
     public DateTime? PetLastGather { get; set; } // 마지막 게더링 (다음 설치 때 쿨이 남았는지 본다)
@@ -216,6 +230,7 @@ public class BuffSlot
     public DateTime? KeyAt { get; set; }
     public DateTime? EnterAt { get; set; }
     public string? Name { get; set; } // 비어 있으면 "버프 1" 같은 기본 이름
+    public bool Combo { get; set; }   // 켜면 조합 키를 누른 채로 눌러야 센다
 }
 
 /// <summary>부스트 도핑 알림 한 칸</summary>
@@ -227,6 +242,7 @@ public class DopeSlot
     public DateTime? Start { get; set; }       // 실제로 효과가 시작되는 시각 (사용 대기를 더한 값)
     public bool DelayOn { get; set; } = true;  // 쓰고 몇 초 뒤에 효과가 붙는 경우
     public int DelaySec { get; set; } = 3;
+    public bool Combo { get; set; }            // 켜면 조합 키를 누른 채로 눌러야 센다
     public string? Name { get; set; }          // 비어 있으면 "도핑 1" 같은 기본 이름
 }
 
@@ -242,6 +258,8 @@ public class RepeatSlot
     };
     public bool On { get; set; }
     public int Key { get; set; }
+    public bool Combo { get; set; }       // 켜면 조합 키를 누른 채로 눌러야 센다
+    public bool WaitEnter { get; set; }   // 켜면 키 다음 엔터를 누른 때부터 센다
     public int Sec { get; set; } = 30;    // 주기 (초)
     public int UntilSec { get; set; }     // 키를 누른 뒤 이만큼 반복하고 멈춘다 (0이면 끌 때까지)
     public int Argb { get; set; }

@@ -73,7 +73,7 @@ const FIXED={generalCore1:['솔 야누스','/hexaskill/General/General_1_0.png']
 const COL={M:['#a855f7','#fff','#f6efff'],R:['#3b82f6','#fff','#ebf3ff'],S:['#facc15','#1f1f1f','#fefbe6'],G:['#22c55e','#fff','#e9f9ef']};
 const ERDA='/sole_erda.png',PIECE='/sole_erda_piece.png';
 const CSS=`html:has(#mbhx:not([style*="none"])),html:has(#mbhx:not([style*="none"])) body{overflow:hidden!important}
-#mbhx{position:fixed;inset:0;z-index:2147483647;overflow:auto;background:#f5f6f8;color:#1f1f1f;font:14px/1.45 Pretendard,"Malgun Gothic",sans-serif;padding:14px 14px 24px;-webkit-user-select:none;user-select:none}
+#mbhx{position:fixed;inset:0;z-index:2147483647;overflow:auto;background:#f5f6f8;color:#1f1f1f;font:14px/1.45 Pretendard,"Malgun Gothic",sans-serif;padding:10px;-webkit-user-select:none;user-select:none}
 #mbhx *{box-sizing:border-box;margin:0;padding:0;font:inherit;color:inherit}
 #mbhx b{font-weight:700}
 #mbhx .wrap{max-width:980px;margin:0 auto}
@@ -88,7 +88,7 @@ const CSS=`html:has(#mbhx:not([style*="none"])),html:has(#mbhx:not([style*="none
 #mbhx button:hover{background:#f2f2f2}
 #mbhx .card{background:#fff;border:1px solid #e2e2e2;border-radius:12px;padding:12px;margin-bottom:10px}
 #mbhx .grp{display:flex;align-items:center;gap:10px}
-#mbhx .grp+.grp{margin-top:8px;padding-top:8px;border-top:1px dashed #eee}
+#mbhx .grp+.grp{margin-top:6px;padding-top:6px;border-top:1px dashed #eee}
 #mbhx .gl{flex:none;width:76px;display:flex;align-items:center;gap:6px;font-size:12px;color:#555}
 #mbhx .tag{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;font-size:10px;font-weight:700}
 #mbhx .tiles{display:flex;flex-wrap:wrap;gap:8px}
@@ -99,11 +99,11 @@ const CSS=`html:has(#mbhx:not([style*="none"])),html:has(#mbhx:not([style*="none
 #mbhx .tile .lv{position:absolute;right:-2px;bottom:-2px;min-width:20px;height:16px;padding:0 3px;border-radius:5px;background:#111;color:#fff;font-size:11px;font-weight:700;line-height:16px;text-align:center}
 #mbhx .tile.max .lv{background:#ff8a00}
 #mbhx .tile.on{box-shadow:0 0 0 2px #fff,0 0 0 4px #ff8a00}
-#mbhx .sum{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;margin-top:12px;padding-top:10px;border-top:1px solid #eee;font-size:12px;color:#666}
+#mbhx .sum{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:12px;color:#666}
 #mbhx .sum img{width:20px;height:20px;display:block}
 #mbhx .sum b{color:#1f1f1f;margin-right:6px}
 #mbhx .empty{font-size:13px;color:#888;text-align:center;padding:14px 0}
-#mbhx .top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+#mbhx .top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 #mbhx .top img{width:38px;height:38px;border-radius:8px;border:1px solid #e2e2e2;display:block}
 #mbhx .nm{font-weight:700}
 #mbhx .now{font-size:12px;color:#777}
@@ -120,7 +120,7 @@ const CSS=`html:has(#mbhx:not([style*="none"])),html:has(#mbhx:not([style*="none
 #mbhx .sc span{text-align:center}
 #mbhx .hint{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:12px;color:#888}
 #mbhx .hint b{color:#1f1f1f}
-#mbhx .res{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+#mbhx .res{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 #mbhx .res>div{display:flex;align-items:center;gap:8px;background:#fff3e0;border-radius:10px;padding:8px 10px}
 #mbhx .res img{width:30px;height:30px;display:block}
 #mbhx .res small{display:block;font-size:11px;color:#8a6a3a}
@@ -167,13 +167,14 @@ function meta(k){
 }
 function build(){
  root=document.createElement('div');root.id='mbhx';
- root.innerHTML='<style>'+CSS+'</style><div class="wrap"><div class="hd"><div class="t"><b>헥사 강화 계산기</b><div class="who"></div></div><button data-act="site">사이트 보기</button></div><div class="body"><div class="card g"></div><div class="card p"></div></div></div>';
+ root.innerHTML='<style>'+CSS+'</style><div class="wrap"><div class="body"><div class="card g"></div><div class="card p"></div></div></div>';
  document.documentElement.appendChild(root);
- grid=root.querySelector('.g');pane=root.querySelector('.p');who=root.querySelector('.who');
+ grid=root.querySelector('.g');pane=root.querySelector('.p');
+ addEventListener('resize',fit);
  root.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]');
   if(b){if(b.dataset.act==='site'){hidden=true;sync('')}else if(b.dataset.act==='reset'&&sel){delete rng[sel];fillPanel()}return}
-  const t=e.target.closest('.tile');if(t){sel=t.dataset.k;fillGrid();fillPanel();pane.scrollIntoView({block:'nearest'})}});
+  const t=e.target.closest('.tile');if(t){sel=t.dataset.k;fillGrid();fillPanel()}});
  root.addEventListener('contextmenu',e=>{if(e.target.closest('.bar'))e.preventDefault()});
  root.addEventListener('pointerdown',e=>{const bar=e.target.closest('.bar');if(!bar||(e.button!==0&&e.button!==2))return;
   e.preventDefault();if(!sel)return;const l=at(bar,e),r=fix();
@@ -195,7 +196,15 @@ function fillGrid(){
   h+='</div></div>'}
  h+='<div class="sum"><span>전부 30레벨까지 더</span><img src="'+ERDA+'" alt="솔 에르다"><b>'+fmt(te)+'</b><img src="'+PIECE+'" alt="조각"><b>'+fmt(tp)+'</b></div>';
  grid.innerHTML=h;
- who.textContent=[data.name,data.cls].filter(Boolean).join(' · ');
+ fit();
+}
+// 창 높이 안에 다 들어오게 줄인다 (스크롤 없이 한눈에)
+function fit(){
+ const w=root&&root.querySelector('.wrap');if(!w||!root.clientHeight)return;
+ w.style.zoom='1';
+ const cs=getComputedStyle(root),avail=root.clientHeight-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
+ const s=Math.min(1,avail/w.scrollHeight);
+ w.style.zoom=s<1?String(Math.floor(s*1000)/1000):'1';
 }
 function fillPanel(){
  if(!sel){pane.innerHTML='<p class="empty">코어를 누르면 필요한 개수를 볼 수 있어요</p>';return}
@@ -205,7 +214,7 @@ function fillPanel(){
   '<div class="bar">'+cells+'</div><div class="sc"><span style="grid-column:1">1</span><span style="grid-column:10">10</span><span style="grid-column:20">20</span><span style="grid-column:30">30</span></div>'+
   '<div class="hint"><span class="hv">'+HINT+'</span><button data-act="reset">처음대로</button></div>'+
   '<div class="res"><div><img src="'+ERDA+'" alt=""><span><small>솔 에르다</small><b class="e"></b>개</span></div><div><img src="'+PIECE+'" alt=""><span><small>솔 에르다 조각</small><b class="pc"></b>개</span></div></div>';
- paint();
+ paint();fit();
 }
 // 처음엔 지금 레벨 → 30 (다 올린 코어는 0 → 30). 시작은 0~29, 목표는 시작보다 높게 30까지
 function fix(){const L=lvl(sel);let r=rng[sel];if(!r)r=rng[sel]={a:L>=30?0:L,b:30};
@@ -225,7 +234,7 @@ function setAt(e){if(!sel||!dragBar)return;const l=at(dragBar,e),r=fix();
 function hover(l){const h=pane&&pane.querySelector('.hv');if(h)h.innerHTML=l?'<b>'+l+'</b>레벨':HINT}
 function sync(msg){
  const show=!msg&&!hidden;
- if(root)root.style.display=show?'':'none';
+ if(root){const was=root.style.display!=='none';root.style.display=show?'':'none';if(show&&!was)fit()}
  if(msg){if(!chip){chip=document.createElement('div');chip.style.cssText='position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:2147483647;background:rgba(31,31,31,.88);color:#fff;font:12px/1.4 "Malgun Gothic",sans-serif;padding:7px 12px;border-radius:8px;pointer-events:none;white-space:nowrap';document.documentElement.appendChild(chip)}
   chip.textContent=msg;chip.style.display=''}else if(chip)chip.style.display='none';
  if(!msg&&hidden){if(!showBtn){showBtn=document.createElement('button');showBtn.textContent='계산기 보기';
