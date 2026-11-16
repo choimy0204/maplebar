@@ -23,8 +23,16 @@ sealed class SlimScroll : Panel
         bar.BringToFront();
         content.SizeChanged += (_, _) => ScrollTo(pos);
         Resize += (_, _) => { bar.Bounds = new Rectangle(ClientSize.Width - bar.Width, 0, bar.Width, ClientSize.Height); ScrollTo(pos); };
-        MouseEnter += (_, _) => Focus(); // 휠로 내려 보게
+        MouseEnter += (_, _) => { if (FocusOnHover) Focus(); }; // 휠로 내려 보게
     }
+
+    /// <summary>
+    /// 마우스를 올리면 키보드를 가져온다 (휠이 바로 먹게). 안에 글 칸이 있으면 끈다:
+    /// 쓰던 칸에서 키보드를 뺏는다. 꺼도 윈도우가 휠을 마우스 아래 칸에 보내므로 휠은 된다
+    /// </summary>
+    public bool FocusOnHover { get; set; } = true;
+
+    public int Pos => pos;
 
     public void ScrollTo(int y)
     {

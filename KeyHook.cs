@@ -12,8 +12,21 @@ namespace MapleBar;
 /// </summary>
 static class KeyHook
 {
-    /// <summary>Combo: 누를 때 조합 키(ComboVk)가 눌려 있었는지</summary>
-    public readonly record struct Press(int Vk, DateTime At, uint Pid, bool Combo);
+    /// <summary>Combo: 누를 때 조합 키(ComboVk)가 눌려 있었는지. Mods: 누를 때 눌려 있던 Shift(1)·Ctrl(2)·Alt(4)</summary>
+    public readonly record struct Press(int Vk, DateTime At, uint Pid, bool Combo, int Mods = 0);
+
+    /// <summary>Shift·Ctrl·Alt 키 코드를 Press.Mods의 칸으로 바꾼다 (그 밖의 키는 0)</summary>
+    public static int ModBit(int vk) => vk switch { 16 => 1, 17 => 2, 18 => 4, _ => 0 };
+
+    /// <summary>NumLock이 꺼져 있거나 Shift를 누른 채로 넘패드를 누르면 윈도우가 PageUp·화살표 같은 키로 바꿔 보낸다.
+    /// 확장 키가 아닌 이 키들은 넘패드에서 온 것이므로 원래 넘패드 키를 돌려준다 (해당 없으면 0)</summary>
+    public static int NumpadOf(int vk) => vk switch
+    {
+        0x21 => 0x69, 0x22 => 0x63, 0x23 => 0x61, 0x24 => 0x67,
+        0x25 => 0x64, 0x26 => 0x68, 0x27 => 0x66, 0x28 => 0x62,
+        0x2D => 0x60, 0x2E => 0x6E, 0x0C => 0x65,
+        _ => 0,
+    };
 
     /// <summary>조합 키 (설정 값, 0이면 없음). 알림 쪽이 바꿔 준다</summary>
     public static volatile int ComboVk;
@@ -96,16 +109,26 @@ static class KeyHook
         {
             int msg = (int)wParam;
             int vk = Marshal.ReadInt32(lParam) & 0xFF;
+            bool ext = (Marshal.ReadInt32(lParam, 8) & 0x01) != 0; // 확장 키 표시
+            // Shift를 누른 채 넘패드를 누르면 윈도우가 Shift를 잠깐 뗐다 다시 누른 것처럼 보낸다 (확장 표시가 붙어 온다).
+            // 실제로 뗀 게 아니므로 무시해야 Shift가 계속 눌린 것으로 본다
+            if (ext && vk is 16 or 160 or 161) return CallNextHookEx(hook, code, wParam, lParam);
+            int pad = ext ? 0 : NumpadOf(vk);
+            // 넘패드로 눌렀다가 Shift를 먼저 떼면 넘패드 키로 떼어질 수 있어 둘 다 푼다
+            if ((msg == 0x101 || msg == 0x105) && pad != 0) down[pad] = false;
+            // 넘패드에서 온 이동 키는 그 넘패드 키를 지켜보고 있으면 넘패드 키로 센다
+            if (pad != 0 && watched[pad]) vk = pad;
             if (msg == 0x100 || msg == 0x104) // 누름
             {
                 // 꾹 누르고 있을 때 반복해서 오는 것은 한 번으로 센다
                 if (!down[vk])
                 {
                     bool combo = IsDown(ComboVk); // 이 키를 누르기 전에 조합 키가 눌려 있었는지
+                    int mods = (IsDown(16) ? 1 : 0) | (IsDown(17) ? 2 : 0) | (IsDown(18) ? 4 : 0);
                     down[vk] = true;
                     if (!watched[vk]) return CallNextHookEx(hook, code, wParam, lParam); // 설정에 없는 키는 쌓지 않는다
                     GetWindowThreadProcessId(GetForegroundWindow(), out uint pid);
-                    if (queue.Count < 512) queue.Enqueue(new Press(vk, DateTime.Now, pid, combo));
+                    if (queue.Count < 512) queue.Enqueue(new Press(vk, DateTime.Now, pid, combo, mods));
                 }
             }
             else if (msg == 0x101 || msg == 0x105) down[vk] = false; // 뗌

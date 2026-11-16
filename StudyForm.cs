@@ -401,7 +401,7 @@ sealed class StudyForm : Form
             Font = F(9), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(inner, 0), Location = new Point(pad, y),
         });
         y += S(28);
-        var name = Field(f, new Rectangle(pad, y, inner, S(34)), "묶음 이름 (예: 토익 단어)");
+        var name = Field(f, new Rectangle(pad, y, inner, S(34)), "묶음 이름");
         y += S(42);
         var body = Field(f, new Rectangle(pad, y, inner, S(260)), "ubiquitous|어디에나 있는|Smartphones are ubiquitous.", multi: true);
         try { if (Clipboard.ContainsText() && Clipboard.GetText().Contains('|')) body.Text = Clipboard.GetText(); } catch { }
@@ -477,7 +477,7 @@ sealed class StudyForm : Form
         }
         f.Controls.Add(new Label
         {
-            Text = "칸 이름은 바꿔도 돼요 (예: 사건|연도|설명)", Font = F(8.5f), ForeColor = Gray, AutoSize = true,
+            Text = "칸 이름은 바꿔도 돼요", Font = F(8.5f), ForeColor = Gray, AutoSize = true,
             MaximumSize = new Size(w - pad - qx - S(4), 0), Location = new Point(qx + S(4), y + S(4)),
         });
         y += S(26) + S(16);

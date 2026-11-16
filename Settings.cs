@@ -68,7 +68,14 @@ public class Settings
     // 솔 야누스 알림: 설치 키를 누르면 지속시간을 세고, 꺼지면 게임 화면 가장자리에 보랏빛을 한 바퀴 돌린다
     public bool JanusOn { get; set; }
     public int JanusKey { get; set; }   // 가상 키 코드 (0이면 없음)
-    public int JanusSec { get; set; } = 80;
+    public int JanusMod { get; set; }   // 같이 눌러야 하는 Shift(16)·Ctrl(17)·Alt(18). 0이면 없음
+    public int JanusSec { get; set; } = 80;     // 예전 '지속시간'. 알림 주기로 옮길 때만 쓴다
+    public int? JanusCycleSec { get; set; }     // 알림 주기(초): 키를 누르면 이만큼 뒤에 알린다. 0이면 세지 않음
+    public bool JanusNoticeSeen { get; set; }   // '솔 야누스 알림이 바뀌었어요' 안내를 봤으면 true (한 번만 띄운다)
+    /// <summary>예전 야누스 설정(주기 없음)으로 쓰던 사람이면 true. 불러올 때 주기로 옮기기 전에 정한다 (저장하지 않음)</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public bool JanusChanged { get; set; }
+    public bool JanusRealertOn { get; set; }    // 알림 뒤에도 안 깔았으면 JanusRealertSec초 뒤 한 번 더 알림
+    public int JanusRealertSec { get; set; } = 10;
     public bool LunaExt { get; set; } = true;   // 안 쓴다 (5석펫 스위치로 합침). 예전 설정 파일과 맞추려고 남겨 둔다
     public bool PickupOn { get; set; } = true;  // 설치 65초 뒤 아이템 회수 알림
     public bool JanusEarly { get; set; }        // 야누스가 꺼지기 5초 전에 미리 알림 (다시 깔 여유)
@@ -79,6 +86,11 @@ public class Settings
     public bool RuneOn { get; set; }
     public int NpcKey { get; set; }
     public int RuneMin { get; set; } = 15;
+    // 에르다 파운틴: 키를 누르면 60초를 세고, 사라지면(5초 먼저 알리기를 켜면 55초에) 밝은 하늘색으로 알린다
+    public bool ErdaOn { get; set; }
+    public int ErdaKey { get; set; }
+    public bool ErdaEarly { get; set; } = true;
+    public DateTime? ErdaStart { get; set; }
     // 껐다 켜도 이어서 세도록 시작 시각을 남긴다 (끝 = 시작 + 지속시간)
     public DateTime? JanusStart { get; set; }
     public DateTime? RuneStart { get; set; }
@@ -105,8 +117,15 @@ public class Settings
     public int PendantBuff { get; set; }           // 버프 칸 번호 (0~2)
     // 반복 주기 알림 3칸: 키를 누르면 정한 주기마다 정한 색으로 알린다
     public List<RepeatSlot> Repeats { get; set; } = new();
+    // 단일 알림 3칸: 키를 누르면 정한 시간 뒤에 한 번만 알린다
+    public List<OnceSlot> Onces { get; set; } = new();
+    // 전체 알림 켜기·끄기: 끄면 모든 알림이 키를 세지도 울리지도 않는다 (칸마다 켜 둔 값은 그대로)
+    public bool AlertsOn { get; set; } = true;
     // 알림을 띄울 모니터 (Screen.DeviceName). "ALL"이면 모든 모니터, 비어 있어도 모든 모니터
     public List<string> AlertScreens { get; set; } = new() { "ALL" };
+    // 알림 설정 프리셋: 알림 창 1·2페이지 값을 이름 붙여 저장해 두고 불러온다
+    public List<AlertPreset> AlertPresets { get; set; } = new();
+    public string? AlertPresetName { get; set; } // 마지막으로 저장하거나 불러온 프리셋
     // 자기계발 카드: 켜 두면 카드를 띄워 두고 StudySec초마다 다음 카드로 넘긴다. StudyStarOnly면 즐겨찾기한 카드만. 카드 자리는 게임 화면에 대한 비율
     public bool StudyOn { get; set; }
     public bool StudyStarOnly { get; set; }
@@ -126,6 +145,24 @@ public class Settings
     // 유튜브 재생 창의 쇼츠: 한 번 누르면 다음·이전 쇼츠로
     public int ShortsNextKey { get; set; }
     public int ShortsPrevKey { get; set; }
+    // 계산기: 프리셋(계산하던 내용 + 기록)들, 지금 쓰는 프리셋, 기록 칸을 펼쳐 두었는지
+    public List<CalcPreset> CalcPresets { get; set; } = new();
+    public int CalcPresetIndex { get; set; }
+    /// <summary>[저장]한 계산 (이름·계산 기록·주석을 통째로 담은 사본)</summary>
+    public List<CalcPreset> CalcSaved { get; set; } = new();
+    public bool CalcHistoryOpen { get; set; } = true;
+    /// <summary>계산기 오른쪽 칸에서 보던 탭 (0 기록, 1 저장한 것)</summary>
+    public int CalcTab { get; set; }
+    /// <summary>계산기 스크립트 (이름 + 식 + 변수마다 마지막에 넣은 값)</summary>
+    public List<CalcScript> CalcScripts { get; set; } = new();
+    /// <summary>스크립트 화면에서 고른 스크립트 번호 (-1이면 고르지 않음)</summary>
+    public int CalcScriptOpen { get; set; } = -1;
+    /// <summary>계산기를 스크립트 화면으로 보던 중인지 (다음에 열 때 그대로)</summary>
+    public bool CalcScriptView { get; set; }
+    // 메모: 페이지마다 쓴 글, 보던 페이지, 창 크기(가로·세로)
+    public List<string> MemoPages { get; set; } = new();
+    public int MemoPage { get; set; }
+    public int[]? MemoSize { get; set; }
 
     static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar");
@@ -141,7 +178,12 @@ public class Settings
         try
         {
             if (File.Exists(FilePath))
-                return FixBuffs(JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new());
+            {
+                var s = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath)) ?? new();
+                // 야누스 알림을 켜 두고 주기가 아직 없으면 예전 버전에서 넘어온 사람이다
+                s.JanusChanged = s.JanusOn && s.JanusCycleSec == null && !s.JanusNoticeSeen;
+                return FixBuffs(s);
+            }
         }
         catch (Exception ex) { Log.Write("settings", "설정을 읽지 못해 기본값으로 시작함", ex); }
         return FixBuffs(new());
@@ -157,8 +199,34 @@ public class Settings
         int[] colors = { RepeatSlot.Palette[2], RepeatSlot.Palette[4], RepeatSlot.Palette[6] };
         while (s.Repeats.Count < 3) s.Repeats.Add(new RepeatSlot { Argb = colors[s.Repeats.Count] });
         if (s.Repeats.Count > 3) s.Repeats.RemoveRange(3, s.Repeats.Count - 3);
+        s.Onces ??= new();
+        int[] onceColors = { RepeatSlot.Palette[1], RepeatSlot.Palette[3], RepeatSlot.Palette[7] };
+        while (s.Onces.Count < 3) s.Onces.Add(new OnceSlot { Argb = onceColors[s.Onces.Count] });
+        if (s.Onces.Count > 3) s.Onces.RemoveRange(3, s.Onces.Count - 3);
         s.AlertScreens ??= new() { "ALL" };
+        s.AlertPresets ??= new();
+        s.AlertPresets.RemoveAll(p => p == null || string.IsNullOrWhiteSpace(p.Name));
+        // "AI" 메뉴가 "도구"로 바뀌었다: 바 순서·숨김 설정을 새 이름으로 옮긴다
+        bool renamed = false;
+        for (int i = 0; i < s.BarOrder.Count; i++) if (s.BarOrder[i] == "AI") { s.BarOrder[i] = SiteMenu.ToolsName; renamed = true; }
+        for (int i = 0; i < s.BarHiddenTops.Count; i++) if (s.BarHiddenTops[i] == "AI") { s.BarHiddenTops[i] = SiteMenu.ToolsName; renamed = true; }
+        for (int i = 0; i < s.BarHiddenItems.Count; i++)
+            if (s.BarHiddenItems[i].StartsWith("AI/", StringComparison.Ordinal)) { s.BarHiddenItems[i] = SiteMenu.ToolsName + s.BarHiddenItems[i][2..]; renamed = true; }
+        if (renamed) s.Save();
         s.Decks ??= new();
+        s.CalcPresets ??= new();
+        s.CalcPresets.RemoveAll(p => p == null);
+        foreach (var p in s.CalcPresets) { p.Parts ??= new(); p.History ??= new(); }
+        if (s.CalcPresets.Count == 0) s.CalcPresets.Add(new CalcPreset());
+        s.CalcSaved ??= new();
+        s.CalcSaved.RemoveAll(p => p == null);
+        foreach (var p in s.CalcSaved) { p.Parts ??= new(); p.History ??= new(); }
+        s.CalcPresetIndex = Math.Clamp(s.CalcPresetIndex, 0, s.CalcPresets.Count - 1);
+        s.CalcScripts ??= new();
+        s.CalcScripts.RemoveAll(p => p == null);
+        foreach (var p in s.CalcScripts) { p.Title ??= ""; p.Expr ??= ""; p.Values ??= new(); }
+        s.CalcTab = Math.Clamp(s.CalcTab, 0, 1);
+        if (s.CalcScriptOpen >= s.CalcScripts.Count) s.CalcScriptOpen = -1;
         s.WinPlaces ??= new();
         foreach (var d in s.Decks) d.Stars ??= new();
         if (fresh && (s.BuffOn || s.BuffKey != 0 || s.BuffStart != null))
@@ -244,6 +312,116 @@ public class DopeSlot
     public int DelaySec { get; set; } = 3;
     public bool Combo { get; set; }            // 켜면 조합 키를 누른 채로 눌러야 센다
     public string? Name { get; set; }          // 비어 있으면 "도핑 1" 같은 기본 이름
+}
+
+/// <summary>알림 설정 프리셋: 알림 창 1·2페이지 값 묶음. 세는 중인 시각(Start 등)은 담지 않는다</summary>
+public class AlertPreset
+{
+    public string Name { get; set; } = "";
+    public bool SoundOn { get; set; } = true;
+    public int SoundVol { get; set; } = 60;
+    public bool AlertVisual { get; set; } = true;
+    public bool AlertFlash { get; set; } = true;
+    public bool AlertEdge { get; set; } = true;
+    public int ComboKey { get; set; }
+    public bool JanusOn { get; set; }
+    public int JanusKey { get; set; }
+    public int JanusMod { get; set; }
+    public int? JanusCycleSec { get; set; }
+    public bool JanusRealertOn { get; set; }
+    public int JanusRealertSec { get; set; } = 10;
+    public bool PickupOn { get; set; } = true;
+    public bool RuneOn { get; set; }
+    public int NpcKey { get; set; }
+    public int RuneMin { get; set; } = 15;
+    public bool ErdaOn { get; set; }
+    public int ErdaKey { get; set; }
+    public bool ErdaEarly { get; set; } = true;
+    public List<BuffSlot> Buffs { get; set; } = new();
+    public List<DopeSlot> Dopes { get; set; } = new();
+    public string? MapleNick { get; set; }
+    public bool PendantOn { get; set; }
+    public int PendantBuff { get; set; }
+    public List<RepeatSlot> Repeats { get; set; } = new();
+    public List<OnceSlot>? Onces { get; set; }
+    public List<string> AlertScreens { get; set; } = new() { "ALL" };
+
+    // 칸 목록은 JSON으로 한 번 돌려 따로 떼어 낸 복사본을 쓴다 (원본을 고쳐도 프리셋이 바뀌지 않게)
+    static List<T> Copy<T>(List<T>? src) =>
+        System.Text.Json.JsonSerializer.Deserialize<List<T>>(System.Text.Json.JsonSerializer.Serialize(src ?? new())) ?? new();
+
+    /// <summary>지금 설정을 이름 붙여 프리셋으로 만든다</summary>
+    public static AlertPreset From(Settings s, string name)
+    {
+        var p = new AlertPreset
+        {
+            Name = name,
+            SoundOn = s.SoundOn, SoundVol = s.SoundVol, AlertVisual = s.AlertVisual, AlertFlash = s.AlertFlash, AlertEdge = s.AlertEdge,
+            ComboKey = s.ComboKey,
+            JanusOn = s.JanusOn, JanusKey = s.JanusKey, JanusMod = s.JanusMod, JanusCycleSec = JanusWatch.Cycle(s),
+            JanusRealertOn = s.JanusRealertOn, JanusRealertSec = s.JanusRealertSec, PickupOn = s.PickupOn,
+            RuneOn = s.RuneOn, NpcKey = s.NpcKey, RuneMin = s.RuneMin,
+            ErdaOn = s.ErdaOn, ErdaKey = s.ErdaKey, ErdaEarly = s.ErdaEarly,
+            Buffs = Copy(s.Buffs), Dopes = Copy(s.Dopes), Repeats = Copy(s.Repeats), Onces = Copy(s.Onces),
+            MapleNick = s.MapleNick, PendantOn = s.PendantOn, PendantBuff = s.PendantBuff,
+            AlertScreens = new(s.AlertScreens ?? new()),
+        };
+        foreach (var b in p.Buffs) { b.Start = null; b.KeyAt = null; b.EnterAt = null; }
+        foreach (var d in p.Dopes) d.Start = null;
+        foreach (var r in p.Repeats) r.Start = null;
+        foreach (var o in p.Onces!) o.Start = null;
+        return p;
+    }
+
+    /// <summary>프리셋 값을 설정에 넣는다. 지금 세는 중인 시각은 칸 번호대로 그대로 둔다</summary>
+    public void ApplyTo(Settings s)
+    {
+        s.SoundOn = SoundOn; s.SoundVol = SoundVol; s.AlertVisual = AlertVisual; s.AlertFlash = AlertFlash; s.AlertEdge = AlertEdge;
+        s.ComboKey = ComboKey;
+        s.JanusOn = JanusOn; s.JanusKey = JanusKey; s.JanusMod = JanusMod; s.JanusCycleSec = JanusCycleSec ?? 0;
+        s.JanusRealertOn = JanusRealertOn; s.JanusRealertSec = JanusRealertSec; s.PickupOn = PickupOn;
+        s.RuneOn = RuneOn; s.NpcKey = NpcKey; s.RuneMin = RuneMin;
+        s.ErdaOn = ErdaOn; s.ErdaKey = ErdaKey; s.ErdaEarly = ErdaEarly;
+        s.MapleNick = MapleNick; s.PendantOn = PendantOn; s.PendantBuff = PendantBuff;
+        s.AlertScreens = new(AlertScreens ?? new() { "ALL" });
+        if (s.AlertScreens.Count == 0) s.AlertScreens.Add("ALL");
+        var buffs = Copy(Buffs);
+        for (int i = 0; i < buffs.Count && i < s.Buffs.Count; i++)
+        { buffs[i].Start = s.Buffs[i].Start; buffs[i].KeyAt = s.Buffs[i].KeyAt; buffs[i].EnterAt = s.Buffs[i].EnterAt; }
+        var dopes = Copy(Dopes);
+        for (int i = 0; i < dopes.Count && i < s.Dopes.Count; i++) dopes[i].Start = s.Dopes[i].Start;
+        var reps = Copy(Repeats);
+        for (int i = 0; i < reps.Count && i < s.Repeats.Count; i++) reps[i].Start = s.Repeats[i].Start;
+        // 칸 수(3칸)는 지금 설정에 맞춘다: 모자라면 지금 칸을 그대로 두고, 넘치면 버린다
+        for (int i = buffs.Count; i < s.Buffs.Count; i++) buffs.Add(s.Buffs[i]);
+        for (int i = dopes.Count; i < s.Dopes.Count; i++) dopes.Add(s.Dopes[i]);
+        for (int i = reps.Count; i < s.Repeats.Count; i++) reps.Add(s.Repeats[i]);
+        s.Buffs = buffs.Take(s.Buffs.Count).ToList();
+        s.Dopes = dopes.Take(s.Dopes.Count).ToList();
+        s.Repeats = reps.Take(s.Repeats.Count).ToList();
+        // 단일 알림이 없던 옛 프리셋이면 지금 칸을 그대로 둔다
+        if (Onces != null)
+        {
+            var onces = Copy(Onces);
+            for (int i = 0; i < onces.Count && i < s.Onces.Count; i++) onces[i].Start = s.Onces[i].Start;
+            for (int i = onces.Count; i < s.Onces.Count; i++) onces.Add(s.Onces[i]);
+            s.Onces = onces.Take(s.Onces.Count).ToList();
+        }
+    }
+}
+
+/// <summary>단일 알림 한 칸: 키를 누르면 정한 시간 뒤에 한 번만 알린다</summary>
+public class OnceSlot
+{
+    public bool On { get; set; }
+    public int Key { get; set; }
+    public bool Combo { get; set; }       // 켜면 조합 키를 누른 채로 눌러야 센다
+    public bool WaitEnter { get; set; }   // 켜면 키 다음 엔터를 누른 때부터 센다
+    public int Sec { get; set; } = 60;    // 키를 누르고 알릴 때까지 (초)
+    public int Argb { get; set; }
+    public DateTime? Start { get; set; }  // 키를 누른 시각 (이때부터 센다)
+    public string? Name { get; set; }     // 알림에 뜨는 글. 비어 있으면 "단일 알림 1" 같은 기본 이름
+    public string Title(int i) => string.IsNullOrWhiteSpace(Name) ? $"단일 알림 {i + 1}" : Name.Trim();
 }
 
 /// <summary>반복 주기 알림 한 칸</summary>

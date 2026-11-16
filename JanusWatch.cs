@@ -22,17 +22,24 @@ sealed class JanusWatch
     readonly System.Windows.Forms.Timer poll = new() { Interval = 30 };
     bool janusDown;
     // 시작 시각은 설정 파일에 남겨 껐다 켜도 이어서 센다
-    DateTime? endsAt => st.JanusStart is DateTime s
-        ? (st.PetOn ? PetRun(s, st.PetGatherAt ?? s, st.JanusSec).end : s.AddSeconds(st.JanusSec)) : null;
+    DateTime? endsAt => st.JanusStart is DateTime s ? s.AddSeconds(Cycle(st)) : null;
+    /// <summary>알림 주기(초). 예전 설정(지속시간 + 5석펫)이면 처음 한 번 주기로 바꿔 둔다.</summary>
+    public static int Cycle(Settings st)
+    {
+        if (st.JanusCycleSec is int c) return c;
+        int sec = st.JanusSec;
+        c = sec > 120 || (st.PetOn && sec >= GatherSec) ? 0   // 예전 무한대는 세지 않음
+            : st.PetOn ? (int)(PetRun(DateTime.MinValue, DateTime.MinValue, sec).end - DateTime.MinValue).TotalSeconds
+            : sec;
+        st.JanusCycleSec = c; st.Save();
+        return c;
+    }
     const double IgnoreSec = 50;     // 첫 설치 후 이 시간 안에 누른 건 추가 설치로 보고 무시
     const double ReinstallSec = 15;  // 남은 시간이 이만큼 이하일 때 누르면 50초 안이어도 다시 깐 것으로 센다
-    /// <summary>끝나지 않는 경우는 세지도 알리지도 않는다.
-    /// 121초 이상(무한대로 고른 것), 또는 5석펫(루나 익스텐션)에서 지속시간이 게더링 주기(90초) 이상일 때.</summary>
-    public static bool Endless(Settings st) => Endless(st, st.JanusSec);
-    /// <summary>지속시간을 sec초로 했을 때 끝나지 않는지 (설정 창의 '무한대' 표시도 이걸 쓴다).</summary>
-    public static bool Endless(Settings st, int sec) => sec > 120 || (st.PetOn && sec >= GatherSec);
+    /// <summary>알림 주기가 0이면 세지도 알리지도 않는다.</summary>
+    public static bool Endless(Settings st) => Cycle(st) <= 0;
 
-    // 5석펫: 게더링은 쿨타임 90초. 야누스가 있고 쿨이 돌았으면 바로 쓰고, 그 뒤로 90초마다 쓴다.
+    // (예전 설정을 알림 주기로 옮길 때만 쓴다) 5석펫: 게더링은 쿨타임 90초. 야누스가 있고 쿨이 돌았으면 바로 쓰고, 그 뒤로 90초마다 쓴다.
     // 게더링마다 남은 시간에 지속시간을 더하고 최대 300초. 설치 때 쿨이 돌아 있으면 20레벨은 160초로 시작한다.
     // 공략과 맞춰 봄: 20레벨 1분30초 150초 · 9분 100초 · 10분 40초 · 12분에 꺼짐, 10레벨 5분50초에 꺼짐
     const int GatherSec = 90, PetCapSec = 300;
@@ -53,16 +60,11 @@ sealed class JanusWatch
         return (end, last);
     }
 
-    /// <summary>지금까지 마지막으로 나간 게더링 (쿨타임 계산용).</summary>
-    DateTime? PetLastGather(DateTime now) =>
-        st.JanusStart is DateTime s ? PetRun(s, st.PetGatherAt ?? s, st.JanusSec, now).last ?? st.PetLastGather : st.PetLastGather;
-
-    /// <summary>세던 야누스를 지운다. 5석펫이면 다음 설치 때 쿨타임을 알 수 있게 마지막 게더링을 남긴다.</summary>
+    /// <summary>세던 야누스를 지운다.</summary>
     void ClearJanus(DateTime now)
     {
         if (st.JanusStart == null) return;
-        if (st.PetOn) st.PetLastGather = PetLastGather(now);
-        st.JanusStart = null; st.PetGatherAt = null; st.Save();
+        st.JanusStart = null; st.Save();
     }
     // 아이템은 설치 1분 30초 뒤 사라지므로 65초에 회수하라고 알린다
     const double PickupSec = 65;
@@ -114,26 +116,29 @@ sealed class JanusWatch
     bool ComboOnBuff(int i) => st.ComboKey != 0 && st.Buffs[i].Combo;
     bool ComboOnDope(int i) => st.ComboKey != 0 && st.Dopes[i].Combo;
     bool ComboOnRepeat(int i) => st.ComboKey != 0 && st.Repeats[i].Combo;
+    bool ComboOnOnce(int i) => st.ComboKey != 0 && st.Onces[i].Combo;
 
     /// <summary>키 하나를 눌렀을 때 셀 버프·도핑 칸.
     /// 조합 키를 켠 칸은 조합 키를 누른 채로 눌렀을 때만 센다.
     /// 조합 키를 안 켠 칸은 평소처럼 세지만, 같은 키를 조합 키로 쓰는 칸이 있으면 조합 키를 누른 채일 땐 그 칸에 양보한다.</summary>
-    (int buff, int dope, int rep) SlotMasks(int vk, bool held)
+    (int buff, int dope, int rep, int once) SlotMasks(int vk, bool held)
     {
-        if (vk == 0) return (0, 0, 0);
+        if (vk == 0) return (0, 0, 0, 0);
         bool comboTaken = false;
         if (held)
         {
             for (int i = 0; i < BuffSlots; i++) if (ComboOnBuff(i) && st.Buffs[i].Key == vk) comboTaken = true;
             for (int i = 0; i < DopeSlots; i++) if (ComboOnDope(i) && st.Dopes[i].Key == vk) comboTaken = true;
             for (int i = 0; i < RepeatSlots; i++) if (ComboOnRepeat(i) && st.Repeats[i].Key == vk) comboTaken = true;
+            for (int i = 0; i < OnceSlots; i++) if (ComboOnOnce(i) && st.Onces[i].Key == vk) comboTaken = true;
         }
         bool Hit(int key, bool combo) => key == vk && (combo ? held : !comboTaken);
-        int b = 0, d = 0, r = 0;
+        int b = 0, d = 0, r = 0, o = 0;
         for (int i = 0; i < BuffSlots; i++) if (Hit(st.Buffs[i].Key, ComboOnBuff(i))) b |= 1 << i;
         for (int i = 0; i < DopeSlots; i++) if (Hit(st.Dopes[i].Key, ComboOnDope(i))) d |= 1 << i;
         for (int i = 0; i < RepeatSlots; i++) if (Hit(st.Repeats[i].Key, ComboOnRepeat(i))) r |= 1 << i;
-        return (b, d, r);
+        for (int i = 0; i < OnceSlots; i++) if (Hit(st.Onces[i].Key, ComboOnOnce(i))) o |= 1 << i;
+        return (b, d, r, o);
     }
 
     // 누른 키 기록은 테스트 빌드에서만 켤 수 있다 (배포판은 무엇을 해도 키를 기록하지 않는다)
@@ -149,8 +154,16 @@ sealed class JanusWatch
     void Tick()
     {
         KeyHook.ComboVk = st.ComboKey;
-        KeyHook.Watch(st.Buffs.Select(b => b.Key).Concat(st.Dopes.Select(d => d.Key)).Concat(st.Repeats.Select(r => r.Key))
-            .Concat(Arrows).Concat(new[] { st.JanusKey, st.NpcKey, st.ComboKey, 0x0D }));
+        KeyHook.Watch(st.Buffs.Select(b => b.Key).Concat(st.Dopes.Select(d => d.Key)).Concat(st.Repeats.Select(r => r.Key)).Concat(st.Onces.Select(o => o.Key))
+            .Concat(Arrows).Concat(new[] { st.JanusKey, st.NpcKey, st.ComboKey, st.ErdaKey, 0x0D }));
+        // 전체 알림을 꺼 두면: 누른 키는 버리고 세지도 울리지도 않는다. 끄는 순간 세던 것은 모두 멈춘다
+        if (!st.AlertsOn)
+        {
+            if (alertsWereOn) { alertsWereOn = false; StopAll(); }
+            if (KeyHook.Active) KeyHook.Drain();
+            return;
+        }
+        alertsWereOn = true;
         if (KeyHook.Active)
         {
             // 누른 키를 하나씩, 누른 순서와 시각 그대로 처리한다 (2와 엔터가 한꺼번에 와도 둘 다 센다)
@@ -160,11 +173,14 @@ sealed class JanusWatch
                 int vk = p.Vk switch { 160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, var v => v };
                 if (vk == 0) continue;
                 bool g = Game.IsGame(p.Pid);
-                var (mask, dmask, rmask) = SlotMasks(vk, p.Combo);
+                var (mask, dmask, rmask, omask) = SlotMasks(vk, p.Combo);
                 if (Debug && (vk == st.ComboKey || st.Buffs.Any(b => b.Key == vk) || st.Dopes.Any(d => d.Key == vk) || vk == 0x0D))
                     Log.Write("키", $"vk={vk} 조합={p.Combo} 게임={g} pid={p.Pid} 버프칸={mask} 도핑칸={dmask}");
                 for (int i = 0; i < RepeatSlots; i++) if ((rmask >> i & 1) != 0) RepeatKey(i, p.At, g);
-                Step(p.At, g, vk == st.JanusKey, vk == st.NpcKey, mask, vk == 0x0D,
+                for (int i = 0; i < OnceSlots; i++) if ((omask >> i & 1) != 0) OnceKey(i, p.At, g);
+                if (vk == st.ErdaKey) ErdaKey(p.At, g);
+                bool janusHit = vk == st.JanusKey && (st.JanusMod == 0 || (p.Mods & KeyHook.ModBit(st.JanusMod)) != 0);
+                Step(p.At, g, janusHit, vk == st.NpcKey, mask, vk == 0x0D,
                     dmask, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
             }
             Step(DateTime.Now, false, false, false, 0, false, 0, 0); // 시간이 다 됐는지만 본다
@@ -172,7 +188,8 @@ sealed class JanusWatch
         }
         if (Debug && !hookOffLogged) { hookOffLogged = true; Log.Write("키", "키 훅이 꺼져 있어 직접 확인 방식으로 봐요"); }
         // 키 알림을 못 받으면: 키를 뗐는지 계속 봐 두어야 다음 누름을 한 번으로 센다
-        bool janus = Pressed(st.JanusKey, ref janusDown);
+        bool janus = Pressed(st.JanusKey, ref janusDown)
+            && (st.JanusMod == 0 || (GetAsyncKeyState(st.JanusMod) & 0x8000) != 0);
         bool npc = Pressed(st.NpcKey, ref npcDown);
         bool held = st.ComboKey != 0 && (GetAsyncKeyState(st.ComboKey) & 0x8000) != 0;
         int buff = 0;
@@ -183,8 +200,11 @@ sealed class JanusWatch
         int arrows = 0;
         for (int i = 0; i < 4; i++) if (Pressed(Arrows[i], ref arrowDown[i])) arrows++;
         bool fg = Game.Foreground();
+        if (Pressed(st.ErdaKey, ref erdaDown)) ErdaKey(DateTime.Now, fg);
         for (int i = 0; i < RepeatSlots; i++)
             if (Pressed(st.Repeats[i].Key, ref repeatDown[i]) && (SlotMasks(st.Repeats[i].Key, held).rep >> i & 1) != 0) RepeatKey(i, DateTime.Now, fg);
+        for (int i = 0; i < OnceSlots; i++)
+            if (Pressed(st.Onces[i].Key, ref onceDown[i]) && (SlotMasks(st.Onces[i].Key, held).once >> i & 1) != 0) OnceKey(i, DateTime.Now, fg);
         Step(DateTime.Now, fg, janus, npc, buff, enter, dope, arrows);
     }
 
@@ -268,14 +288,68 @@ sealed class JanusWatch
         repeatNext[i] is DateTime t && st.Repeats[i].Start != null ? Math.Max(0, (t - DateTime.Now).TotalSeconds) : null;
     public void CancelRepeat(int i) { if (st.Repeats[i].Start != null) { st.Repeats[i].Start = null; st.Save(); } repeatNext[i] = null; }
 
+    // 단일 알림 3칸: 칸마다 키를 누르면 그때부터 세어 정한 시간이 되면 한 번 알리고 멈춘다. 세는 중에 다시 누르면 처음부터
+    public const int OnceSlots = 3;
+    readonly bool[] onceDown = new bool[OnceSlots];
+    readonly DateTime?[] onceKeyAt = new DateTime?[OnceSlots];
+    /// <summary>마지막으로 키를 인식한 단일 알림 칸 (설정 창 표시용)</summary>
+    public int LastOnce { get; private set; } = -1;
+    public DateTime? LastOnceAt { get; private set; }
+
+    void OnceKey(int i, DateTime at, bool inGame)
+    {
+        var o = st.Onces[i];
+        if (!o.On || o.Key == 0 || !inGame || o.Sec < 1) return;
+        o.Start = at; st.Save();
+        LastOnce = i; LastOnceAt = at;
+        // 엔터 기다리기: 키 뒤 10초 안에 엔터를 누르면 엔터 때부터 다시 센다
+        onceKeyAt[i] = o.WaitEnter && o.Key != 0x0D ? at : null;
+    }
+
+    void OnceEnter(DateTime now, bool inGame)
+    {
+        if (!inGame) return;
+        for (int i = 0; i < OnceSlots; i++)
+        {
+            if (onceKeyAt[i] is not DateTime k) continue;
+            onceKeyAt[i] = null;
+            var o = st.Onces[i];
+            if (!o.On || !o.WaitEnter || o.Start == null || (now - k).TotalSeconds > BuffEnterSec) continue;
+            o.Start = now; st.Save();
+            LastOnce = i; LastOnceAt = now;
+        }
+    }
+
+    void OnceTick(DateTime now)
+    {
+        for (int i = 0; i < OnceSlots; i++)
+        {
+            var o = st.Onces[i];
+            if (o.Start is not DateTime s) continue;
+            if (!o.On || o.Sec < 1) { o.Start = null; st.Save(); continue; } // 끄면 세던 것도 멈춘다
+            var due = s.AddSeconds(o.Sec);
+            if (now < due) continue;
+            o.Start = null; st.Save();
+            // 바를 꺼 둔 사이에 지난 알림은 늦게 울리지 않는다
+            if (!Mute && (now - due).TotalSeconds < 10) PlayRepeat(sc, o.Title(i), Color.FromArgb(o.Argb));
+        }
+    }
+
+    /// <summary>알릴 때까지 남은 초. 세고 있지 않으면 null.</summary>
+    public double? OnceRemaining(int i) =>
+        st.Onces[i].Start is DateTime s ? Math.Max(0, (s.AddSeconds(st.Onces[i].Sec) - DateTime.Now).TotalSeconds) : null;
+    public void CancelOnce(int i) { if (st.Onces[i].Start != null) { st.Onces[i].Start = null; st.Save(); } onceKeyAt[i] = null; }
+
     public static void PlayRepeat(float sc, string text, Color c) =>
         JanusAlert.Play(sc, text, c,
             Color.FromArgb(c.R + (255 - c.R) * 3 / 4, c.G + (255 - c.G) * 3 / 4, c.B + (255 - c.B) * 3 / 4), AlertSound.Kind.Buff);
 
     void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, int dope, int arrows)
     {
-        if (enter) RepeatEnter(now, inGame);
+        if (enter) { RepeatEnter(now, inGame); OnceEnter(now, inGame); }
         RepeatTick(now);
+        OnceTick(now);
+        ErdaTick(now);
         RuneTick(now, inGame, npc, arrows);
         BuffTick(now, inGame, buff, enter);
         for (int i = 0; i < DopeSlots; i++) DopeTick(i, now, inGame, (dope >> i & 1) != 0, arrows, enter);
@@ -294,18 +368,8 @@ sealed class JanusWatch
             lastInstall = now;
             LastKey = now; LastKind = "설치";
             if (st.PickupOn) pickups.Add(now.AddSeconds(PickupSec));
-            // 도는 중에 다시 깔면 그때부터 새로 센다
-            if (!Endless(st))
-            {
-                // 5석펫: 게더링 쿨(90초)이 돌아 있으면 설치하자마자 한 번 더하고 지금부터 새 박자로 센다.
-                // 도는 중에 다시 깔았거나 막 꺼진 뒤라 쿨이 남아 있으면 원래 박자대로 다음 게더링을 기다린다.
-                if (st.PetOn)
-                {
-                    var last = PetLastGather(now);
-                    st.PetGatherAt = last is DateTime l && (now - l).TotalSeconds < GatherSec ? l : now;
-                }
-                st.JanusStart = now; st.Save();
-            }
+            // 도는 중에 다시 깔면 그때부터 알림 주기를 새로 센다
+            if (!Endless(st)) { st.JanusStart = now; st.Save(); }
         }
 
         // 아이템 회수 알림 (설치마다 한 번)
@@ -322,28 +386,78 @@ sealed class JanusWatch
             ClearJanus(now);
             return;
         }
-        if (endsAt is not DateTime end) return;
-        // 켜 두면 꺼지기 5초 전에 먼저 알린다 (칩은 진짜 꺼질 때까지 남는다)
-        if (st.JanusEarly && now < end && now >= end.AddSeconds(-EarlySec) && earlyFor != end)
+        // 다시 알리기: 알림 뒤에도 안 깔았으면 정한 초 뒤 한 번 더
+        if (realertAt is DateTime ra && (!st.JanusRealertOn || st.JanusStart != null)) realertAt = null;
+        else if (realertAt is DateTime rb && now >= rb)
         {
-            earlyFor = end;
-            if (!Mute) JanusAlert.Play(sc, "곧 야누스가 사라져요.");
+            realertAt = null;
+            if (!Mute && (now - rb).TotalSeconds < 10) JanusAlert.Play(sc);
         }
+        if (endsAt is not DateTime end) return;
         if (now >= end)
         {
-            bool told = earlyFor == end;
-            earlyFor = null;
             ClearJanus(end);
-            if (!Mute && !told) JanusAlert.Play(sc);
+            if (st.JanusRealertOn) realertAt = end.AddSeconds(Math.Max(1, st.JanusRealertSec));
+            if (!Mute) JanusAlert.Play(sc);
         }
     }
 
-    const int EarlySec = 5;
-    DateTime? earlyFor; // 미리 알림을 울린 야누스의 끝 시각 (같은 끝에 두 번 울리지 않게)
+    DateTime? realertAt; // 다시 알릴 시각 (새로 깔면 지운다)
+
+    const int EarlySec = 5; // 에르다 파운틴 '5초 먼저 알리기'
+
+    // 에르다 파운틴: 키를 누르면 60초 뒤 사라진다. 다시 누르면 처음부터 센다
+    public const int ErdaSec = 60;
+    bool erdaDown;
+    DateTime? ErdaEnd => st.ErdaStart is DateTime s ? s.AddSeconds(ErdaSec) : null;
+    /// <summary>알릴 시각: 5초 먼저 알리기를 켜면 55초, 아니면 60초</summary>
+    DateTime? ErdaAlertAt => ErdaEnd is DateTime e ? (st.ErdaEarly ? e.AddSeconds(-EarlySec) : e) : null;
+    /// <summary>사라질 때까지 남은 초. 세고 있지 않으면 null.</summary>
+    public double? ErdaRemaining => ErdaEnd is DateTime e ? Math.Max(0, (e - DateTime.Now).TotalSeconds) : null;
+    public void CancelErda() { if (st.ErdaStart != null) { st.ErdaStart = null; st.Save(); } }
+    public static readonly Color ErdaMain = Color.FromArgb(110, 210, 255), ErdaLight = Color.FromArgb(220, 245, 255);
+    public static void PlayErda(float sc, bool early) =>
+        JanusAlert.Play(sc, early ? "에르다 파운틴이 곧 사라져요" : "에르다 파운틴이 사라졌어요", ErdaMain, ErdaLight, AlertSound.Kind.Buff);
+
+    void ErdaKey(DateTime at, bool inGame)
+    {
+        if (!st.ErdaOn || st.ErdaKey == 0 || !inGame) return;
+        st.ErdaStart = at; st.Save();
+        LastKey = at; LastKind = "에르다";
+    }
+
+    void ErdaTick(DateTime now)
+    {
+        if (!st.ErdaOn) { CancelErda(); return; }
+        if (ErdaAlertAt is not DateTime a || now < a) return;
+        bool early = st.ErdaEarly;
+        st.ErdaStart = null; st.Save();
+        // 꺼져 있는 동안 지나간 것은 조용히 지운다
+        if (!Mute && (now - a).TotalSeconds < 10) PlayErda(sc, early);
+    }
 
     /// <summary>바의 칩을 눌렀을 때: 세던 시간을 지운다.</summary>
     public void Stop() { poll.Stop(); poll.Dispose(); } // 끝낸 감시는 다시 켜지 않는다 (바를 새로 만들 때 새 감시가 생긴다)
     public void CancelJanus() => ClearJanus(DateTime.Now);
+
+    bool alertsWereOn = true; // 처음부터 꺼져 있으면 첫 확인 때 남은 시간을 비운다
+    /// <summary>세던 알림을 모두 멈춘다 (전체 알림을 끌 때). 칸마다 켜 둔 값은 바꾸지 않는다</summary>
+    void StopAll()
+    {
+        ClearJanus(DateTime.Now);
+        pickups.Clear(); realertAt = null; lastInstall = null;
+        CancelRune(); arrowCount = 0; runeAlerted = false;
+        CancelErda();
+        for (int i = 0; i < BuffSlots; i++)
+        {
+            var b = st.Buffs[i];
+            if (b.Start != null || b.KeyAt != null || b.EnterAt != null) { b.Start = null; b.KeyAt = null; b.EnterAt = null; st.Save(); }
+            buffKeyAt[i] = null;
+        }
+        for (int i = 0; i < DopeSlots; i++) { CancelDope(i); dopeKeyAt[i] = null; dopeArrows[i] = 0; }
+        for (int i = 0; i < RepeatSlots; i++) { CancelRepeat(i); repeatKeyAt[i] = null; }
+        for (int i = 0; i < OnceSlots; i++) CancelOnce(i);
+    }
     public void CancelRune() { npcAt = null; if (st.RuneStart != null) { st.RuneStart = null; st.Save(); } }
     public void CancelBuff(int i) { if (st.Buffs[i].Start != null) { st.Buffs[i].Start = null; st.Save(); } }
 
@@ -563,8 +677,13 @@ sealed class JanusWatch
         return hit;
     }
 
+    /// <summary>같이 누르는 키가 있으면 "Shift+Num 9"처럼 붙여 쓴다</summary>
+    public static string KeyName(int mod, int vk) => mod == 0 || vk == 0 ? KeyName(vk) : KeyName(mod) + "+" + KeyName(vk);
+
     public static string KeyName(int vk) => vk == 0 ? "없음" : (Keys)vk switch
     {
+        >= Keys.NumPad0 and <= Keys.NumPad9 => "Num " + (vk - 0x60),
+        Keys.Decimal => "Num .",
         Keys.ShiftKey or Keys.LShiftKey or Keys.RShiftKey => "Shift",
         Keys.ControlKey or Keys.LControlKey or Keys.RControlKey => "Ctrl",
         Keys.Menu or Keys.LMenu or Keys.RMenu => "Alt",

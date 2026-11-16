@@ -53,6 +53,10 @@ public static class UI
     /// <summary>연한 강조 바탕 위 글씨 (다크에서는 조금 더 밝은 호박색)</summary>
     public static Color AccentText => Dark ? Color.FromArgb(242, 184, 119) : Accent;
     public static Color SoftAccent => Dark ? Color.FromArgb(74, 58, 42) : Color.FromArgb(255, 243, 224);
+    // 호박색: 스크립트·메모처럼 노란 느낌이 어울리는 곳 (갈색으로 탁해지지 않게 채도를 높인 칸 + 밝은 글자)
+    public static Color AmberSoft => HoverBack; // 갈색 대신 차분한 회색 칸 + 호박색 글자 (바의 선택 칸과 같은 느낌)
+    public static Color AmberText => AccentText;
+    public static Color AmberPaper => Dark ? Color.FromArgb(56, 61, 68) : Color.FromArgb(250, 250, 251);
     /// <summary>창·카드 바탕 (밝은 모드에서는 흰색)</summary>
     public static Color Back => Dark ? Color.FromArgb(49, 54, 60) : Color.White;
     /// <summary>흐린 글자 (설명·꺼진 값)</summary>

@@ -6,7 +6,7 @@ namespace MapleBar;
 /// <summary>바에 붙는 작은 칩: 솔 야누스·룬 아이콘(직접 그린 것)과 남은 시간.</summary>
 sealed class TimerChip : Control
 {
-    public enum Kind { Janus, Rune, Buff }
+    public enum Kind { Janus, Rune, Buff, Off } // Off: 전체 알림을 꺼 둔 표시 (아이콘 없이 "OFF")
     /// <summary>버프 칩 색 (20분 주황 · 10분 노랑)</summary>
     public Color BuffTint { get => buffTint; set { if (value != buffTint) { buffTint = value; Invalidate(); } } }
     Color buffTint = Color.FromArgb(255, 140, 0);
@@ -30,9 +30,19 @@ sealed class TimerChip : Control
         {
             Kind.Janus => "솔 야누스 남은 시간 (누르면 취소)",
             Kind.Rune => "다음 룬까지 남은 시간 (누르면 취소)",
+            Kind.Off => "알림이 모두 꺼져 있어요 (누르면 켜요)",
             _ => "버프 남은 시간 (누르면 취소)",
         });
-        Size = new Size(S(84), S(31));
+        Size = new Size(S(kind == Kind.Off ? 50 : 84), S(31));
+        if (kind == Kind.Off) text = "OFF";
+    }
+
+    /// <summary>OFF 칩을 보이거나 숨긴다. 보이고 숨김이 바뀌면 true.</summary>
+    public bool SetShown(bool show)
+    {
+        if (show == Visible) return false;
+        Visible = show;
+        return true;
     }
 
     int S(float v) => UI.Scale(v, sc);
@@ -58,6 +68,7 @@ sealed class TimerChip : Control
     {
         Kind.Janus => Color.FromArgb(135, 80, 235),
         Kind.Rune => Color.FromArgb(20, 150, 220),
+        Kind.Off => Color.FromArgb(130, 130, 140),
         _ => buffTint,
     };
 
@@ -80,24 +91,19 @@ sealed class TimerChip : Control
         var icon = new RectangleF(S(4), (Height - isz) / 2f, isz, isz);
         if (kind == Kind.Janus) DrawJanus(g, icon);
         else if (kind == Kind.Rune) DrawRune(g, icon);
-        else DrawBuff(g, icon, c);
+        else if (kind != Kind.Off) DrawBuff(g, icon, c);
 
-        var tr = new RectangleF(icon.Right + S(3), 0, Width - icon.Right - S(8), Height);
+        var tr = kind == Kind.Off ? new RectangleF(0, 0, Width, Height) : new RectangleF(icon.Right + S(3), 0, Width - icon.Right - S(8), Height);
         using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         var fore = alert ? Color.White : UI.Dark ? Mix(c, Color.White, 0.62f) : c;
         using var tb = new SolidBrush(fore);
         g.DrawString(text, Font, tb, tr, fmt);
     }
 
-    // 솔 야누스: 연한 테두리 네모 안에 보랏빛 원판, 안쪽 고리와 점 무늬
+    // 솔 야누스: 보랏빛 원판, 안쪽 고리와 점 무늬 (다른 아이콘처럼 뒤 틀 없이)
     static void DrawJanus(Graphics g, RectangleF r)
     {
-        using (var frame = UI.RoundRect(r, r.Width * 0.18f))
-        {
-            using (var b = new LinearGradientBrush(r, Color.FromArgb(240, 242, 252), Color.FromArgb(200, 206, 230), 90f)) g.FillPath(b, frame);
-            using (var p = new Pen(Color.FromArgb(150, 158, 200), Math.Max(1f, r.Width / 22f))) g.DrawPath(p, frame);
-        }
-        var disc = Inset(r, r.Width * 0.12f);
+        var disc = Inset(r, r.Width * 0.06f);
         using (var path = new GraphicsPath())
         {
             path.AddEllipse(disc);

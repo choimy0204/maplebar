@@ -24,6 +24,9 @@ public static class SiteMenu
         return set;
     }
 
+    /// <summary>예전(1.1.62까지) 이름은 "AI"였다. 설정에 남은 옛 이름은 Settings.Load가 바꿔 준다</summary>
+    public const string ToolsName = "도구";
+
     static MenuEntry H(string t) => new(t, null);
     static MenuEntry I(string t, string p) => new(t, p);
 
@@ -115,11 +118,13 @@ public static class SiteMenu
             I("현재 재생목록", Music.Home + "/current"), I("좋아요", Music.Home + "/favorite"),
             I("재생목록", Music.Home + "/my/playlists"),
         }),
-        // AI 대화: 사이트 그대로 작은 창에서 쓴다. 로그인은 사용자가 직접 한다
-        new("AI", null, new[]
+        // 도구: AI 대화(사이트 그대로 작은 창, 로그인은 사용자가 직접 한다)와 바가 직접 띄우는 유틸리티
+        new(ToolsName, null, new[]
         {
-            H("AI 대화"),
+            H("AI"),
             I("ChatGPT", Ai.ChatGpt), I("Claude", Ai.Claude),
+            H("유틸리티"),
+            I("계산기", CalcForm.Path), I("메모", MemoForm.Path),
         }),
     };
 }

@@ -39,6 +39,7 @@ sealed class JanusForm : Form, IMessageFilter
     // 알림 창에는 야누스·룬 칸만, 웹툰 키 창에는 웹툰 칸만 있다 (없는 칸은 null)
     readonly bool toon;
     readonly RoundLabel? janusKey, npcKey, upKey, downKey;
+    RoundLabel? erdaKey;
     RoundLabel? nextKey, prevKey, shortsNextKey, shortsPrevKey, comboKey;
     // 도핑 칸마다: 키 칸, 상태 줄
     readonly RoundLabel?[] dopeKeys = new RoundLabel?[JanusWatch.DopeSlots];
@@ -56,9 +57,11 @@ sealed class JanusForm : Form, IMessageFilter
     static readonly Color Orange = Color.FromArgb(255, 140, 0);
     static readonly Color Green = Color.FromArgb(0, 190, 90);
     readonly Label? janusStatus, runeStatus;
+    Label? erdaStatus;
     readonly System.Windows.Forms.Timer refresh = new() { Interval = 250 };
     int capturing;
     bool captureCombo; // 키를 받는 중에 조합 키를 먼저 눌렀다
+    int captureMod; // 야누스 키를 받는 중에 먼저 누른 Shift·Ctrl·Alt (다음 키와 같이 쓴다)
     readonly Dictionary<int, Toggle> comboSws = new(); // 칸 번호(capturing 값) → 그 칸의 조합 키 스위치 // 1 = 솔 야누스 키, 3 = NPC 대화 키, 4 = 웹툰 위로, 5 = 웹툰 아래로 키를 받는 중, 30~ = 반복 알림 키
 
     // 알림 창은 두 페이지: 1 = 야누스·룬·버프·도핑·정펜, 2 = 반복 주기 알림 · 알림 띄울 모니터
@@ -71,6 +74,10 @@ sealed class JanusForm : Form, IMessageFilter
     readonly List<Action> offAll = new(); // '알림 모두 끄기'가 부를 끄기 동작들
     readonly RoundLabel?[] repeatKeys = new RoundLabel?[JanusWatch.RepeatSlots];
     readonly Label?[] repeatStatus = new Label?[JanusWatch.RepeatSlots];
+    readonly RoundLabel?[] onceKeys = new RoundLabel?[JanusWatch.OnceSlots];
+    readonly Label?[] onceStatus = new Label?[JanusWatch.OnceSlots];
+    readonly Card?[] repeatCards = new Card?[JanusWatch.RepeatSlots], onceCards = new Card?[JanusWatch.OnceSlots];
+    int repeatPage, oncePage;
 
     void ShowPage(int p)
     {
@@ -95,6 +102,13 @@ sealed class JanusForm : Form, IMessageFilter
         if (foot == null) return;
         AutoScrollPosition = Point.Empty;
         int y = pageEnd[p];
+        if (presetPanel != null)
+        {
+            // 프리셋 칸은 그 페이지 알림 칸 끝까지 늘린다 (너무 짧으면 최소 높이)
+            presetPanel.Height = Math.Max(S(300), y - S(10) - presetPanel.Top);
+            LayoutPresetPanel();
+            y = Math.Max(y, presetPanel.Bottom + S(10));
+        }
         foot.Location = new Point(foot.Left, y);
         y += foot.PreferredSize.Height + S(14);
         var wa = Screen.FromControl(this).WorkingArea;
@@ -125,6 +139,9 @@ sealed class JanusForm : Form, IMessageFilter
         // 웹툰 키 창은 두 칸(웹툰 | 쇼츠)으로 나란히 놓는다
         int pad = S(18), toonW = S(336), toonGap = S(16);
         int W = toon ? pad * 2 + toonW * 2 + toonGap : pad * 2 + S(352) * 3 + S(28) * 2, y = S(14);
+        // 알림 창은 오른쪽에 프리셋 칸을 더 둔다. contentR = 알림 칸들이 닿는 오른쪽 끝
+        int contentR = W - pad, presetW = S(220), presetGap = S(20);
+        if (!toon) W += presetW + presetGap;
 
         // 머리: 제목과 닫기. 빈 곳을 끌면 창이 움직인다
         var title = new Label { Text = toon ? "웹툰 · 쇼츠 키" : "알림 설정", Font = F(13, FontStyle.Bold), AutoSize = true, Location = new Point(pad, y) };
@@ -142,9 +159,18 @@ sealed class JanusForm : Form, IMessageFilter
             allOff.Radius = S(6);
             Controls.Add(allOff);
             allOff.Location = new Point(close.Left - S(8) - allOff.PreferredWidth, y + S(2));
+            // 전체 알림 켜기: 끄면 각 알림 스위치는 그대로 두고 아무 알림도 세지 않는다
+            var allSw = new Toggle { On = st.AlertsOn, Size = new Size(S(40), S(22)) };
+            allSw.Location = new Point(allOff.Left - S(12) - allSw.Width, allOff.Top + (allOff.PreferredSize.Height - allSw.Height) / 2);
+            var allLabel = new Label { Text = "전체 알림", Font = F(9.5f, FontStyle.Bold), AutoSize = true, ForeColor = UI.Text };
+            allLabel.Location = new Point(allSw.Left - S(6) - allLabel.PreferredWidth, allOff.Top + (allOff.PreferredSize.Height - allLabel.PreferredHeight) / 2);
+            allSw.Changed += v => { st.AlertsOn = v; st.Save(); UpdateStatus(); };
+            // 바의 OFF 칩을 눌러 다시 켜면 이 스위치도 따라간다
+            liveHints.Add(() => { if (allSw.On != st.AlertsOn) allSw.On = st.AlertsOn; });
+            Controls.Add(allSw); Controls.Add(allLabel);
             // 1 · 2 페이지 넘기기는 머리 줄 가운데에 하나만 둔다 (페이지를 넘겨도 그 자리)
             int navW = S(230);
-            MakePageTabs((W - navW) / 2, y, navW);
+            MakePageTabs((pad + contentR - navW) / 2, y, navW);
         }
         y += S(34);
         var sub = new Label
@@ -160,11 +186,13 @@ sealed class JanusForm : Form, IMessageFilter
         if (!toon)
         {
             // 알림 소리 · 조합 키 · 화면 알림은 왼쪽에 좁게 모으고, 남은 자리에 알림 방식
+            // 프리셋 칸은 두 페이지에 다 보이게 페이지 목록 밖에 둔다 (높이는 ShowPage에서 맞춘다)
+            presetPanel = MakePresetPanel(contentR + presetGap, y, presetW);
             int g10 = S(10), sx = pad;
             var sound = MakeSoundCard(sx, y, S(260)); sx += sound.Width + g10;
             var combo = MakeComboCard(sx, y, S(270)); sx += combo.Width + g10;
             var visual = MakeVisualCard(sx, y, S(220), out var visualSw); sx += visual.Width + g10;
-            var method = MakeMethodCard(sx, y, W - pad - sx, visualSw);
+            var method = MakeMethodCard(sx, y, contentR - sx, visualSw);
             int h4 = new[] { sound.Height, combo.Height, visual.Height, method.Height }.Max();
             sound.Height = combo.Height = visual.Height = method.Height = h4;
             y += h4 + S(10);
@@ -190,19 +218,26 @@ sealed class JanusForm : Form, IMessageFilter
         {
             Color = Purple, Title = "솔 야누스", On = st.JanusOn, SetOn = v => st.JanusOn = v,
             KeyLabel = "솔 야누스 키", Which = 1,
-            StepLabel = "지속시간", Value = st.JanusSec, Options = Enumerable.Range(11, 14).Select(n => n * 5).Append(121).ToArray(), Fmt = v => JanusWatch.Endless(st, v) ? "∞" : v + "초", SetValue = v => st.JanusSec = v,
-            Hint = "1레벨 60초 · 10레벨 70초 · 20레벨 80초 · 30레벨 120초\n120초보다 크게 넣으면 무한대예요.",
+            StepLabel = "알림 주기", MinSec = true, Value = JanusWatch.Cycle(st), SetValue = v => st.JanusCycleSec = v,
+            Hint = "줄\n줄",
             More =
-                "지속시간: 1레벨 60초 · 10레벨 70초 · 20레벨 80초 · 30레벨 120초\n" +
-                "120초보다 크게 넣으면 무한대예요. 처음 깐 뒤 50초 안에 또 깐 건 세지 않아요.\n" +
-                "5석펫(루나 익스텐션)을 켜면 90초마다 루나 게더링으로 늘어난 시간까지 세서(최대 300초) 진짜 꺼질 때 알려 드려요. 지속시간이 90초 이상이면 안 꺼져요.\n" +
+                "야누스 키를 누르면 그때부터 알림 주기만큼 세고 알려 드려요. 다시 깔면 처음부터 다시 셉니다.\n" +
+                "처음 깐 뒤 50초 안에 또 깐 건 세지 않아요. 0분 0초면 세지 않아요.\n" +
+                "다시 알리기를 켜면 알림 뒤에도 안 깔았을 때 정한 초 뒤에 한 번 더 알려요.\n" +
                 "아이템은 깔고 1분 30초 뒤 사라져요. 65초에 연두색 빛으로 주우라고 알려 드려요.",
             Preview = () => JanusAlert.Play(sc),
             Switches = new (string, bool, Action<bool>)[]
             {
-                ("5석펫 (루나 익스텐션)", st.PetOn, v => st.PetOn = v),
+                ("다시 알리기", st.JanusRealertOn, v => st.JanusRealertOn = v),
                 ("아이템 회수 알림", st.PickupOn, v => st.PickupOn = v),
-                ("5초 먼저 알리기", st.JanusEarly, v => st.JanusEarly = v),
+            },
+            Step2 = ("다시 알리기", st.JanusRealertSec, Enumerable.Range(1, 12).Select(n => n * 5).ToArray(), v => v + "초", v => st.JanusRealertSec = v),
+            LiveHint = () =>
+            {
+                int c = JanusWatch.Cycle(st);
+                if (c <= 0) return "알림 주기를 넣어 주세요.";
+                string t = (c / 60 > 0 ? $"{c / 60}분 " : "") + (c % 60 > 0 || c < 60 ? $"{c % 60}초 " : "");
+                return $"{t}뒤에 알림을 받습니다." + (st.JanusRealertOn ? $"\n그로부터 {st.JanusRealertSec}초 뒤, 다시 알림을 받습니다." : "");
             },
         }, out var jk, out var js);
         janusKey = jk; janusStatus = js;
@@ -272,6 +307,20 @@ sealed class JanusForm : Form, IMessageFilter
             dopeH = Math.Max(dopeH, dopeCard.Height);
         }
         y += dopeH + S(10);
+
+        // 에르다 파운틴은 도핑 칸 바로 밑에 둔다
+        var erdaCard = MakeCard(dx, y, colW, new CardSpec
+        {
+            Color = JanusWatch.ErdaMain, Title = "에르다 파운틴", On = st.ErdaOn, SetOn = v => st.ErdaOn = v,
+            KeyLabel = "에르다 파운틴 키", Which = 8,
+            Hint = "키를 누르면 60초를 세요.",
+            More = "에르다 파운틴 키를 누르면 그때부터 60초를 세요. 다시 누르면 처음부터 다시 셉니다.\n" +
+                   "5초 먼저 알리기를 켜면 55초에 '곧 사라져요', 끄면 60초에 '사라졌어요'로 알려 드려요.",
+            Preview = () => JanusWatch.PlayErda(sc, st.ErdaEarly),
+            Switches = new (string, bool, Action<bool>)[] { ("5초 먼저 알리기", st.ErdaEarly, v => st.ErdaEarly = v) },
+        }, out var ek, out var es);
+        erdaKey = ek; erdaStatus = es;
+        y += erdaCard.Height + S(10);
         y = Math.Max(y, Math.Max(leftEnd, rightEnd));
 
         // 줄 사이 세로선
@@ -282,7 +331,7 @@ sealed class JanusForm : Form, IMessageFilter
         pages[0] = Controls.Cast<Control>().Skip(pageStart).ToList();
         pageEnd[0] = y;
         int page2Start = Controls.Count;
-        pageEnd[1] = MakePage2(pad, top, colW, gap, W - pad * 2);
+        pageEnd[1] = MakePage2(pad, top, colW, gap, contentR - pad);
         pages[1] = Controls.Cast<Control>().Skip(page2Start).ToList();
         foreach (var c in pages[1]) c.Visible = false;
         ApplySlotPages();
@@ -304,6 +353,207 @@ sealed class JanusForm : Form, IMessageFilter
         refresh.Start();
         UpdateKeys();
         UpdateStatus();
+    }
+
+    // ── 오른쪽 프리셋 칸: 목록 · 이름 칸 · 저장/제거. 1·2페이지 알림 값을 함께 저장한다 ──
+    Card? presetPanel;
+    Panel? presetList;
+    RoundLabel? presetInputBack, presetSave, presetDel;
+    TextBox? presetInput;
+
+    Card MakePresetPanel(int x, int y, int w)
+    {
+        var card = new Card { Location = new Point(x, y), Size = new Size(w, S(300)) };
+        var title = new Label { Text = "프리셋", Font = F(10.5f, FontStyle.Bold), AutoSize = true, Location = new Point(S(14), S(12)) };
+        presetList = new Panel { AutoScroll = true, BackColor = UI.Back };
+        // 이름 칸: 둥근 바탕 안에 테두리 없는 글 칸 (바탕이 Label이라 한글 입력을 따로 켠다)
+        presetInputBack = new RoundLabel { AutoSize = false, Radius = S(6), Fill = UI.HoverBack, Cursor = Cursors.IBeam };
+        presetInput = new TextBox
+        {
+            BorderStyle = BorderStyle.None, BackColor = UI.HoverBack, ForeColor = UI.Text, Font = F(9.5f), MaxLength = 20,
+            PlaceholderText = "프리셋 이름", ImeMode = ImeMode.NoControl, Text = st.AlertPresetName ?? "",
+        };
+        presetInputBack.Controls.Add(presetInput);
+        presetInputBack.Click += (_, _) => presetInput.Focus();
+        presetSave = UI.Button("저장", "", SavePreset, sc, Color.White, UI.Accent);
+        presetDel = UI.Button("제거", "", DeletePreset, sc, null, UI.HoverBack);
+        foreach (var b in new[] { presetSave, presetDel })
+        {
+            b.AutoSize = false; b.Radius = S(6); b.TextAlign = ContentAlignment.MiddleCenter; b.Font = F(9.5f, FontStyle.Bold); b.Padding = Padding.Empty;
+        }
+        card.Controls.AddRange(new Control[] { title, presetList, presetInputBack, presetSave, presetDel });
+        Controls.Add(card);
+        return card;
+    }
+
+    /// <summary>프리셋 칸 높이에 맞춰 목록·이름 칸·단추 자리를 잡는다</summary>
+    void LayoutPresetPanel()
+    {
+        if (presetPanel == null || presetList == null || presetInputBack == null || presetInput == null || presetSave == null || presetDel == null) return;
+        int ip = S(12), w = presetPanel.Width - ip * 2, bh = S(34), g = S(8);
+        int by = presetPanel.Height - ip - bh, half = (w - g) / 2;
+        presetSave.Bounds = new Rectangle(ip, by, half, bh);
+        presetDel.Bounds = new Rectangle(ip + half + g, by, w - half - g, bh);
+        presetInputBack.Bounds = new Rectangle(ip, by - g - bh, w, bh);
+        presetInput.Width = w - S(20);
+        presetInput.Location = new Point(S(10), (bh - presetInput.Height) / 2);
+        int top = S(42);
+        presetList.Bounds = new Rectangle(ip, top, w, presetInputBack.Top - S(10) - top);
+        BuildPresetList();
+    }
+
+    AlertPreset? FindPreset(string? name) => string.IsNullOrWhiteSpace(name) ? null
+        : st.AlertPresets.FirstOrDefault(p => string.Equals(p.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>프리셋 목록 줄을 다시 만든다 (고른 프리셋은 주황빛)</summary>
+    void BuildPresetList()
+    {
+        if (presetList == null) return;
+        presetList.SuspendLayout();
+        foreach (var c in presetList.Controls.Cast<Control>().ToList()) c.Dispose();
+        presetList.AutoScrollPosition = Point.Empty;
+        var list = st.AlertPresets;
+        if (list.Count == 0)
+            presetList.Controls.Add(new Label { Text = "저장한 프리셋이 없어요.", Font = F(9), ForeColor = Gray, AutoSize = true, Location = new Point(S(2), S(4)) });
+        int rowH = S(34), g = S(6);
+        bool over = list.Count * (rowH + g) - g > presetList.Height;
+        int rw = presetList.Width - (over ? SystemInformation.VerticalScrollBarWidth + S(2) : 0);
+        for (int i = 0; i < list.Count; i++) presetList.Controls.Add(MakePresetRow(list[i], i * (rowH + g), rw, rowH));
+        presetList.ResumeLayout();
+    }
+
+    RoundLabel MakePresetRow(AlertPreset p, int y, int w, int h)
+    {
+        bool sel = string.Equals(p.Name, st.AlertPresetName, StringComparison.OrdinalIgnoreCase);
+        var back = sel ? UI.SoftAccent : UI.HoverBack;
+        var row = new RoundLabel { AutoSize = false, Bounds = new Rectangle(0, y, w, h), Radius = S(6), Cursor = Cursors.Hand, Fill = back };
+        var pen = new Label { Text = "✎", Font = F(10), ForeColor = Gray, AutoSize = true, Cursor = Cursors.Hand, BackColor = Color.Transparent };
+        pen.Location = new Point(w - S(10) - pen.PreferredWidth, (h - pen.PreferredHeight) / 2);
+        var name = new Label
+        {
+            Text = p.Name, Font = F(9.5f, sel ? FontStyle.Bold : FontStyle.Regular), ForeColor = sel ? UI.AccentText : UI.Text,
+            AutoSize = false, AutoEllipsis = true, UseMnemonic = false, BackColor = Color.Transparent, Cursor = Cursors.Hand,
+            TextAlign = ContentAlignment.MiddleLeft, Bounds = new Rectangle(S(10), 0, pen.Left - S(14), h),
+        };
+        row.Controls.AddRange(new Control[] { name, pen });
+        presetTip.SetToolTip(pen, "이름 바꾸기");
+        void Hover(bool on) => row.Fill = on ? ControlPaint.Dark(back, 0.05f) : back;
+        foreach (var c in new Control[] { row, name })
+        {
+            c.MouseEnter += (_, _) => Hover(true);
+            c.MouseLeave += (_, _) => Hover(false);
+            c.Click += (_, _) => LoadPreset(p);
+        }
+        pen.Click += (_, _) => RenamePreset(row, name, pen, p);
+        return row;
+    }
+    static readonly ToolTip presetTip = new();
+
+    /// <summary>목록 줄에서 바로 이름을 고친다 (엔터 저장, Esc 취소, 비우면 그대로)</summary>
+    void RenamePreset(RoundLabel row, Label name, Label pen, AlertPreset p)
+    {
+        editingName?.Invoke(true);
+        var tb = new TextBox
+        {
+            BorderStyle = BorderStyle.None, BackColor = row.Fill, ForeColor = UI.Text, Font = name.Font, MaxLength = 20,
+            Text = p.Name, ImeMode = ImeMode.NoControl,
+        };
+        tb.Width = row.Width - S(20);
+        tb.Location = new Point(S(10), (row.Height - tb.Height) / 2);
+        name.Visible = pen.Visible = false;
+        row.Controls.Add(tb);
+        bool done = false;
+        void Finish(bool keep)
+        {
+            if (done) return;
+            done = true;
+            editingName = null;
+            string nn = tb.Text.Trim();
+            string? msg = null;
+            if (keep && nn.Length > 0 && nn != p.Name)
+            {
+                if (FindPreset(nn) is AlertPreset other && other != p) msg = "같은 이름이 이미 있어요";
+                else
+                {
+                    if (string.Equals(st.AlertPresetName, p.Name, StringComparison.OrdinalIgnoreCase)) st.AlertPresetName = nn;
+                    if (presetInput != null && string.Equals(presetInput.Text.Trim(), p.Name, StringComparison.OrdinalIgnoreCase)) presetInput.Text = nn;
+                    p.Name = nn;
+                    st.Save();
+                }
+            }
+            BeginInvoke(() =>
+            {
+                BuildPresetList();
+                if (msg != null) AskBox.Choose(this, msg, "다른 이름으로 바꿔 주세요.", true, "확인");
+            });
+        }
+        tb.Leave += (_, _) => Finish(true);
+        editingName = Finish;
+        tb.Focus();
+        tb.SelectAll();
+    }
+
+    /// <summary>이름 칸에 쓴 이름으로 지금 알림 설정(1·2페이지)을 저장한다</summary>
+    void SavePreset()
+    {
+        if (presetInput == null) return;
+        editingName?.Invoke(true);
+        string n = presetInput.Text.Trim();
+        if (n.Length == 0)
+        {
+            AskBox.Choose(this, "이름을 넣어 주세요", "이름이 비어 있으면 저장할 수 없어요.", true, "확인");
+            presetInput.Focus();
+            return;
+        }
+        var old = FindPreset(n);
+        if (old != null && !AskBox.Show(this, $"'{old.Name}'에 덮어쓸까요?", "지금 알림 설정으로 바뀌어요.", "덮어쓰기", "취소", true)) return;
+        var p = AlertPreset.From(st, old?.Name ?? n);
+        if (old != null) st.AlertPresets[st.AlertPresets.IndexOf(old)] = p; else st.AlertPresets.Add(p);
+        st.AlertPresetName = p.Name;
+        presetInput.Text = p.Name;
+        st.Save();
+        BuildPresetList();
+    }
+
+    /// <summary>이름 칸의 프리셋(없으면 고른 프리셋)을 지운다</summary>
+    void DeletePreset()
+    {
+        editingName?.Invoke(true);
+        var p = FindPreset(presetInput?.Text) ?? FindPreset(st.AlertPresetName);
+        if (p == null) { AskBox.Choose(this, "지울 프리셋을 골라 주세요", "목록에서 프리셋을 누르면 골라져요.", true, "확인"); return; }
+        if (!AskBox.Show(this, $"'{p.Name}'을 지울까요?", "지운 프리셋은 되돌릴 수 없어요.", "지우기")) return;
+        st.AlertPresets.Remove(p);
+        if (string.Equals(st.AlertPresetName, p.Name, StringComparison.OrdinalIgnoreCase)) st.AlertPresetName = null;
+        if (presetInput != null) presetInput.Text = "";
+        st.Save();
+        BuildPresetList();
+    }
+
+    /// <summary>지금 알림 설정이 고른 프리셋과 똑같은지 (같으면 불러올 때 묻지 않는다)</summary>
+    bool SameAsSelected()
+    {
+        if (FindPreset(st.AlertPresetName) is not AlertPreset cur) return false;
+        return System.Text.Json.JsonSerializer.Serialize(AlertPreset.From(st, cur.Name)) == System.Text.Json.JsonSerializer.Serialize(cur);
+    }
+
+    /// <summary>프리셋을 불러와 알림 설정에 넣고, 창을 새 값으로 다시 그린다</summary>
+    void LoadPreset(AlertPreset p)
+    {
+        editingName?.Invoke(true);
+        if (presetInput != null) presetInput.Text = p.Name;
+        if (!SameAsSelected() && !AskBox.Show(this, $"'{p.Name}'을 불러올까요?", "저장하지 않은 지금 설정은 사라져요.", "불러오기", "취소", true)) return;
+        p.ApplyTo(st);
+        st.AlertPresetName = p.Name;
+        st.Save();
+        // 칸들은 만들 때 설정 값을 읽으므로, 같은 자리·같은 페이지로 창을 새로 연다
+        if (Owner is not Form owner) return;
+        int pg = page; var loc = Location;
+        BeginInvoke(() =>
+        {
+            Close();
+            Open(owner, st, watch, sc);
+            if (alertForm is JanusForm f && !f.IsDisposed) { f.ShowPage(pg); f.Location = loc; }
+        });
     }
 
     /// <summary>알림 소리: 켜기 스위치와 소리 크기 (− 값 +). 크기를 바꾸면 그 크기로 한 번 들려준다.</summary>
@@ -444,13 +694,18 @@ sealed class JanusForm : Form, IMessageFilter
         /// <summary>키 줄 이름과 키 칸 번호 (capturing에 쓰는 번호)</summary>
         public required string KeyLabel { get; init; }
         public required int Which { get; init; }
-        /// <summary>숫자 줄: 이름 · 저장된 값 · 선택지 · 표시 방법 · 저장 방법</summary>
-        public required string StepLabel { get; init; }
-        public required int Value { get; init; }
-        public required int[] Options { get; init; }
-        public required Func<int, string> Fmt { get; init; }
-        public required Action<int> SetValue { get; init; }
+        /// <summary>숫자 줄: 이름 · 저장된 값 · 선택지 · 표시 방법 · 저장 방법 (이름이 없으면 숫자 줄을 안 만든다)</summary>
+        public string? StepLabel { get; init; }
+        public int Value { get; init; }
+        public int[] Options { get; init; } = { 0 };
+        public Func<int, string> Fmt { get; init; } = v => v.ToString();
+        public Action<int> SetValue { get; init; } = _ => { };
+        /// <summary>숫자 줄을 − + 대신 [ ]분 [ ]초 칸으로 받는다 (Value는 초)</summary>
+        public bool MinSec { get; init; }
+        /// <summary>설명 글 (비우면 줄을 만들지 않는다)</summary>
         public required string Hint { get; init; }
+        /// <summary>설정에 따라 바뀌는 설명 글 (Hint는 줄 수만 정한다)</summary>
+        public Func<string>? LiveHint { get; init; }
         /// <summary>설명 글에 마우스를 올리면 보이는 자세한 설명</summary>
         public string? More { get; init; }
         public required Action Preview { get; init; }
@@ -558,6 +813,8 @@ sealed class JanusForm : Form, IMessageFilter
     {
         for (int i = 0; i < buffCards.Length; i++) if (buffCards[i] is Card c) c.Visible = page == 0 && i == buffPage;
         for (int i = 0; i < dopeCards.Length; i++) if (dopeCards[i] is Card c) c.Visible = page == 0 && i == dopePage;
+        for (int i = 0; i < repeatCards.Length; i++) if (repeatCards[i] is Card c) c.Visible = page == 1 && i == repeatPage;
+        for (int i = 0; i < onceCards.Length; i++) if (onceCards[i] is Card c) c.Visible = page == 1 && i == oncePage;
     }
 
     string BuffName(int i) => string.IsNullOrWhiteSpace(st.Buffs[i].Name) ? $"버프 {i + 1}" : st.Buffs[i].Name!.Trim();
@@ -598,19 +855,50 @@ sealed class JanusForm : Form, IMessageFilter
         keyPill = pill;
         cy += S(40);
 
-        // 숫자 줄: − 값 +
-        card.Controls.Add(RowLabel(stepLabel, ip, cy));
-        // − + 는 선택지 사이를 오가고, 값 칸을 두 번 누르면 범위 안의 아무 숫자나 칠 수 있다
+        // 숫자 줄: − 값 + (에르다 파운틴처럼 시간이 정해진 칸은 없다)
         int cur = Math.Clamp(value, options[0], options[^1]);
         var shown = ValueLabel(fmt(cur));
-        if (cur != value) { setValue(cur); st.Save(); }
-        void Set(int v) { cur = v; shown.Text = fmt(cur); setValue(cur); st.Save(); UpdateStatus(); }
-        void Change(int d) => Set(StepOption(options, cur, d));
-        AddStepper(card, shown, w - ip, cy, Change);
-        AddTypeIn(card, shown, () => cur, options[0], options[^1], Set);
-        cy += S(38);
+        if (stepLabel != null && spec.MinSec)
+        {
+            // [ ]분 [ ]초 (오른쪽부터 놓는다)
+            card.Controls.Add(RowLabel(stepLabel, ip, cy));
+            int sec0 = Math.Max(0, value);
+            var boxes = new NumBox[2];
+            int right = w - ip;
+            for (int k = 1; k >= 0; k--)
+            {
+                var unit = new Label { Text = k == 0 ? "분" : "초", AutoSize = true, ForeColor = UI.T(Color.FromArgb(80, 80, 80)) };
+                card.Controls.Add(unit);
+                unit.Location = new Point(right - unit.PreferredWidth, cy + (S(30) - unit.PreferredHeight) / 2);
+                var nb = new NumBox
+                {
+                    Maximum = k == 0 ? 99 : 59, Value = k == 0 ? Math.Min(99, sec0 / 60) : sec0 % 60,
+                    Size = new Size(S(54), S(30)), Radius = S(8), Font = F(10.5f, FontStyle.Bold), ForeColor = UI.Text,
+                };
+                nb.Location = new Point(unit.Left - S(4) - nb.Width, cy);
+                card.Controls.Add(nb);
+                boxes[k] = nb;
+                right = nb.Left - S(10);
+            }
+            foreach (var nb in boxes)
+                nb.ValueChanged += (_, _) => { setValue((int)boxes[0].Value * 60 + (int)boxes[1].Value); st.Save(); UpdateStatus(); };
+            cy += S(40);
+        }
+        else if (stepLabel != null)
+        {
+            card.Controls.Add(RowLabel(stepLabel, ip, cy));
+            // − + 는 선택지 사이를 오가고, 값 칸을 두 번 누르면 범위 안의 아무 숫자나 칠 수 있다
+            if (cur != value) { setValue(cur); st.Save(); }
+            void Set(int v) { cur = v; shown.Text = fmt(cur); setValue(cur); st.Save(); UpdateStatus(); }
+            void Change(int d) => Set(StepOption(options, cur, d));
+            AddStepper(card, shown, w - ip, cy, Change);
+            AddTypeIn(card, shown, () => cur, options[0], options[^1], Set);
+            cy += S(38);
+        }
 
         // 켜고 끄는 줄 (바꾸면 값 표시도 다시 쓴다: 5석펫에 따라 초 ↔ 무한대)
+        // 두 번째 숫자(부스트 도핑의 사용 대기 초)는 첫 스위치 줄에 같이 놓아 칸을 줄인다: 사용 대기 [− 3초 +] [스위치]
+        bool first = true;
         foreach (var (label, on2, set) in switches ?? Array.Empty<(string, bool, Action<bool>)>())
         {
             card.Controls.Add(RowLabel(label, ip, cy));
@@ -619,25 +907,38 @@ sealed class JanusForm : Form, IMessageFilter
             t.Changed += v => { set(v); st.Save(); shown.Text = fmt(cur); UpdateStatus(); };
             card.Controls.Add(t);
             if (label == "조합 키 누른 채로 쓰기") comboSws[spec.Which] = t;
-            cy += S(34);
+            if (first && step2 is var (_, v2, o2, f2, s2))
+            {
+                int c2 = Math.Clamp(v2, o2[0], o2[^1]);
+                var shown2 = ValueLabel(f2(c2));
+                void Set2(int v) { c2 = v; shown2.Text = f2(c2); s2(c2); st.Save(); UpdateStatus(); }
+                AddStepper(card, shown2, t.Left - S(12), cy, d => Set2(StepOption(o2, c2, d)));
+                AddTypeIn(card, shown2, () => c2, o2[0], o2[^1], Set2);
+                cy += S(38);
+            }
+            else cy += S(34);
+            first = false;
         }
 
-        // 두 번째 숫자 줄 (부스트 도핑의 사용 대기 초)
-        if (step2 is var (l2, v2, o2, f2, s2))
+        if (hint.Length > 0)
         {
-            card.Controls.Add(RowLabel(l2, ip, cy));
-            int c2 = Math.Clamp(v2, o2[0], o2[^1]);
-            var shown2 = ValueLabel(f2(c2));
-            void Set2(int v) { c2 = v; shown2.Text = f2(c2); s2(c2); st.Save(); }
-            AddStepper(card, shown2, w - ip, cy, d => Set2(StepOption(o2, c2, d)));
-            AddTypeIn(card, shown2, () => c2, o2[0], o2[^1], Set2);
-            cy += S(38);
+            var tip = new Label { Text = hint, Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy) };
+            card.Controls.Add(tip);
+            if (spec.LiveHint is Func<string> live)
+            {
+                // 글이 바뀌어도 칸 높이는 그대로: 처음 넣은 줄 수만큼 자리를 잡아 둔다
+                tip.AutoSize = false; tip.Size = tip.PreferredSize with { Width = w - ip * 2 };
+                tip.Text = live();
+                liveHints.Add(() => tip.Text = live());
+            }
+            if (spec.More != null) { tip.Cursor = Cursors.Help; new ToolTip { AutoPopDelay = 30000 }.SetToolTip(tip, spec.More); }
+            cy += tip.PreferredSize.Height + S(10);
         }
-
-        var tip = new Label { Text = hint, Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy) };
-        card.Controls.Add(tip);
-        if (spec.More != null) { tip.Cursor = Cursors.Help; new ToolTip { AutoPopDelay = 30000 }.SetToolTip(tip, spec.More); }
-        cy += tip.PreferredSize.Height + S(10);
+        else
+        {
+            if (spec.More != null) { name.Cursor = Cursors.Help; new ToolTip { AutoPopDelay = 30000 }.SetToolTip(name, spec.More); }
+            cy += S(4);
+        }
 
         // 상태 줄: 남은 시간 · 미리 보기
         var look = UI.Button("미리 보기", "", preview, sc, fore: color, back: Color.FromArgb(24, color));
@@ -841,21 +1142,32 @@ sealed class JanusForm : Form, IMessageFilter
 
     static readonly Color Teal = Color.FromArgb(0, 165, 155);
 
-    /// <summary>2페이지: 반복 주기 알림 3칸(한 줄에 하나씩) · 알림 띄울 모니터. 끝난 높이를 돌려준다.</summary>
+    /// <summary>2페이지: 왼쪽 반복 주기 알림 3칸 · 오른쪽 단일 알림 3칸 (◀ ▶로 한 칸씩) · 알림 띄울 모니터. 끝난 높이를 돌려준다.</summary>
     int MakePage2(int x, int top, int colW, int gap, int fullW)
     {
-        int y = top + Section("반복 주기 알림", Teal, x, top, fullW);
-        var tip = new Label
+        int hw = (fullW - gap) / 2, ox = x + hw + gap;
+        int Column(int cx, string title, string tipText)
         {
-            Text = "트리거 키를 누르면 정한 주기마다 알려요. 다시 누르면 처음부터 세요.",
-            Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(fullW, 0), Location = new Point(x, y),
-        };
-        Controls.Add(tip);
-        y += tip.PreferredSize.Height + S(8);
-        var cards = new Card[JanusWatch.RepeatSlots];
-        for (int i = 0; i < cards.Length; i++) cards[i] = MakeRepeatCard(x + (colW + gap) * i, y, colW, i);
-        int h = cards.Max(c => c.Height);
-        foreach (var c in cards) c.Height = h;
+            int cy = top + Section(title, Teal, cx, top, hw);
+            var tip = new Label
+            {
+                Text = tipText, Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(hw, 0), Location = new Point(cx, cy),
+            };
+            Controls.Add(tip);
+            return cy + tip.PreferredSize.Height + S(8);
+        }
+        int y = Math.Max(
+            Column(x, "반복 주기 알림", "트리거 키를 누르면 정한 주기마다 알려요. 다시 누르면 처음부터 세요."),
+            Column(ox, "단일 알림", "트리거 키를 누르면 정한 시간 뒤에 한 번 알려요. 다시 누르면 처음부터 세요."));
+        // 3칸은 같은 자리에 겹쳐 두고 ◀ ▶로 한 칸씩 본다
+        MakeSlotNav(x, y, hw, JanusWatch.RepeatSlots, () => repeatPage, v => repeatPage = v,
+            i => st.Repeats[i].Title(i), i => Color.FromArgb(st.Repeats[i].Argb));
+        y += MakeSlotNav(ox, y, hw, JanusWatch.OnceSlots, () => oncePage, v => oncePage = v,
+            i => st.Onces[i].Title(i), i => Color.FromArgb(st.Onces[i].Argb)) + S(10);
+        int h = 0;
+        for (int i = 0; i < JanusWatch.RepeatSlots; i++) h = Math.Max(h, (repeatCards[i] = MakeRepeatCard(x, y, hw, i)).Height);
+        for (int i = 0; i < JanusWatch.OnceSlots; i++) h = Math.Max(h, (onceCards[i] = MakeRepeatCard(ox, y, hw, i, once: true)).Height);
+        foreach (var c in repeatCards.Concat(onceCards)) if (c != null) c.Height = h;
         y += h + S(20);
 
         y += Section("알림 띄울 모니터", Teal, x, y, fullW);
@@ -891,34 +1203,44 @@ sealed class JanusForm : Form, IMessageFilter
     /// <summary>색이 살짝 비치는 칸 바탕 (다크에서는 조금 더 진하게)</summary>
     static Color Wash(Color c, int a = 24) => Color.FromArgb(UI.Dark ? a + 18 : a, c);
 
-    /// <summary>반복 알림 한 칸: 켜기 / 트리거 키 / 주기(시·분·초) / 색 / 상태 · 미리 보기</summary>
-    Card MakeRepeatCard(int x, int y, int w, int i)
+    /// <summary>반복 알림·단일 알림 한 칸: 켜기 / 트리거 키 / 주기(시·분·초) / 색 / 상태 · 미리 보기.
+    /// 단일 알림(once)은 '반복 시간' 줄이 없고 시간은 분·초만 쓴다.</summary>
+    Card MakeRepeatCard(int x, int y, int w, int i, bool once = false)
     {
-        var r = st.Repeats[i];
-        if (Array.IndexOf(RepeatSlot.Palette, r.Argb) < 0) { r.Argb = RepeatSlot.Palette[2]; st.Save(); }
+        // 두 칸은 값 이름이 같아 아래에서 한 번에 다룬다
+        RepeatSlot? rs = once ? null : st.Repeats[i];
+        OnceSlot? os = once ? st.Onces[i] : null;
+        int code = (once ? 50 : 30) + i;
+        string defName = once ? $"단일 알림 {i + 1}" : $"반복 알림 {i + 1}";
+        int Argb() => rs?.Argb ?? os!.Argb;
+        void SetArgb(int v) { if (rs != null) rs.Argb = v; else os!.Argb = v; }
+        string Title() => rs?.Title(i) ?? os!.Title(i);
+        void Cancel() { if (once) watch.CancelOnce(i); else watch.CancelRepeat(i); }
+        void SetOn(bool v) { if (rs != null) rs.On = v; else os!.On = v; }
+        if (Array.IndexOf(RepeatSlot.Palette, Argb()) < 0) { SetArgb(RepeatSlot.Palette[2]); st.Save(); }
         var card = new Card { Location = new Point(x, y), Width = w, Radius = S(12) };
         Controls.Add(card);
         int ip = S(14), cy = S(12);
 
         var dot = new Label { Text = "●", Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) };
         // 이름 = 알림에 뜨는 글: 누르면 그 자리에서 바꾼다 (비우면 기본 이름 "반복 알림 1")
-        var name = new Label { Text = r.Title(i), Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy), Cursor = Cursors.IBeam };
-        var sw = new Toggle { On = r.On, Size = new Size(S(40), S(22)) };
+        var name = new Label { Text = Title(), Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy), Cursor = Cursors.IBeam };
+        var sw = new Toggle { On = rs?.On ?? os!.On, Size = new Size(S(40), S(22)) };
         sw.Location = new Point(w - ip - sw.Width, cy + S(1));
-        sw.Changed += v => { r.On = v; if (!v) watch.CancelRepeat(i); st.Save(); UpdateStatus(); };
-        offAll.Add(() => { if (sw.On) { sw.On = false; r.On = false; watch.CancelRepeat(i); } });
-        var (pen, box) = MakeNameEditor(name, ip, cy, sw.Left, $"반복 알림 {i + 1}", 20,
-            () => r.Title(i), () => r.Name, v => r.Name = v, refreshNavs: false);
+        sw.Changed += v => { SetOn(v); if (!v) Cancel(); st.Save(); UpdateStatus(); };
+        offAll.Add(() => { if (sw.On) { sw.On = false; SetOn(false); Cancel(); } });
+        var (pen, box) = MakeNameEditor(name, ip, cy, sw.Left, defName, 20,
+            Title, () => rs?.Name ?? os!.Name, v => { if (rs != null) rs.Name = v; else os!.Name = v; }, refreshNavs: true);
         card.Controls.AddRange(new Control[] { dot, name, pen, box, sw });
         cy += S(38);
 
-        repeatKeys[i] = KeyPill(card, "트리거 키", 30 + i, w, ip, ref cy);
+        (once ? onceKeys : repeatKeys)[i] = KeyPill(card, "트리거 키", code, w, ip, ref cy);
 
         // 엔터 기다리기 · 조합 키 (일반 버프와 같은 방식)
         foreach (var (label, on, set, combo) in new (string, bool, Action<bool>, bool)[]
         {
-            ("엔터를 누르면 엔터 시간부터 세기", r.WaitEnter, v => r.WaitEnter = v, false),
-            ("조합 키 누른 채로 쓰기", r.Combo, v => r.Combo = v, true),
+            ("엔터를 누르면 엔터 시간부터 세기", rs?.WaitEnter ?? os!.WaitEnter, v => { if (rs != null) rs.WaitEnter = v; else os!.WaitEnter = v; }, false),
+            ("조합 키 누른 채로 쓰기", rs?.Combo ?? os!.Combo, v => { if (rs != null) rs.Combo = v; else os!.Combo = v; }, true),
         })
         {
             card.Controls.Add(RowLabel(label, ip, cy - S(2)));
@@ -926,21 +1248,21 @@ sealed class JanusForm : Form, IMessageFilter
             t.Location = new Point(w - ip - t.Width, cy + S(2));
             t.Changed += v => { set(v); st.Save(); UpdateStatus(); };
             card.Controls.Add(t);
-            if (combo) comboSws[30 + i] = t;
+            if (combo) comboSws[code] = t;
             cy += S(34);
         }
 
-        // [ ]시간 [ ]분 [ ]초 한 줄 (오른쪽부터 놓는다). 초 칸이 없으면 시간·분만
-        void TimeRow(string label, int sec, bool withSec, Action<int> set)
+        // [ ]시간 [ ]분 [ ]초 한 줄 (오른쪽부터 놓는다). 초 칸이 없으면 시간·분만, noHour면 분·초만
+        void TimeRow(string label, int sec, bool withSec, Action<int> set, bool noHour = false)
         {
             card.Controls.Add(RowLabel(label, ip, cy));
             string[] units = { "시간", "분", "초" };
-            int[] max = { 99, 59, 59 };
-            int[] vals = { Math.Min(99, sec / 3600), sec / 60 % 60, sec % 60 };
-            int last = withSec ? 2 : 1;
-            var boxes = new NumBox[last + 1];
+            int[] max = { 99, noHour ? 99 : 59, 59 };
+            int[] vals = { Math.Min(99, sec / 3600), noHour ? Math.Min(99, sec / 60) : sec / 60 % 60, sec % 60 };
+            int last = withSec ? 2 : 1, first = noHour ? 1 : 0;
+            var boxes = new NumBox?[last + 1];
             int right = w - ip;
-            for (int k = last; k >= 0; k--)
+            for (int k = last; k >= first; k--)
             {
                 var unit = new Label { Text = units[k], AutoSize = true, ForeColor = UI.T(Color.FromArgb(80, 80, 80)) };
                 card.Controls.Add(unit);
@@ -956,20 +1278,24 @@ sealed class JanusForm : Form, IMessageFilter
                 right = nb.Left - S(10);
             }
             foreach (var nb in boxes)
-                nb.ValueChanged += (_, _) =>
+                if (nb != null) nb.ValueChanged += (_, _) =>
                 {
-                    set((int)boxes[0].Value * 3600 + (int)boxes[1].Value * 60 + (withSec ? (int)boxes[2].Value : 0));
+                    set((int)(boxes[0]?.Value ?? 0) * 3600 + (int)boxes[1]!.Value * 60 + (withSec ? (int)boxes[2]!.Value : 0));
                     st.Save(); UpdateStatus();
                 };
             cy += S(40);
         }
-        TimeRow("주기", r.Sec, true, v => r.Sec = v);
-        // 반복 시간: 키를 누른 뒤 이만큼만 반복하고 멈춘다
-        TimeRow("반복 시간", r.UntilSec, false, v => r.UntilSec = v);
-        var untilTip = new Label { Text = "0시간 0분이면 끌 때까지 반복해요", Font = F(8.5f), ForeColor = Gray, AutoSize = true };
-        card.Controls.Add(untilTip);
-        untilTip.Location = new Point(w - ip - untilTip.PreferredWidth, cy - S(8));
-        cy += untilTip.PreferredHeight + S(4);
+        if (rs is RepeatSlot r)
+        {
+            TimeRow("주기", r.Sec, true, v => r.Sec = v);
+            // 반복 시간: 키를 누른 뒤 이만큼만 반복하고 멈춘다
+            TimeRow("반복 시간", r.UntilSec, false, v => r.UntilSec = v);
+            var untilTip = new Label { Text = "0시간 0분이면 끌 때까지 반복해요", Font = F(8.5f), ForeColor = Gray, AutoSize = true };
+            card.Controls.Add(untilTip);
+            untilTip.Location = new Point(w - ip - untilTip.PreferredWidth, cy - S(8));
+            cy += untilTip.PreferredHeight + S(4);
+        }
+        else TimeRow("시간", os!.Sec, true, v => os.Sec = v, noHour: true);
 
         // 색: 둥근 네모 8개 중 하나
         card.Controls.Add(RowLabel("색", ip, cy));
@@ -978,12 +1304,12 @@ sealed class JanusForm : Form, IMessageFilter
         RoundLabel? look = null;
         void Paint()
         {
-            var c = Color.FromArgb(r.Argb);
+            var c = Color.FromArgb(Argb());
             dot.ForeColor = c;
             for (int k = 0; k < n; k++)
             {
                 var pc = Color.FromArgb(RepeatSlot.Palette[k]);
-                swatches[k].Text = RepeatSlot.Palette[k] == r.Argb ? "✓" : "";
+                swatches[k].Text = RepeatSlot.Palette[k] == Argb() ? "✓" : "";
                 swatches[k].ForeColor = (pc.R * 299 + pc.G * 587 + pc.B * 114) / 1000 > 165 ? Color.FromArgb(60, 60, 60) : Color.White;
             }
             if (look != null) { look.ForeColor = Readable(c); look.Fill = Wash(c); }
@@ -998,22 +1324,22 @@ sealed class JanusForm : Form, IMessageFilter
                 AutoSize = false, Size = new Size(sz, sz), Radius = S(6), Fill = Color.FromArgb(argb), Cursor = Cursors.Hand,
                 TextAlign = ContentAlignment.MiddleCenter, Font = F(9, FontStyle.Bold), Location = new Point(sx + (sz + sg) * k, cy + (S(30) - sz) / 2),
             };
-            s.Click += (_, _) => { r.Argb = argb; st.Save(); Paint(); };
+            s.Click += (_, _) => { SetArgb(argb); st.Save(); Paint(); RefreshSlotNavs(); };
             card.Controls.Add(s);
             swatches[k] = s;
         }
         cy += S(42);
 
         // 상태 줄 · 미리 보기
-        var c0 = Color.FromArgb(r.Argb);
-        look = UI.Button("미리 보기", "", () => JanusWatch.PlayRepeat(sc, r.Title(i), Color.FromArgb(r.Argb)), sc, fore: Readable(c0), back: Wash(c0));
+        var c0 = Color.FromArgb(Argb());
+        look = UI.Button("미리 보기", "", () => JanusWatch.PlayRepeat(sc, Title(), Color.FromArgb(Argb())), sc, fore: Readable(c0), back: Wash(c0));
         look.Font = F(9, FontStyle.Bold);
         card.Controls.Add(look);
         look.Location = new Point(w - ip - look.PreferredSize.Width, cy);
         var status = new Label { AutoSize = false, AutoEllipsis = true, Font = F(9.5f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft,
             Location = new Point(ip, cy), Size = new Size(look.Left - ip - S(6), look.PreferredSize.Height) };
         card.Controls.Add(status);
-        repeatStatus[i] = status;
+        (once ? onceStatus : repeatStatus)[i] = status;
         cy += look.PreferredSize.Height + S(12);
         Paint();
 
@@ -1378,8 +1704,9 @@ sealed class JanusForm : Form, IMessageFilter
 
     void UpdateKeys()
     {
-        Style(janusKey, 1, st.JanusKey);
+        Style(janusKey, 1, st.JanusKey, st.JanusMod);
         Style(npcKey, 3, st.NpcKey);
+        Style(erdaKey, 8, st.ErdaKey);
         Style(comboKey, 2, st.ComboKey);
         Style(upKey, 4, st.WebtoonUpKey);
         Style(downKey, 5, st.WebtoonDownKey);
@@ -1390,6 +1717,7 @@ sealed class JanusForm : Form, IMessageFilter
         for (int i = 0; i < JanusWatch.BuffSlots; i++) Style(buffKeys[i], 20 + i, st.Buffs[i].Key);
         for (int i = 0; i < JanusWatch.DopeSlots; i++) Style(dopeKeys[i], 40 + i, st.Dopes[i].Key);
         for (int i = 0; i < JanusWatch.RepeatSlots; i++) Style(repeatKeys[i], 30 + i, st.Repeats[i].Key);
+        for (int i = 0; i < JanusWatch.OnceSlots; i++) Style(onceKeys[i], 50 + i, st.Onces[i].Key);
     }
 
     static string Clock(double sec)
@@ -1398,17 +1726,21 @@ sealed class JanusForm : Form, IMessageFilter
         return t >= 3600 ? $"{t / 3600}:{t / 60 % 60:00}:{t % 60:00}" : $"{t / 60}:{t % 60:00}";
     }
 
-    void Style(RoundLabel? pill, int which, int vk)
+    void Style(RoundLabel? pill, int which, int vk, int mod = 0)
     {
         if (pill == null) return;
         bool wait = capturing == which;
-        pill.Text = wait ? Waiting : JanusWatch.KeyName(vk);
+        pill.Text = wait ? (which == 1 && captureMod != 0 ? JanusWatch.KeyName(captureMod) + "+ 다음 키" : Waiting)
+            : JanusWatch.KeyName(mod, vk);
         pill.Fill = wait ? UI.SoftAccent : UI.HoverBack;
         pill.ForeColor = wait ? UI.AccentText : vk == 0 ? Gray : UI.Text;
     }
 
+    readonly List<Action> liveHints = new();
+
     void UpdateStatus()
     {
+        foreach (var h in liveHints) h();
         bool recent = watch.LastKey is DateTime k && (DateTime.Now - k).TotalSeconds < 3;
         for (int i = 0; i < JanusWatch.RepeatSlots; i++)
         {
@@ -1424,11 +1756,24 @@ sealed class JanusForm : Form, IMessageFilter
             else rl.Text = "트리거 키를 기다려요";
             rl.ForeColor = r.On ? Readable(Color.FromArgb(r.Argb)) : Gray;
         }
+        for (int i = 0; i < JanusWatch.OnceSlots; i++)
+        {
+            var ol = onceStatus[i];
+            if (ol == null) break;
+            var o = st.Onces[i];
+            bool seen = watch.LastOnce == i && watch.LastOnceAt is DateTime oa && (DateTime.Now - oa).TotalSeconds < 3;
+            if (!o.On) ol.Text = "꺼져 있어요";
+            else if (o.Key == 0) ol.Text = "트리거 키를 정해 주세요";
+            else if (o.Sec < 1) ol.Text = "시간을 정해 주세요";
+            else if (watch.OnceRemaining(i) is double orr) ol.Text = $"알림까지 {Clock(orr)}" + (seen ? " · 인식됨" : "");
+            else ol.Text = "트리거 키를 기다려요";
+            ol.ForeColor = o.On ? Readable(Color.FromArgb(o.Argb)) : Gray;
+        }
         if (janusStatus != null && runeStatus != null)
         {
 
         if (!st.JanusOn) janusStatus.Text = "꺼져 있어요";
-        else if (JanusWatch.Endless(st)) janusStatus.Text = "무한대";
+        else if (JanusWatch.Endless(st)) janusStatus.Text = "알림 주기를 넣어 주세요";
         else if (st.JanusKey == 0) janusStatus.Text = "키를 정해 주세요";
         else if (watch.Remaining is double r) janusStatus.Text = $"남은 시간 {(int)r / 60}:{(int)r % 60:00}" + (recent && watch.LastKind == "설치" ? " · 인식됨" : "");
         else janusStatus.Text = "키를 누르면 세기 시작해요";
@@ -1442,6 +1787,15 @@ sealed class JanusForm : Form, IMessageFilter
         foreach (var l in new[] { janusStatus, runeStatus })
             if (l.Text == "꺼져 있어요") l.ForeColor = Gray;
             else l.ForeColor = Readable(l == janusStatus ? Purple : Blue);
+        }
+
+        if (erdaStatus != null)
+        {
+            if (!st.ErdaOn) erdaStatus.Text = "꺼져 있어요";
+            else if (st.ErdaKey == 0) erdaStatus.Text = "키를 정해 주세요";
+            else if (watch.ErdaRemaining is double er) erdaStatus.Text = $"남은 시간 0:{(int)Math.Ceiling(er):00}" + (recent && watch.LastKind == "에르다" ? " · 인식됨" : "");
+            else erdaStatus.Text = "키를 누르면 세기 시작해요";
+            erdaStatus.ForeColor = st.ErdaOn ? Readable(JanusWatch.ErdaMain) : Gray;
         }
 
         for (int i = 0; i < JanusWatch.BuffSlots; i++)
@@ -1511,7 +1865,16 @@ sealed class JanusForm : Form, IMessageFilter
                 // 한글 입력 상태면 키가 ProcessKey로 온다 → 실제로 누른 키를 찾는다
                 if (k == Keys.ProcessKey) k = RealKey(ref msg);
                 if (k == Keys.ProcessKey) return true; // 못 찾으면 다시 누르게 기다린다
+                // NumLock이 꺼져 있거나 Shift를 누른 채면 넘패드가 PageUp·화살표 등으로 온다 → 확장 키가 아니면 넘패드 키로 받는다
+                if (KeyHook.NumpadOf((int)k) is int np and not 0 && ((msg.LParam.ToInt64() >> 24) & 1) == 0) k = (Keys)np;
                 int vk = k == Keys.Back ? 0 : (int)k; // Del은 스킬 키로 쓰는 사람이 있어 지우기는 Backspace만
+                if (capturing == 1)
+                {
+                    // 야누스: Shift·Ctrl·Alt를 먼저 누르면 다음 키와 같이 쓴다 (꾹 눌러 반복돼 와도 계속 기다린다).
+                    // 그것만 눌렀다 떼면 그 키 하나로 정한다 (PreFilterMessage)
+                    if (KeyHook.ModBit(vk) != 0) { captureMod = vk; UpdateKeys(); return true; }
+                    st.JanusMod = vk == 0 ? 0 : captureMod;
+                }
                 // 버프·반복·도핑 키를 받을 때 조합 키를 먼저 누르면: 조합 키는 칸 키로 받지 않고 다음 키를 기다린다.
                 // 그 다음 키를 칸 키로 받고 이 칸의 '조합 키 누른 채로 쓰기'를 켠다.
                 if (capturing >= 20 && st.ComboKey != 0 && vk == st.ComboKey) { captureCombo = true; return true; }
@@ -1522,6 +1885,7 @@ sealed class JanusForm : Form, IMessageFilter
                         case >= 20 and < 20 + JanusWatch.BuffSlots: st.Buffs[capturing - 20].Combo = true; break;
                         case >= 40 and < 40 + JanusWatch.DopeSlots: st.Dopes[capturing - 40].Combo = true; break;
                         case >= 30 and < 30 + JanusWatch.RepeatSlots: st.Repeats[capturing - 30].Combo = true; break;
+                        case >= 50 and < 50 + JanusWatch.OnceSlots: st.Onces[capturing - 50].Combo = true; break;
                     }
                     csw.On = true;
                 }
@@ -1531,6 +1895,7 @@ sealed class JanusForm : Form, IMessageFilter
                     case 1: st.JanusKey = vk; break;
                     case 2: st.ComboKey = vk; break;
                     case 3: st.NpcKey = vk; break;
+                    case 8: st.ErdaKey = vk; break;
                     case 4: st.WebtoonUpKey = vk; break;
                     case 5: st.WebtoonDownKey = vk; break;
                     case 6: st.WebtoonNextKey = vk; break;
@@ -1540,14 +1905,17 @@ sealed class JanusForm : Form, IMessageFilter
                     case >= 20 and < 20 + JanusWatch.BuffSlots: st.Buffs[capturing - 20].Key = vk; break;
                     case >= 40 and < 40 + JanusWatch.DopeSlots: st.Dopes[capturing - 40].Key = vk; break;
                     case >= 30 and < 30 + JanusWatch.RepeatSlots: st.Repeats[capturing - 30].Key = vk; break;
+                    case >= 50 and < 50 + JanusWatch.OnceSlots: st.Onces[capturing - 50].Key = vk; break;
                 }
                 st.Save();
             }
-            capturing = 0; captureCombo = false;
+            capturing = 0; captureCombo = false; captureMod = 0;
             UpdateKeys();
             UpdateStatus();
             return true;
         }
+        // 프리셋 이름 칸에서 엔터를 누르면 저장
+        if (k == Keys.Enter && editingName == null && presetInput?.Focused == true) { SavePreset(); return true; }
         // 버프 이름을 고치는 중: 엔터는 저장, Esc는 취소
         if (editingName is Action<bool> fin && k is Keys.Enter or Keys.Escape)
         {
@@ -1589,6 +1957,16 @@ sealed class JanusForm : Form, IMessageFilter
     /// <summary>글 칸을 고치는 중에 다른 곳을 누르면 고치기를 끝낸다 (빈 곳·글자는 포커스를 가져가지 않아서 직접 끝낸다)</summary>
     public bool PreFilterMessage(ref Message m)
     {
+        // 야누스 키를 받는 중 Shift·Ctrl·Alt만 눌렀다 떼면 그 키 하나를 야누스 키로 정한다.
+        // Shift+넘패드에서 윈도우가 끼워 보내는 가짜 Shift 뗌은 확장 키 표시가 붙어 오므로 건너뛴다
+        if (capturing == 1 && captureMod != 0 && (m.Msg == 0x101 || m.Msg == 0x105)
+            && (int)m.WParam == captureMod && ((m.LParam.ToInt64() >> 24) & 1) == 0)
+        {
+            st.JanusKey = captureMod; st.JanusMod = 0; st.Save();
+            capturing = 0; captureMod = 0;
+            UpdateKeys(); UpdateStatus();
+            return true;
+        }
         const int WM_LBUTTONDOWN = 0x201, WM_RBUTTONDOWN = 0x204, WM_NCLBUTTONDOWN = 0xA1;
         if (editingName == null || m.Msg is not (WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_NCLBUTTONDOWN)) return false;
         var focus = GetFocus();

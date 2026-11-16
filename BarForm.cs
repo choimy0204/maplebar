@@ -470,6 +470,10 @@ public class BarForm : Form
         HideMega();
         // 헥사 강화 계산기: 헥사코어 화면을 닉네임으로 열고 그 위에 계산기를 띄운다
         if (path.StartsWith(HexaCalc.Path)) { HexaCalc.Open(path, settings, sc); return; }
+        // 계산기: 사이트가 아니라 바가 직접 띄우는 작은 창
+        if (path == CalcForm.Path) { CalcForm.Open(this, settings, sc); return; }
+        // 메모: 스티커 메모 같은 작은 창
+        if (path == MemoForm.Path) { MemoForm.Open(this, settings, sc); return; }
         // 뮤직은 이미 열린 창에서 페이지만 바꾼다 (노래가 두 곳에서 겹쳐 나오지 않게)
         if (Music.IsMusic(path))
         {
@@ -761,6 +765,21 @@ public class BarForm : Form
         Activate();
         search.Focus();
         search.SelectAll();
+        if (settings.JanusChanged) BeginInvoke(JanusNotice);
+    }
+
+    /// <summary>예전 버전에서 솔 야누스 알림을 쓰던 사람에게 옵션이 바뀌었다고 한 번만 알린다.
+    /// 게임 중 갑자기 뜨지 않게, 바가 보일 때(처음 켤 때 · 직접 불러올 때)만 띄운다.</summary>
+    void JanusNotice()
+    {
+        if (!settings.JanusChanged || JanusWatch.BarHidden || !Visible || Opacity < 1) return;
+        settings.JanusChanged = false;
+        settings.JanusNoticeSeen = true;
+        settings.Save();
+        if (AskBox.Show(this, "솔 야누스 알림이 바뀌었어요",
+                "지속시간 대신 알림 주기를 직접 넣어요. 5석펫 설정은 없어졌어요. 설정을 확인해 주세요.", "설정 열기", "닫기", enterYes: true)
+            && janus != null)
+            JanusForm.Open(this, settings, janus, sc);
     }
 
     // ── 창 처리 ──
@@ -874,7 +893,12 @@ public class BarForm : Form
             var dc = dopeChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.DopeColors(i).main };
             dc.Click += (_, _) => { w.CancelDope(slot); if (dc.SetTime(null)) LayoutBar(); };
         }
-        foreach (var c in new[] { runeChip, janusChip }.Concat(buffChips).Concat(dopeChips))
+        var erdaChip = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.ErdaMain };
+        erdaChip.Click += (_, _) => { w.CancelErda(); if (erdaChip.SetTime(null)) LayoutBar(); };
+        // 전체 알림을 꺼 두면 맨 앞에 OFF 칩 (누르면 다시 켠다)
+        var offChip = new TimerChip(TimerChip.Kind.Off, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+        offChip.Click += (_, _) => { settings.AlertsOn = true; settings.Save(); if (offChip.SetShown(false)) LayoutBar(); };
+        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips).Append(offChip))
         {
             right.Controls.Add(c);
             right.Controls.SetChildIndex(c, 0);
@@ -883,12 +907,14 @@ public class BarForm : Form
         {
             bool changed = janusChip.SetTime(w.Remaining);
             changed |= runeChip.SetTime(w.RuneRemaining, w.RuneReady);
+            changed |= erdaChip.SetTime(w.ErdaRemaining);
             for (int i = 0; i < buffChips.Length; i++)
             {
                 buffChips[i].BuffTint = JanusWatch.BuffColors(w.BuffMin(i)).main;
                 changed |= buffChips[i].SetTime(w.BuffRemaining(i));
             }
             for (int i = 0; i < dopeChips.Length; i++) changed |= dopeChips[i].SetTime(w.DopeRemaining(i));
+            changed |= offChip.SetShown(!settings.AlertsOn);
             if (changed) LayoutBar();
         };
         chipTimer.Start();
@@ -982,6 +1008,8 @@ public class BarForm : Form
             }
             // 처음 켤 때 게임이 없으면 바로 숨긴다
             BeginInvoke(CheckGame);
+            // 바가 그대로 보이면 예전 야누스 사용자에게 바뀐 점을 알린다
+            if (settings.JanusChanged) BeginInvoke(JanusNotice);
         };
     }
 

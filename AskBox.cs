@@ -6,12 +6,18 @@ namespace MapleBar;
 /// </summary>
 sealed class AskBox : Form
 {
-    bool yes;
+    int pick = -1;  // 누른 단추 번호 (-1 = 취소)
+    bool enterYes;  // true면 엔터로 첫 단추
 
     /// <summary>질문을 띄우고 확인 단추를 누르면 true.</summary>
-    public static bool Show(IWin32Window? owner, string question, string note, string yesText, string noText = "취소")
+    public static bool Show(IWin32Window? owner, string question, string note, string yesText, string noText = "취소", bool enterYes = false)
+        => Choose(owner, question, note, enterYes, yesText, noText) == 0;
+
+    /// <summary>단추 여러 개 중 하나를 고르게 한다. 누른 단추 번호, 마지막 단추나 Esc는 취소로 -1</summary>
+    public static int Choose(IWin32Window? owner, string question, string note, bool enterYes, params string[] buttons)
     {
-        using var f = new AskBox(question, note, yesText, noText);
+        using var f = new AskBox(question, note, buttons);
+        f.enterYes = enterYes;
         if (owner is Form o) f.Location = new Point(o.Left + (o.Width - f.Width) / 2, o.Top + (o.Height - f.Height) / 3);
         else
         {
@@ -19,13 +25,13 @@ sealed class AskBox : Form
             f.Location = new Point(a.Left + (a.Width - f.Width) / 2, a.Top + (a.Height - f.Height) / 3);
         }
         f.ShowDialog(owner);
-        return f.yes;
+        return f.pick == buttons.Length - 1 ? -1 : f.pick;
     }
 
     readonly Pen border = new(UI.Line);
     readonly List<Font> fonts = new();
 
-    AskBox(string question, string note, string yesText, string noText)
+    AskBox(string question, string note, string[] buttons)
     {
         float sc = DeviceDpi / 96f * UI.Z;
         int S(float v) => UI.Scale(v, sc);
@@ -38,7 +44,8 @@ sealed class AskBox : Form
         BackColor = UI.Back;
         AutoScaleMode = AutoScaleMode.None;
         KeyPreview = true;
-        int w = S(360);
+        int n = buttons.Length;
+        int w = S(n > 2 ? 440 : 360);
         ClientSize = new Size(w, S(128));
 
         var bar = new Panel { BackColor = UI.Accent, Location = Point.Empty, Size = new Size(w, S(5)) };
@@ -60,30 +67,33 @@ sealed class AskBox : Form
         }
         y += S(16);
 
-        RoundLabel Btn(string text, Color fore, Color back, bool result)
-        {
-            var b = new RoundLabel
-            {
-                AutoSize = false, Size = new Size((w - S(36) - S(10)) / 2, S(36)), Radius = S(8), Text = text, Fill = back, ForeColor = fore,
-                TextAlign = ContentAlignment.MiddleCenter, Font = F(10, FontStyle.Bold), Cursor = Cursors.Hand,
-            };
-            b.MouseEnter += (_, _) => b.Fill = ControlPaint.Dark(back, 0.05f);
-            b.MouseLeave += (_, _) => b.Fill = back;
-            b.Click += (_, _) => { yes = result; Close(); };
-            return b;
-        }
-        var ok = Btn(yesText, Color.White, UI.Accent, true);
-        var no = Btn(noText, UI.Text, UI.HoverBack, false);
-        ok.Location = new Point(S(18), y);
-        no.Location = new Point(w - S(18) - no.Width, y);
-        ClientSize = new Size(w, y + ok.Height + S(16));
+        // 첫 단추는 주황(권하는 것), 나머지는 회색. 마지막 단추는 취소
+        int gap = S(10), bw = (w - S(36) - gap * (n - 1)) / n;
         Controls.Add(bar);
         Controls.Add(title);
         if (sub != null) Controls.Add(sub);
-        Controls.Add(ok);
-        Controls.Add(no);
+        for (int i = 0; i < n; i++)
+        {
+            int idx = i;
+            Color back = i == 0 ? UI.Accent : UI.HoverBack, fore = i == 0 ? Color.White : UI.Text;
+            var b = new RoundLabel
+            {
+                AutoSize = false, Size = new Size(bw, S(36)), Radius = S(8), Text = buttons[i], Fill = back, ForeColor = fore,
+                TextAlign = ContentAlignment.MiddleCenter, Font = F(n > 2 ? 9.5f : 10, FontStyle.Bold), Cursor = Cursors.Hand,
+                Location = new Point(S(18) + (bw + gap) * i, y),
+            };
+            b.MouseEnter += (_, _) => b.Fill = ControlPaint.Dark(back, 0.05f);
+            b.MouseLeave += (_, _) => b.Fill = back;
+            b.Click += (_, _) => { pick = idx; Close(); };
+            Controls.Add(b);
+        }
+        ClientSize = new Size(w, y + S(36) + S(16));
 
-        KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) { e.Handled = true; Close(); } };
+        KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape) { e.Handled = true; Close(); }
+            else if (e.KeyCode == Keys.Enter && enterYes) { e.Handled = true; pick = 0; Close(); }
+        };
         Paint += (_, e) => e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         HandleCreated += (_, _) => UI.RoundCorners(Handle);
     }
