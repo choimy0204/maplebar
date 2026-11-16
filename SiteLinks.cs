@@ -745,6 +745,43 @@ public static class Nexon
         #mbAuc .srow .del.sure{background:#e5484d;border-color:#e5484d;color:#fff}
         #mbAucBack{position:fixed;right:14px;bottom:14px;z-index:2147483645;height:34px;padding:0 14px;border:0;border-radius:8px;background:#ff8a00;color:#fff;
           font:bold 13px 'Malgun Gothic',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer}
+        @media (prefers-color-scheme:dark){
+          #mbAuc{background:#262a2f;color:#e8e8ea;color-scheme:dark}
+          #mbAuc input,#mbAuc select,#mbAuc button{color:#e8e8ea}
+          #mbAuc input,#mbAuc select{background:#2b3036;border-color:#4c525a}
+          #mbAuc input::placeholder{color:#80858e}
+          #mbAuc input.bad{background:#4a2a2c}
+          #mbAuc button{background:#40464d;border-color:#4c525a}
+          #mbAuc button:hover{background:#4c535b}
+          #mbAuc button.main{background:#f2a65a;border-color:#f2a65a;color:#1f1f1f}
+          #mbAuc button.main:hover{background:#f5b371}
+          #mbAuc button.main.wait{background:#4a3a2a;border-color:#5e4a33;color:#f2b877}
+          #mbAuc .top,#mbAuc .pre,#mbAuc .fil{background:#31363c;border-color:#444a52}
+          #mbAuc .top .orig{color:#c4c6cc}
+          #mbAuc .quota{background:#2b3036;border-color:#4c525a}
+          #mbAuc .quota .qt{color:#a0a3ab}
+          #mbAuc .quota .qt b{color:#e8e8ea}
+          #mbAuc .quota i{background:#444a52}
+          #mbAuc .chip{background:#40464d;border-color:#4c525a;color:#e0e0e4}
+          #mbAuc .chip:hover{background:#4a3f33;border-color:#c98a4a}
+          #mbAuc .chip.on{background:#4a3a2a;border-color:#f2a65a;color:#f2b877}
+          #mbAuc .chip.add{background:transparent;color:#a0a3ab}
+          #mbAuc .chip.add:hover{color:#f2b877}
+          #mbAuc .sec{border-color:#444a52}
+          #mbAuc .sec>.h,#mbAuc details.sec>summary,#mbAuc .chk,#mbAuc .row .pl{color:#d0d2d8}
+          #mbAuc .sec>.h label,#mbAuc .grid>label,#mbAuc .pager span,#mbAuc .tab{color:#b2b4bc}
+          #mbAuc .tabs{background:#40464d}
+          #mbAuc .tab:hover{background:rgba(255,255,255,.08)}
+          #mbAuc .tab.on{background:#31363c;color:#e8e8ea;box-shadow:none}
+          #mbAuc .tab .sn{color:#f2a65a}
+          #mbAuc .rt .src{background:#40464d;color:#a0a3ab}
+          #mbAuc .row,#mbAuc .srow{background:#31363c;border-color:#444a52}
+          #mbAuc .row:hover,#mbAuc .srow:hover{border-color:#c98a4a}
+          #mbAuc .row .nm .sf{color:#f2b877}
+          #mbAuc .row .pr .s,#mbAuc .srow .s,#mbAuc .srow .del,#mbAuc .bar .msg{color:#a0a3ab}
+          #mbAuc .srow .del.sure{color:#fff}
+          #mbAucBack{background:#f2a65a;color:#1f1f1f}
+        }
         @media (max-width:860px){#mbAuc .body{grid-template-columns:262px minmax(0,1fr)}#mbAuc .grid{grid-template-columns:48px minmax(0,1fr)}#mbAuc .quota{min-width:120px}}
         `;
           const opts = (sel, list) => { sel.textContent = ''; list.forEach(([v, t]) => sel.add(new Option(t, v))); };
@@ -1443,7 +1480,8 @@ public static class Nexon
             if (!on) { if (d.classList.contains('mbwL')) d.classList.remove('mbwL'); return; }
             if (!document.getElementById('mbwCover')) {
               const s = document.createElement('style'); s.id = 'mbwCover';
-              s.textContent = "html.mbwL::after{content:'아이템 착용해서 계산하는 중…';position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#fff;font:14px sans-serif;color:#888;pointer-events:auto}";
+              s.textContent = "html.mbwL::after{content:'아이템 착용해서 계산하는 중…';position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#fff;font:14px sans-serif;color:#888;pointer-events:auto}" +
+                "@media (prefers-color-scheme:dark){html.mbwL::after{background:#262a2f;color:#a0a3ab}}";
               (document.head || d).appendChild(s);
             }
             if (!d.classList.contains('mbwL')) d.classList.add('mbwL');

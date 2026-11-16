@@ -127,14 +127,16 @@ public partial class WebWindow
         string what = live ? "방송" : "영상";
         bool Same() => live ? settings.LiveSameWindow : settings.YtSameWindow;
         string Label() => Same() ? what + ": 현재 창" : what + ": 새 창";
+        // 다크 모드: 갈색 칸 대신 다른 버튼처럼 회색 칸에 호박색 글자
+        Color Rest = UI.Dark ? Color.FromArgb(80, 86, 94) : UI.SoftAccent;
         var b = new RoundLabel
         {
             Dock = DockStyle.Fill, AutoSize = false, Text = Label(), TextAlign = ContentAlignment.MiddleCenter,
-            Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6),
+            Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.AccentText, Fill = Rest, Radius = S(6),
             Font = btnFont,
         };
-        b.MouseEnter += (_, _) => b.Fill = UI.T(Color.FromArgb(255, 226, 196));
-        b.MouseLeave += (_, _) => b.Fill = UI.SoftAccent;
+        b.MouseEnter += (_, _) => b.Fill = UI.Dark ? Color.FromArgb(94, 100, 108) : UI.T(Color.FromArgb(255, 226, 196));
+        b.MouseLeave += (_, _) => b.Fill = Rest;
         var btnTip = new ToolTip();
         owned.Add(btnTip);
         void Tip() => btnTip.SetToolTip(b, Same()
@@ -165,7 +167,7 @@ public partial class WebWindow
         var b = new RoundLabel
         {
             Dock = DockStyle.Fill, AutoSize = false, Text = text, TextAlign = ContentAlignment.MiddleCenter,
-            Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6),
+            Cursor = Cursors.Hand, UseMnemonic = false, ForeColor = UI.AccentText, Fill = UI.SoftAccent, Radius = S(6),
             Font = btnFont,
         };
         b.MouseEnter += (_, _) => b.Fill = UI.T(Color.FromArgb(255, 226, 196));

@@ -86,8 +86,9 @@ sealed class JanusForm : Form, IMessageFilter
             // 더 갈 곳이 없는 화살표는 흐리게
             foreach (var (b, ok) in new[] { (prev, p > 0), (next, p < PageCount - 1) })
             {
-                b.Fill = ok ? UI.SoftAccent : UI.HoverBack;
-                b.ForeColor = ok ? UI.Accent : UI.T(Color.FromArgb(190, 190, 196));
+                // 다크 모드: 갈색 칸 대신 조금 밝은 차콜 칸에 호박색 화살표 (최근 검색 칩 글씨와 같은 색)
+                b.Fill = ok ? (UI.Dark ? Color.FromArgb(80, 86, 94) : UI.SoftAccent) : UI.HoverBack;
+                b.ForeColor = ok ? UI.AccentText : UI.T(Color.FromArgb(190, 190, 196));
                 b.Cursor = ok ? Cursors.Hand : Cursors.Default;
             }
         }
@@ -540,8 +541,9 @@ sealed class JanusForm : Form, IMessageFilter
             label.ForeColor = Readable(colorOf(p));
             foreach (var (b, ok) in new[] { (prev, p > 0), (next, p < count - 1) })
             {
-                b.Fill = ok ? UI.SoftAccent : UI.HoverBack;
-                b.ForeColor = ok ? UI.Accent : UI.T(Color.FromArgb(190, 190, 196));
+                // 다크 모드: 갈색 칸 대신 조금 밝은 차콜 칸에 호박색 화살표 (최근 검색 칩 글씨와 같은 색)
+                b.Fill = ok ? (UI.Dark ? Color.FromArgb(80, 86, 94) : UI.SoftAccent) : UI.HoverBack;
+                b.ForeColor = ok ? UI.AccentText : UI.T(Color.FromArgb(190, 190, 196));
                 b.Cursor = ok ? Cursors.Hand : Cursors.Default;
             }
         });
@@ -642,7 +644,7 @@ sealed class JanusForm : Form, IMessageFilter
         look.Font = F(9, FontStyle.Bold);
         card.Controls.Add(look);
         look.Location = new Point(w - ip - look.PreferredSize.Width, cy);
-        var st2 = new Label { AutoSize = false, ForeColor = color, Font = F(9.5f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft,
+        var st2 = new Label { AutoSize = false, ForeColor = Readable(color), Font = F(9.5f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft,
             Location = new Point(ip, cy), Size = new Size(look.Left - ip - S(6), look.PreferredSize.Height) };
         card.Controls.Add(st2);
         status = st2;
@@ -788,8 +790,8 @@ sealed class JanusForm : Form, IMessageFilter
             for (int i = 0; i < picks.Length; i++)
             {
                 bool on = st.PendantBuff == i;
-                picks[i].Fill = on ? Color.FromArgb(32, blue) : UI.HoverBack;
-                picks[i].ForeColor = on ? blue : Gray;
+                picks[i].Fill = on ? Wash(blue, 32) : UI.HoverBack;
+                picks[i].ForeColor = on ? Readable(blue) : Gray;
             }
         }
         int right = w - ip;
@@ -882,8 +884,12 @@ sealed class JanusForm : Form, IMessageFilter
     }
 
     /// <summary>흰 바탕에서 읽히게: 밝은 색(노랑 등)은 조금 어둡게</summary>
-    static Color Readable(Color c) => (c.R * 299 + c.G * 587 + c.B * 114) / 1000 > 165
-        ? Color.FromArgb(c.R * 3 / 4, c.G * 3 / 4, c.B * 3 / 4) : c;
+    /// 다크 모드에서는 쨍한 색을 흰색 쪽으로 섞어 차콜 위에서 부드럽게 보이게 한다
+    static Color Readable(Color c) => UI.Dark
+        ? Color.FromArgb(c.R + (255 - c.R) * 2 / 5, c.G + (255 - c.G) * 2 / 5, c.B + (255 - c.B) * 2 / 5)
+        : (c.R * 299 + c.G * 587 + c.B * 114) / 1000 > 165 ? Color.FromArgb(c.R * 3 / 4, c.G * 3 / 4, c.B * 3 / 4) : c;
+    /// <summary>색이 살짝 비치는 칸 바탕 (다크에서는 조금 더 진하게)</summary>
+    static Color Wash(Color c, int a = 24) => Color.FromArgb(UI.Dark ? a + 18 : a, c);
 
     /// <summary>반복 알림 한 칸: 켜기 / 트리거 키 / 주기(시·분·초) / 색 / 상태 · 미리 보기</summary>
     Card MakeRepeatCard(int x, int y, int w, int i)
@@ -980,7 +986,7 @@ sealed class JanusForm : Form, IMessageFilter
                 swatches[k].Text = RepeatSlot.Palette[k] == r.Argb ? "✓" : "";
                 swatches[k].ForeColor = (pc.R * 299 + pc.G * 587 + pc.B * 114) / 1000 > 165 ? Color.FromArgb(60, 60, 60) : Color.White;
             }
-            if (look != null) { look.ForeColor = Readable(c); look.Fill = Color.FromArgb(24, c); }
+            if (look != null) { look.ForeColor = Readable(c); look.Fill = Wash(c); }
             UpdateStatus();
         }
         int sx = w - ip - (sz * n + sg * (n - 1));
@@ -1000,7 +1006,7 @@ sealed class JanusForm : Form, IMessageFilter
 
         // 상태 줄 · 미리 보기
         var c0 = Color.FromArgb(r.Argb);
-        look = UI.Button("미리 보기", "", () => JanusWatch.PlayRepeat(sc, r.Title(i), Color.FromArgb(r.Argb)), sc, fore: Readable(c0), back: Color.FromArgb(24, c0));
+        look = UI.Button("미리 보기", "", () => JanusWatch.PlayRepeat(sc, r.Title(i), Color.FromArgb(r.Argb)), sc, fore: Readable(c0), back: Wash(c0));
         look.Font = F(9, FontStyle.Bold);
         card.Controls.Add(look);
         look.Location = new Point(w - ip - look.PreferredSize.Width, cy);
@@ -1135,7 +1141,7 @@ sealed class JanusForm : Form, IMessageFilter
                     TextAlign = ContentAlignment.MiddleCenter, Font = F(9, FontStyle.Bold), Cursor = Cursors.Hand,
                     ForeColor = Gray, BackColor = fill, Location = new Point(rw - S(32), ry + (rowH - S(28)) / 2),
                 };
-                x.MouseEnter += (_, _) => { x.Fill = UI.T(Color.FromArgb(255, 228, 228)); x.ForeColor = Color.FromArgb(210, 50, 50); };
+                x.MouseEnter += (_, _) => { x.Fill = UI.Dark ? Color.FromArgb(60, 210, 50, 50) : Color.FromArgb(255, 228, 228); x.ForeColor = Readable(Color.FromArgb(210, 50, 50)); };
                 x.MouseLeave += (_, _) => { x.Fill = Color.Transparent; x.ForeColor = Gray; };
                 x.Click += (_, _) => { st.AlertScreens.Remove(k); st.Save(); BeginInvoke(Fill); };
                 list.Controls.Add(x);
@@ -1164,7 +1170,7 @@ sealed class JanusForm : Form, IMessageFilter
             bool can = picked != null;
             add.Tag = can;
             add.Fill = can ? UI.SoftAccent : UI.HoverBack;
-            add.ForeColor = can ? UI.Accent : UI.T(Color.FromArgb(190, 190, 196));
+            add.ForeColor = can ? UI.AccentText : UI.T(Color.FromArgb(190, 190, 196));
             add.Cursor = can ? Cursors.Hand : Cursors.Default;
         }
         add.Click += (_, _) =>
@@ -1228,7 +1234,7 @@ sealed class JanusForm : Form, IMessageFilter
             var c = JanusWatch.BuffColors(b.Min).main;
             shown.Text = b.Min + "분";
             dot.ForeColor = c;
-            if (look != null) { look.ForeColor = c; look.Fill = Color.FromArgb(24, c); }
+            if (look != null) { look.ForeColor = Readable(c); look.Fill = Wash(c); }
         }
         void Change(int d)
         {
@@ -1398,7 +1404,7 @@ sealed class JanusForm : Form, IMessageFilter
         bool wait = capturing == which;
         pill.Text = wait ? Waiting : JanusWatch.KeyName(vk);
         pill.Fill = wait ? UI.SoftAccent : UI.HoverBack;
-        pill.ForeColor = wait ? UI.Accent : vk == 0 ? Gray : UI.Text;
+        pill.ForeColor = wait ? UI.AccentText : vk == 0 ? Gray : UI.Text;
     }
 
     void UpdateStatus()
@@ -1435,7 +1441,7 @@ sealed class JanusForm : Form, IMessageFilter
 
         foreach (var l in new[] { janusStatus, runeStatus })
             if (l.Text == "꺼져 있어요") l.ForeColor = Gray;
-            else l.ForeColor = l == janusStatus ? Purple : Blue;
+            else l.ForeColor = Readable(l == janusStatus ? Purple : Blue);
         }
 
         for (int i = 0; i < JanusWatch.BuffSlots; i++)
@@ -1449,7 +1455,7 @@ sealed class JanusForm : Form, IMessageFilter
                 bl.Text = $"남은 시간 {(int)br / 60}:{(int)br % 60:00}"
                     + (b.Key == 0x0D ? "" : watch.BuffOnEnter(i) ? " · 엔터 시간으로 알림" : " · 키 시간으로 알림");
             else bl.Text = "버프 키를 기다려요";
-            bl.ForeColor = b.On ? BuffText(b.Min) : Gray;
+            bl.ForeColor = b.On ? Readable(BuffText(b.Min)) : Gray;
 
             // 세는 때 고르기: 지금 세는 쪽은 색칠, 기록이 없거나 끝난 쪽은 흐리게
             if (buffUseKey[i] is RoundLabel uk && buffUseEnter[i] is RoundLabel ue)
@@ -1464,8 +1470,8 @@ sealed class JanusForm : Form, IMessageFilter
                     bool sel = running && enter == onEnter && can;
                     t.Text = (enter ? "엔터 " : "키 ") + (left is double l ? $"{(int)Math.Ceiling(l) / 60}:{(int)Math.Ceiling(l) % 60:00}"
                         : enter && watch.BuffWaitingEnter(i) ? "기다림" : "없음");
-                    t.Fill = sel ? Color.FromArgb(32, c) : UI.HoverBack;
-                    t.ForeColor = sel ? c : can ? UI.Text : UI.T(Color.FromArgb(190, 190, 190));
+                    t.Fill = sel ? Wash(c, 32) : UI.HoverBack;
+                    t.ForeColor = sel ? Readable(c) : can ? UI.Text : UI.T(Color.FromArgb(190, 190, 190));
                     t.Cursor = can ? Cursors.Hand : Cursors.Default;
                 }
             }
@@ -1484,7 +1490,7 @@ sealed class JanusForm : Form, IMessageFilter
             else if (watch.DopeWaiting(i) is double dw) dl.Text = $"사용 대기 {Math.Ceiling(dw)}초";
             else if (watch.DopeRemaining(i) is double dr) dl.Text = $"남은 시간 {(int)dr / 60}:{(int)dr % 60:00}" + (recent && watch.LastKind == "도핑" + i ? " · 인식됨" : "");
             else dl.Text = "도핑 키 → 방향키 → 엔터를 기다려요";
-            dl.ForeColor = d.On ? JanusWatch.DopeColors(i).main : Gray;
+            dl.ForeColor = d.On ? Readable(JanusWatch.DopeColors(i).main) : Gray;
         }
 
         if (pendantStatus == null) return;
@@ -1492,7 +1498,7 @@ sealed class JanusForm : Form, IMessageFilter
             : string.IsNullOrWhiteSpace(st.MapleNick) ? "닉네임을 넣어 주세요"
             : !st.Buffs[st.PendantBuff].On ? $"버프 {st.PendantBuff + 1} 칸이 꺼져 있어요"
             : PendantCheck.Status;
-        pendantStatus.ForeColor = st.PendantOn ? PendantCheck.Blue : Gray;
+        pendantStatus.ForeColor = st.PendantOn ? Readable(PendantCheck.Blue) : Gray;
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

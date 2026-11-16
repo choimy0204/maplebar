@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 
 namespace MapleBar;
@@ -32,7 +32,7 @@ sealed class TimerChip : Control
             Kind.Rune => "다음 룬까지 남은 시간 (누르면 취소)",
             _ => "버프 남은 시간 (누르면 취소)",
         });
-        Size = new Size(S(84), S(28));
+        Size = new Size(S(84), S(31));
     }
 
     int S(float v) => UI.Scale(v, sc);
@@ -68,9 +68,13 @@ sealed class TimerChip : Control
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
         var c = Tint;
-        using (var path = UI.RoundRect(new RectangleF(0, 0, Width - 1, Height - 1), (Height - 1) / 2f))
-        using (var b = new SolidBrush(alert ? c : Color.FromArgb(26, c)))
-            g.FillPath(b, path);
+        using (var path = UI.RoundRect(new RectangleF(0, 0, Width - 1, Height - 1), (Height - 1) * 0.25f)) // 둥근 직사각형
+        {
+            // 다크 모드: 비치는 색 대신 차콜에 색을 조금 섞은 칸 + 옅은 색 테두리
+            var fill = alert ? c : UI.Dark ? Mix(UI.Back, c, 0.16f) : Color.FromArgb(26, c);
+            using (var b = new SolidBrush(fill)) g.FillPath(b, path);
+            if (UI.Dark && !alert) { using var pen = new Pen(Color.FromArgb(90, c), 1f); g.DrawPath(pen, path); }
+        }
 
         float isz = Height - S(4);
         var icon = new RectangleF(S(4), (Height - isz) / 2f, isz, isz);
@@ -80,7 +84,8 @@ sealed class TimerChip : Control
 
         var tr = new RectangleF(icon.Right + S(3), 0, Width - icon.Right - S(8), Height);
         using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        using var tb = new SolidBrush(alert ? Color.White : c);
+        var fore = alert ? Color.White : UI.Dark ? Mix(c, Color.White, 0.62f) : c;
+        using var tb = new SolidBrush(fore);
         g.DrawString(text, Font, tb, tr, fmt);
     }
 
@@ -166,6 +171,9 @@ sealed class TimerChip : Control
         foreach (float y in new[] { disc.Y + disc.Height * 0.32f, disc.Y + disc.Height * 0.56f })
             g.DrawLines(pen, new[] { new PointF(cx - hw, y + h), new PointF(cx, y), new PointF(cx + hw, y + h) });
     }
+
+    static Color Mix(Color a, Color b, float t) =>
+        Color.FromArgb((int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
 
     static RectangleF Inset(RectangleF r, float d) => new(r.X + d, r.Y + d, r.Width - 2 * d, r.Height - 2 * d);
 

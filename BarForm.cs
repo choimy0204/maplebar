@@ -127,6 +127,8 @@ public class BarForm : Form
         searchBox = new Panel { Size = new Size(S(230), S(36)), BackColor = UI.Back, Margin = new Padding(S(10), 0, S(4), 0) };
         searchBox.Paint += PaintSearchBorder;
         search.BorderStyle = BorderStyle.None;
+        search.BackColor = UI.Back; // 다크 모드에서 흰 칸이 튀지 않게 바탕과 맞춘다
+        search.ForeColor = UI.Text;
         search.PlaceholderText = "닉네임을 입력하세요";
         // 메이플에서 넘어오면 입력기가 꺼진 채로 남아 한/영이 안 먹을 때가 있다.
         // 칸에 들어오면 입력기를 다시 붙이고, 마지막에 쓰던 한글/영문 상태로 돌려놓는다
@@ -140,8 +142,10 @@ public class BarForm : Form
             if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Search(SiteMenu.InfoPath); }
             else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; search.Clear(); }
         };
-        var searchIcon = UI.Button("🔍", "캐릭터정보 검색 (Enter)", () => Search(SiteMenu.InfoPath), sc);
+        // 🔍 글자는 파란 컬러 그림으로 나와서 튀므로, 돋보기를 글씨색으로 직접 그린다
+        var searchIcon = UI.Button(" ", "캐릭터정보 검색 (Enter)", () => Search(SiteMenu.InfoPath), sc);
         searchIcon.Font = OwnFont(new Font("Segoe UI Emoji", 10f * UI.Z));
+        searchIcon.Paint += (_, e) => DrawMagnifier(e.Graphics, searchIcon.ClientRectangle, UI.Sub);
         searchIcon.Padding = new Padding(S(2));
         searchIcon.Location = new Point(searchBox.Width - S(34), (searchBox.Height - searchIcon.PreferredSize.Height) / 2);
         searchBox.Controls.Add(search);
@@ -153,7 +157,9 @@ public class BarForm : Form
 
 
         recentChip = UI.Button("", "최근 검색한 캐릭터", ShowRecentMenu, sc,
-            fore: UI.T(Color.FromArgb(150, 80, 0)), back: UI.T(Color.FromArgb(255, 243, 224)));
+            // 다크 모드: 누런 갈색 칸 대신 차콜 칸에 호박색 글씨
+            fore: UI.Dark ? UI.AccentText : Color.FromArgb(150, 80, 0),
+            back: UI.Dark ? UI.HoverBack : Color.FromArgb(255, 243, 224));
         recentChip.Margin = new Padding(S(8), 0, S(4), 0);
         right.Controls.Add(recentChip);
         UpdateRecentChip();
@@ -1263,6 +1269,18 @@ public class BarForm : Form
                 if (f != this && f is not WebWindow && f is not UpdateWindow && f.Owner is not WebWindow) f.Close();
         }
         base.OnFormClosed(e);
+    }
+
+    static void DrawMagnifier(Graphics g, Rectangle r, Color c)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float s = Math.Min(r.Width, r.Height) * 0.62f;
+        float x = r.X + (r.Width - s) / 2f, y = r.Y + (r.Height - s) / 2f;
+        float d = s * 0.66f, w = Math.Max(1.6f, s / 8f);
+        using var pen = new Pen(c, w) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawEllipse(pen, x, y, d, d);
+        float k = d * 0.85f; // 원 오른쪽 아래에서 손잡이가 나간다
+        g.DrawLine(pen, x + k, y + k, x + s, y + s);
     }
 
     void PaintSearchBorder(object? sender, PaintEventArgs e)

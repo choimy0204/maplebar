@@ -224,7 +224,7 @@ public partial class WebWindow : Form
         var grow = new RoundLabel
         {
             Dock = DockStyle.Right, AutoSize = false, Width = S(22), Text = "", Cursor = Cursors.Hand,
-            ForeColor = UI.Accent, Fill = UI.SoftAccent, Radius = S(6), UseMnemonic = false,
+            ForeColor = UI.AccentText, Fill = UI.SoftAccent, Radius = S(6), UseMnemonic = false,
         };
         // 작을 때: 큰 네모(펼치기) / 클 때: 작은 네모(접기)
         grow.Paint += (_, e) =>
@@ -386,8 +386,16 @@ public partial class WebWindow : Form
             }
             return Fit(new Rectangle(b.X - d, b.Y + d, size.Width, size.Height));
         }
+        // 이 메뉴 창을 닫은 자리가 있으면 그 자리·크기로 연다
+        var pageKey = PageKey(url);
+        if (pageKey != null && settings.WinPlaces.TryGetValue(pageKey, out var pp) && pp.Length == 4)
+            return Fit(new Rectangle(pp[0], pp[1], keepSize ? pp[2] : w, keepSize ? pp[3] : h));
+        // 없으면 같은 종류(사이트) 창을 닫은 자리에 연다. 처음 여는 메뉴는 다른 메뉴에서 늘린 크기 말고 기본 크기로
         if (key != null && settings.WinPlaces.TryGetValue(key, out var sp) && sp.Length == 4)
-            return Fit(new Rectangle(sp[0], sp[1], keepSize ? sp[2] : w, keepSize ? sp[3] : h));
+        {
+            bool own = pageKey == null && keepSize;
+            return Fit(new Rectangle(sp[0], sp[1], own ? sp[2] : w, own ? sp[3] : h));
+        }
 
         Point p;
         if (open.Count > 0)
@@ -414,6 +422,9 @@ public partial class WebWindow : Form
             if (IsDisposed) return; // 기다리는 동안 창이 닫혔다
             await web.EnsureCoreWebView2Async(env);
             var cw = web.CoreWebView2;
+            // 바가 다크 모드면 사이트에도 '다크 모드 쓰는 중'이라고 알려 준다 (자체 다크 화면이 있는 사이트는 그걸 띄운다)
+            try { cw.Profile.PreferredColorScheme = UI.Dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light; }
+            catch (Exception ex) { Log.Write("web", "사이트 색 모드를 못 맞춤", ex); }
             // 페이지(또는 그 안의 iframe)에 포커스가 있을 때도 브라우저 단계에서 Ctrl+W를 받는다
             try
             {
@@ -1188,12 +1199,25 @@ public partial class WebWindow : Form
         return Uri.TryCreate(url, UriKind.Absolute, out var u) ? "site:" + u.Host.ToLowerInvariant() : null;
     }
 
+    /// <summary>같은 사이트 안에서도 메뉴(주소 첫 칸)마다 자리를 따로 기억한다. 예: site:maplescouter.com/boss</summary>
+    static string? PageKey(string? url)
+    {
+        var key = PlaceKey(url);
+        if (key == null || !key.StartsWith("site:") || !Uri.TryCreate(url, UriKind.Absolute, out var u)) return null;
+        // 언어 칸(/ko/…)은 건너뛰고 그 다음 칸으로 메뉴를 나눈다
+        var segs = u.AbsolutePath.Trim('/').ToLowerInvariant().Split('/');
+        int i = segs.Length > 1 && segs[0].Length == 2 ? 1 : 0;
+        return key + "/" + segs[i];
+    }
+
     void RememberPlace()
     {
         if (WindowState != FormWindowState.Normal || smallBounds != null || !TopLevel) return; // 크게 보기·최대화 상태, 경매장 안 배율표는 기억하지 않는다
         var key = PlaceKey(startUrl);
         if (key == null) return;
-        settings.WinPlaces[key] = new[] { Left, Top, Width - widened, Height }; // 배율표로 넓힌 만큼은 빼고 기억한다
+        var place = new[] { Left, Top, Width - widened, Height }; // 배율표로 넓힌 만큼은 빼고 기억한다
+        settings.WinPlaces[key] = place;
+        if (PageKey(startUrl) is string pk) settings.WinPlaces[pk] = place; // 이 메뉴 창 자리도 따로
         settings.Save();
     }
 

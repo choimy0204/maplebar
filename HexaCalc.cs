@@ -124,7 +124,31 @@ const CSS=`html:has(#mbhx:not([style*="none"])),html:has(#mbhx:not([style*="none
 #mbhx .res>div{display:flex;align-items:center;gap:8px;background:#fff3e0;border-radius:10px;padding:8px 10px}
 #mbhx .res img{width:30px;height:30px;display:block}
 #mbhx .res small{display:block;font-size:11px;color:#8a6a3a}
-#mbhx .res b{font-size:18px;color:#b45a00;margin-right:2px}`;
+#mbhx .res b{font-size:18px;color:#b45a00;margin-right:2px}
+@media (prefers-color-scheme:dark){
+#mbhx{background:#262a2f;color:#e8e8ea}
+#mbhx .card{background:#31363c;border-color:#4c525a}
+#mbhx button{background:#40464d;border-color:#4c525a;color:#e8e8ea}
+#mbhx button:hover{background:#4c535b}
+#mbhx .grp+.grp{border-top-color:#444a52}
+#mbhx .sum{border-top-color:#444a52;color:#b2b4bc}
+#mbhx .gl,#mbhx .rg{color:#c4c6cc}
+#mbhx .who,#mbhx .now,#mbhx .empty,#mbhx .hint,#mbhx .sc,#mbhx .tile em{color:#a0a3ab}
+#mbhx .sum b,#mbhx .rg b,#mbhx .hint b{color:#e8e8ea}
+#mbhx .tile{background:#3a4047!important}
+#mbhx .tile.on{box-shadow:0 0 0 2px #31363c,0 0 0 4px #f2a65a}
+#mbhx .tile.max .lv{background:#f2a65a;color:#1f1f1f}
+#mbhx .top img{border-color:#4c525a}
+#mbhx .bar i{background:#40464d}
+#mbhx .bar i.done{background:#7a808a}
+#mbhx .bar i.skip{background:#4a5058}
+#mbhx .bar i.a{background:#c4c8cf}
+#mbhx .bar i.on{background:#c98a4a}
+#mbhx .bar i.b{background:#f2a65a}
+#mbhx .res>div{background:#3d3428}
+#mbhx .res small{color:#cdb592}
+#mbhx .res b{color:#f2b877}
+}`;
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const fmt=n=>Number(n||0).toLocaleString('ko-KR');
 const lvOf=v=>{v=Math.floor(Number(v)||0);return v<0?0:v>30?30:v};

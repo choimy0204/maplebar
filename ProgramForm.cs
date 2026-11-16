@@ -260,7 +260,7 @@ sealed class ProgramForm : Form
             {
                 var name = t.Name;
                 var chip = Chip(name);
-                void Paint() { bool on = !st.BarHiddenTops.Contains(name); chip.Fill = on ? UI.SoftAccent : UI.HoverBack; chip.ForeColor = on ? UI.Accent : UI.Sub; }
+                void Paint() { bool on = !st.BarHiddenTops.Contains(name); chip.Fill = on ? UI.SoftAccent : UI.HoverBack; chip.ForeColor = on ? UI.AccentText : UI.Sub; }
                 Paint();
                 chip.Click += (_, _) => { Flip(st.BarHiddenTops, name); st.Save(); hooks.ApplyBarItems(); Paint(); };
                 flow.Controls.Add(chip);

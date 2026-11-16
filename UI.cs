@@ -45,15 +45,18 @@ public static class UI
     /// <summary>다크 모드. 바를 만들 때 설정에서 읽는다. 창은 만들 때의 색을 쓰므로 바꾸면 바와 작은 창을 다시 만든다.</summary>
     public static bool Dark;
 
-    public static readonly Color Accent = Color.FromArgb(255, 138, 0);
+    // 다크 모드: 차콜 바탕 · 쨍한 주황 대신 부드러운 호박색 강조
+    public static Color Accent => Dark ? Color.FromArgb(242, 166, 90) : Color.FromArgb(255, 138, 0);
     public static Color Text => Dark ? Color.FromArgb(232, 232, 234) : Color.FromArgb(31, 31, 31);
     public static Color Line => Dark ? Color.FromArgb(76, 82, 90) : Color.FromArgb(226, 226, 226);
     public static Color HoverBack => Dark ? Color.FromArgb(64, 70, 77) : Color.FromArgb(242, 242, 242);
-    public static Color SoftAccent => Dark ? Color.FromArgb(74, 50, 22) : Color.FromArgb(255, 243, 224);
+    /// <summary>연한 강조 바탕 위 글씨 (다크에서는 조금 더 밝은 호박색)</summary>
+    public static Color AccentText => Dark ? Color.FromArgb(242, 184, 119) : Accent;
+    public static Color SoftAccent => Dark ? Color.FromArgb(74, 58, 42) : Color.FromArgb(255, 243, 224);
     /// <summary>창·카드 바탕 (밝은 모드에서는 흰색)</summary>
     public static Color Back => Dark ? Color.FromArgb(49, 54, 60) : Color.White;
     /// <summary>흐린 글자 (설명·꺼진 값)</summary>
-    public static Color Sub => Dark ? Color.FromArgb(150, 150, 158) : Color.FromArgb(135, 135, 135);
+    public static Color Sub => Dark ? Color.FromArgb(178, 180, 188) : Color.FromArgb(135, 135, 135);
 
     /// <summary>
     /// 밝은 모드 기준으로 정한 색을 지금 모드에 맞게 바꾼다. 밝은 모드면 그대로 돌려준다.
@@ -68,6 +71,7 @@ public static class UI
         if (vivid) return c;
         // 흰색(1) → 어두운 바탕, 거의 검정(0.12) → 밝은 글자
         float nl = 0.2f + (1 - l) * 0.79f;
+        if (l < 0.62f) nl = Math.Max(nl, 0.68f); // 회색 설명 글씨는 차콜 바탕에서 묻히지 않게 더 밝게
         float ns = l > 0.78f ? s * 0.45f : s; // 옅은 색 바탕은 어두워지면 너무 진해 보여서 채도를 낮춘다
         if (nl < 0.5f && ns < 0.1f) { h = 210; ns = 0.1f; } // 어두운 회색 바탕은 살짝 푸른 차콜색으로
         return FromHsl(c.A, h, ns, Math.Clamp(nl, 0, 1));
@@ -182,7 +186,7 @@ public class RoundLabel : Label
 {
     Color fill = Color.Transparent;
     public Color Fill { get => fill; set { fill = value; Invalidate(); } }
-    /// <summary>0이면 높이의 절반(알약 모양).</summary>
+    /// <summary>0이면 높이의 1/4 (둥근 직사각형).</summary>
     public int Radius { get; set; }
 
     public RoundLabel()
@@ -197,7 +201,8 @@ public class RoundLabel : Label
         base.OnPaintBackground(e);
         if (fill.A == 0) return;
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var path = UI.RoundRect(new RectangleF(0, 0, Width - 0.5f, Height - 0.5f), Radius > 0 ? Radius : Height / 2f);
+        // 기본은 알약 모양 대신 모서리만 둥근 직사각형
+        using var path = UI.RoundRect(new RectangleF(0, 0, Width - 0.5f, Height - 0.5f), Radius > 0 ? Radius : Height * 0.25f);
         using var b = new SolidBrush(fill);
         e.Graphics.FillPath(b, path);
     }
@@ -227,7 +232,7 @@ public class RoundMenuRenderer : ToolStripProfessionalRenderer
 
     protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
     {
-        if (e.Item.Enabled) e.TextColor = e.Item.Selected ? (UI.Dark ? Color.FromArgb(255, 176, 90) : Color.FromArgb(200, 95, 0)) : UI.Text;
+        if (e.Item.Enabled) e.TextColor = e.Item.Selected ? (UI.Dark ? UI.AccentText : Color.FromArgb(200, 95, 0)) : UI.Text;
         else e.TextColor = UI.Sub;
         base.OnRenderItemText(e);
     }
@@ -326,9 +331,11 @@ public sealed class CardMenuRenderer : RoundMenuRenderer, IDisposable
         // 왼쪽 아이콘 칸 (둥근 직사각형)
         int box = S(32), x = S(10), y = (h - box) / 2;
         using (var path = UI.RoundRect(new RectangleF(x, y, box, box), S(8)))
-        using (var b = new SolidBrush(hot ? UI.Accent : UI.SoftAccent))
+        // 다크 모드: 갈색 칸 대신 조금 밝은 차콜 칸에 호박색 아이콘
+        using (var b = new SolidBrush(hot ? UI.Accent : UI.Dark ? Color.FromArgb(80, 86, 94) : UI.SoftAccent))
             g.FillPath(b, path);
-        TextRenderer.DrawText(g, look.Glyph, icon, new Rectangle(x, y, box, box), hot ? Color.White : UI.Accent,
+        TextRenderer.DrawText(g, look.Glyph, icon, new Rectangle(x, y, box, box),
+            hot ? Color.White : UI.AccentText,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
         // 제목과 설명
