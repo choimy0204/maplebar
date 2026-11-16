@@ -10,11 +10,14 @@ sealed class JanusForm : Form, IMessageFilter
 {
     static JanusForm? alertForm, toonForm;
 
-    public static void Open(Form owner, Settings st, JanusWatch watch, float sc, bool toon = false, bool buff = false)
+    /// <summary>fresh: 열려 있어도 새로 만든다 (프리셋을 불러온 뒤). 그때 page·at으로 보이기 전에 페이지와 자리를 맞춰 화면이 튀지 않게 한다</summary>
+    public static void Open(Form owner, Settings st, JanusWatch watch, float sc, bool toon = false, bool buff = false,
+                            bool fresh = false, int page = 0, Point? at = null)
     {
         // 야누스·룬·버프·도핑은 한 창에 있다
         var open = toon ? toonForm : alertForm;
-        if (open == null || open.IsDisposed) open = new JanusForm(st, watch, sc, toon, buff) { Owner = owner };
+        if (fresh || open == null || open.IsDisposed) open = new JanusForm(st, watch, sc, toon, buff) { Owner = owner };
+        if (fresh && !toon && page != 0) open.ShowPage(page);
         if (toon) toonForm = open; else alertForm = open;
         var wa = Screen.FromControl(owner).WorkingArea;
         // 화면보다 크면 화면에 맞추고 스크롤로 본다
@@ -23,7 +26,7 @@ sealed class JanusForm : Form, IMessageFilter
             open.AutoScroll = true;
             open.Size = new Size(Math.Min(open.Width, wa.Width), Math.Min(open.Height, wa.Height));
         }
-        open.Location = WinPlace.Where(st, open.PlaceKey, open, owner, sc);
+        open.Location = at ?? WinPlace.Where(st, open.PlaceKey, open, owner, sc);
         if (!open.Visible) open.Show();
         open.Activate();
     }
@@ -545,14 +548,14 @@ sealed class JanusForm : Form, IMessageFilter
         p.ApplyTo(st);
         st.AlertPresetName = p.Name;
         st.Save();
-        // 칸들은 만들 때 설정 값을 읽으므로, 같은 자리·같은 페이지로 창을 새로 연다
+        // 칸들은 만들 때 설정 값을 읽으므로, 같은 자리·같은 페이지로 새 창을 먼저 띄운 뒤 이 창을 닫는다
+        // (보이고 나서 페이지·자리를 옮기면 화면이 움직여 보인다)
         if (Owner is not Form owner) return;
         int pg = page; var loc = Location;
         BeginInvoke(() =>
         {
+            Open(owner, st, watch, sc, fresh: true, page: pg, at: loc);
             Close();
-            Open(owner, st, watch, sc);
-            if (alertForm is JanusForm f && !f.IsDisposed) { f.ShowPage(pg); f.Location = loc; }
         });
     }
 

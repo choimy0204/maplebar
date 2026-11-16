@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 패치 노트 페이지에서 받는 고정 설치기. 실행하면 최신 메이플 바 설치 파일을 깃허브에서 받아 설치한다.
+       이 파일이 늘 같아야 브라우저 보안 경고(SmartScreen)가 점점 사라지므로, 릴리스마다 바뀌는 값(버전·날짜)을 넣지 않는다.
+       Windows 10/11에 처음부터 들어 있는 .NET Framework 4.8로 만들어 exe 하나로 작게 돈다. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>MapleBar-Setup</AssemblyName>
+    <RootNamespace>MapleBarSetup</RootNamespace>
+    <ApplicationIcon>..\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Product>메이플 바 설치</Product>
+    <AssemblyTitle>메이플 바 설치</AssemblyTitle>
+    <!-- 설치기 자체의 버전. 메이플 바 버전과 상관없고, 이 폴더의 코드를 고칠 때만 바꾼다 -->
+    <Version>1.0.0</Version>
+
+    <!-- 같은 코드면 같은 exe가 나오게 한다 (만든 시각·폴더 경로·커밋 번호가 들어가지 않게) -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <PathMap>$(MSBuildProjectDirectory)=/src</PathMap>
+    <DebugType>none</DebugType>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+</Project>

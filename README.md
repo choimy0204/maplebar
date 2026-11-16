@@ -2,12 +2,15 @@
 
 재획하면서 자주 쓰는 알림과 사이트를 메이플 화면 위에 모아 보여 주는 Windows 프로그램입니다.
 
-- 최신 버전: **1.1.7**
+- 최신 버전: **1.1.71**
 - 버전별 바뀐 점: [메이플 바 패치 노트](https://choimy0204.github.io/maplebar/)
 
 ## 설치
 
-[최신 설치 파일 받기](https://github.com/choimy0204/maplebar/releases/latest) (Releases에서 `MapleBar-Setup-버전.exe`)
+[설치 파일 받기](https://github.com/choimy0204/maplebar/releases/latest/download/MapleBar-Setup.exe) (`MapleBar-Setup.exe`)
+
+- 받은 파일을 켜면 최신 버전을 깃허브에서 받아 확인한 뒤 설치하고, 끝나면 메이플 바를 켭니다.
+- 버전별 설치 파일(`MapleBar-Setup-버전.exe`)은 [Releases](https://github.com/choimy0204/maplebar/releases/latest)에 있습니다.
 
 - Windows 10/11 64비트용입니다.
 - 처음 설치할 때 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
@@ -15,6 +18,10 @@
 - 숨긴 바는 **Ctrl+Alt+M**으로 다시 열 수 있습니다.
 
 ## 최근 업데이트
+
+**1.1.71** (2026.11.17) · 받기 쉬운 설치 파일 · 프리셋 화면 고침
+- 처음 설치할 때 받는 파일이 늘 같은 작은 설치 파일(`MapleBar-Setup.exe`)이 됩니다. 켜면 최신 버전을 받아 설치합니다.
+- 알림 프리셋을 불러올 때 창이 움직이던 문제를 고쳤습니다.
 
 **1.1.7** (2026.11.16) · 계산기 · 메모 · 알림 프리셋
 - 바의 **도구** 메뉴(예전 AI)에 계산기와 메모를 넣었습니다.
@@ -28,13 +35,6 @@
 - 로그인 창에 지금 사이트 주소가 보이고, 다른 사이트로는 넘어가지 않습니다.
 - 사이트 창에서 파일을 받으면 평소 쓰는 브라우저에서 받아집니다.
 - 업데이트는 깃허브에서만 받고, 원본과 같은 파일인지 확인한 뒤 설치합니다.
-
-**1.1.61** (2026.11.16) · 다크 모드 다듬기 · 창 자리 기억
-- 다크 모드 강조색을 눈이 덜 부신 호박색으로 바꿨습니다.
-- 검색 칸, 타이머 칸, 알림 설정 창, 톱니 메뉴 색을 다크 모드에 맞췄습니다.
-- 버프·룬·야누스 타이머 칸을 둥근 네모로 바꾸고 조금 높였습니다.
-- 다크 모드면 사이트, 헥사 계산기, 경매장 화면도 어둡게 보입니다.
-- 새 창이 메뉴마다 닫은 자리에서 열립니다.
 
 더 지난 버전은 [패치 노트](https://choimy0204.github.io/maplebar/)에서 볼 수 있습니다.
 
@@ -64,6 +64,13 @@
 ```
 dotnet publish MapleBar.csproj -c Release -r win-x64 --self-contained true -o publish
 ISCC installer\MapleBar.iss
+```
+
+받기용 설치기(`MapleBar-Setup.exe`)는 `bootstrap` 폴더에서 따로 만듭니다. 늘 같은 파일이 나오도록 .NET SDK 10.0.404로 고정해 두었습니다.
+
+```
+cd bootstrap
+dotnet build -c Release -o out
 ```
 
 태그(`v버전`)를 올리면 GitHub Actions가 설치 파일을 만들어 Releases에 올립니다.
