@@ -62,7 +62,11 @@ static class Logins
             var cm = await GetCookieManagerAsync();
             if (cm == null) return;
             bool changed = false;
+#if DEBUG
             bool debug = Environment.GetEnvironmentVariable("MB_DEBUG") == "1";
+#else
+            const bool debug = false; // 쿠키 이름 기록은 테스트 빌드에서만
+#endif
             foreach (var s in Services)
             {
                 try
@@ -90,6 +94,34 @@ static class Logins
         ["naver"] = new[] { "naver.com" },
         ["inven"] = new[] { "inven.co.kr" },
     };
+
+    // 로그인 창이 머물러도 되는 곳 (이 밖으로 가는 이동은 막는다. 주소 칸이 없어 가짜 페이지를 알아보기 어렵기 때문)
+    static readonly Dictionary<string, string[]> StayDomains = new()
+    {
+        // 넥슨은 구글·네이버·애플 등으로도 로그인할 수 있어 그 로그인 사이트도 둔다
+        ["nexon"] = new[] { "nexon.com", "nexon.co.kr", "google.com", "naver.com", "apple.com", "kakao.com", "facebook.com" },
+        ["google"] = new[] { "google.com", "google.co.kr", "youtube.com" },
+        ["naver"] = new[] { "naver.com" },
+        ["inven"] = new[] { "inven.co.kr" },
+    };
+
+    /// <summary>그 주소가 로그인 화면 주소면 머물러도 되는 도메인 목록, 아니면 null</summary>
+    public static string[]? StayDomainsFor(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return null;
+        foreach (var s in Services)
+            if (Uri.TryCreate(s.LoginUrl, UriKind.Absolute, out var lu) && u.Host.Equals(lu.Host, StringComparison.OrdinalIgnoreCase) &&
+                u.AbsolutePath.Equals(lu.AbsolutePath, StringComparison.OrdinalIgnoreCase))
+                return StayDomains.TryGetValue(s.Key, out var d) ? d : null;
+        return null;
+    }
+
+    /// <summary>구글·애플 로그인 팝업이 머물러도 되는 도메인 (연 페이지의 도메인은 따로 더한다)</summary>
+    public static readonly string[] PopupDomains = { "google.com", "google.co.kr", "youtube.com", "apple.com", "icloud.com" };
+
+    /// <summary>점까지 맞춰 보고 목록 안의 도메인인지 (http·https만)</summary>
+    public static bool MayStay(Uri u, IEnumerable<string> domains) =>
+        (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp) && domains.Any(d => Hosts.Is(u, d));
 
     /// <summary>이 프로그램 안에서만 로그아웃한다 (그 사이트의 쿠키를 지운다). 다른 브라우저에는 영향이 없다.</summary>
     public static async Task LogoutAsync(string key)

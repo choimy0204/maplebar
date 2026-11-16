@@ -29,6 +29,10 @@
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rel) {
       var a = rel && rel.assets && rel.assets.find(function (x) { return /^MapleBar-Setup-[\d.]+\.exe$/i.test(x.name); });
+      // 깃허브 주소일 때만 쓴다
+      var ok = false;
+      try { ok = a && new URL(a.browser_download_url).hostname === "github.com"; } catch (e) {}
+      if (!ok) a = null;
       var url = a ? a.browser_download_url : fallback;
       document.getElementById("link").href = url;
       if (a) document.getElementById("msg").textContent = a.name + " · 잠시 뒤 다운로드가 시작돼요.";

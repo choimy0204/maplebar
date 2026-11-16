@@ -13,17 +13,23 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
+      # 남이 만든 도구는 버전 이름 대신 고유 번호로 고정한다 (도구가 몰래 바뀌어도 그대로 쓰지 않게)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          dotnet-version: "7.0.x"
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
 
       # 태그와 csproj 버전이 다르면 멈춘다 (실수로 다른 버전을 올리지 않게)
       - name: 버전 확인
         shell: pwsh
+        # 태그 이름은 명령 안에 바로 넣지 않고 값으로 넘긴다 (이름에 명령이 섞여 있어도 실행되지 않게)
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $tag = $env:TAG.TrimStart("v")
           $ver = ([xml](Get-Content MapleBar.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
           if ($tag -ne $ver) { throw "태그($tag)와 MapleBar.csproj 버전($ver)이 달라요" }
           "VER=$ver" >> $env:GITHUB_ENV
@@ -34,8 +40,9 @@ jobs:
       - name: 설치 파일 만들기
         shell: pwsh
         run: |
+          # 서버에 깔린 버전에 기대지 않고 늘 같은 버전을 깐다
+          choco install innosetup --version 6.7.1 -y --no-progress --force; if ($LASTEXITCODE) { exit 1 }
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit 1 } }
           & $iscc "/DAppVer=$env:VER" installer\MapleBar.iss
           if ($LASTEXITCODE) { exit 1 }
 
@@ -52,6 +59,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
           $notes = @"
           이 설치 파일은 깃허브 서버가 이 저장소의 공개된 코드로 직접 만들었어요.
@@ -60,5 +68,5 @@ jobs:
           SHA256: ``$env:HASH``
           "@
           # 같은 버전을 다시 올리면(핫픽스) 예전 릴리스를 지우고 새로 만든다
-          gh release view "${{ github.ref_name }}" *> $null; if ($LASTEXITCODE -eq 0) { gh release delete "${{ github.ref_name }}" --yes }
-          gh release create "${{ github.ref_name }}" "dist\MapleBar-Setup-$env:VER.exe" dist\SHA256.txt --title "메이플 바 $env:VER" --notes $notes
+          gh release view $env:TAG *> $null; if ($LASTEXITCODE -eq 0) { gh release delete $env:TAG --yes }
+          gh release create $env:TAG "dist\MapleBar-Setup-$env:VER.exe" dist\SHA256.txt --title "메이플 바 $env:VER" --notes $notes

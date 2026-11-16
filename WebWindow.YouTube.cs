@@ -193,7 +193,7 @@ public partial class WebWindow
     {
         // SOOP은 같은 창 안에서 채팅 칸만 켜고 끈다 (채팅 창을 따로 열면 재생 창이 멈춘다)
         var host = web.Source?.Host ?? "";
-        if (kind == SiteKind.LivePlayer && (host.EndsWith("sooplive.com") || host.EndsWith("sooplive.co.kr") || host.EndsWith("afreecatv.com")))
+        if (kind == SiteKind.LivePlayer && (Hosts.Is(host, "sooplive.com") || Hosts.Is(host, "sooplive.co.kr") || Hosts.Is(host, "afreecatv.com")))
         {
             try { _ = web.CoreWebView2?.ExecuteScriptAsync("window.__mbsn=0;document.documentElement.classList.toggle('mbnoch');dispatchEvent(new Event('resize'))"); }
             catch (Exception ex) { Log.Write("web", "채팅 칸을 켜고 끄지 못함", ex); }

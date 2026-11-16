@@ -10,7 +10,8 @@ namespace MapleBar;
 static class Thumbs
 {
     // [전역] 썸네일 캐시. 주소별 그림(실패는 null)과 받는 중인 주소 목록을 앱이 끝날 때까지 들고 있다
-    static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    // 썸네일만 받는 데 쓴다. 5MB가 넘는 그림은 받지 않는다
+    static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(10), MaxResponseContentBufferSize = 5 * 1024 * 1024 };
     static readonly Dictionary<string, Image?> cache = new();
     static readonly HashSet<string> loading = new();
     static readonly SemaphoreSlim gate = new(4); // 한 번에 4개까지만 받는다

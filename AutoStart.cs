@@ -21,6 +21,22 @@ static class AutoStart
 
     static string Exe => Environment.ProcessPath ?? Application.ExecutablePath;
 
+    /// <summary>Program Files에 설치된 메이플 바인지. 관리자 권한으로 켜지므로 아무나 바꿀 수 있는 폴더의 exe는 등록하지 않는다</summary>
+    public static bool Installed
+    {
+        get
+        {
+            try
+            {
+                var exe = Path.GetFullPath(Exe);
+                return new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 }
+                    .Select(f => Environment.GetFolderPath(f))
+                    .Any(pf => pf.Length > 0 && exe.StartsWith(Path.TrimEndingDirectorySeparator(pf) + "\\", StringComparison.OrdinalIgnoreCase));
+            }
+            catch { return false; }
+        }
+    }
+
     // 예전 설치 파일이 만들던 시작 프로그램 바로가기 (관리자 권한 프로그램이라 실제로는 실행이 막혔다)
     static string OldShortcut => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "메이플 바.lnk");
 
@@ -35,6 +51,8 @@ static class AutoStart
                 On = code == 0;
                 bool oldLink = File.Exists(OldShortcut);
                 // 예전 바로가기로 자동 실행을 골랐던 사람은 작업으로 옮겨 준다
+                // 설치하지 않은 곳(내려받은 폴더 등)에서 켠 것이면 등록을 바꾸지 않는다
+                if (!Installed) return;
                 if (oldLink && !On) On = Register();
                 else if (On && !xml.Contains(SecurityElement.Escape(Exe), StringComparison.OrdinalIgnoreCase)) Register();
                 if (oldLink && On) File.Delete(OldShortcut);
@@ -48,6 +66,7 @@ static class AutoStart
     {
         try
         {
+            if (on && !Installed) return false; // 부른 쪽이 "설치한 메이플 바에서 켜 주세요"라고 알린다
             bool ok = on ? Register() : Run("/Delete", "/TN", TaskName, "/F").code == 0 || !Exists();
             if (ok)
             {
@@ -95,10 +114,14 @@ static class AutoStart
               </Actions>
             </Task>
             """;
-        string file = Path.Combine(Path.GetTempPath(), "MapleBar_AutoStart.xml");
+        // 매번 다른 이름으로 만들고, schtasks가 읽는 동안 다른 프로그램이 못 고치게 열어 둔다
+        string file = Path.Combine(Path.GetTempPath(), "MapleBar_" + Guid.NewGuid().ToString("N") + ".xml");
         try
         {
-            File.WriteAllText(file, xml, Encoding.Unicode);
+            using var fs = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            var bytes = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
+            fs.Write(bytes);
+            fs.Flush(true);
             return Run("/Create", "/TN", TaskName, "/XML", file, "/F").code == 0;
         }
         finally { try { File.Delete(file); } catch { } }
@@ -106,7 +129,7 @@ static class AutoStart
 
     static (int code, string output) Run(params string[] args)
     {
-        var psi = new ProcessStartInfo("schtasks.exe")
+        var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "schtasks.exe"))
         {
             UseShellExecute = false,
             CreateNoWindow = true,

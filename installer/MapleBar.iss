@@ -4,7 +4,7 @@
 #define AppName "메이플 바"
 ; 깃허브 빌드는 /DAppVer=로 버전을 넘긴다
 #ifndef AppVer
-#define AppVer "1.1.61"
+#define AppVer "1.1.62"
 #endif
 #define AppExe "MapleBar.exe"
 
@@ -16,9 +16,10 @@ AppVerName={#AppName} {#AppVer}
 DefaultDirName={autopf}\MapleBar
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-; 관리자 권한 없이 내 계정에만 설치한다 (원하면 설치 중에 모든 사용자로 바꿀 수 있다)
-PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+; 메이플 바는 관리자 권한으로 돈다. 그래서 관리자만 고칠 수 있는 Program Files에만 설치한다
+; (내 계정 폴더에 두면 다른 프로그램이 파일을 바꿔치기해 관리자 권한을 얻을 수 있다)
+PrivilegesRequired=admin
+DisableDirPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
@@ -58,11 +59,13 @@ Filename: "{app}\{#AppExe}"; Description: "지금 메이플 바 실행"; Flags: 
 
 [UninstallRun]
 ; 메이플 바 메뉴에서 켜 둔 자동 실행 등록을 지운다
-Filename: "schtasks.exe"; Parameters: "/Delete /TN MapleBar_AutoStart /F"; Flags: runhidden; RunOnceId: "DelAutoStart"
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN MapleBar_AutoStart /F"; Flags: runhidden; RunOnceId: "DelAutoStart"
 
 [UninstallDelete]
 ; 예전 버전이 만들던 시작 프로그램 바로가기
 Type: files; Name: "{userstartup}\{#AppName}.lnk"
+; 업데이트 받는 폴더
+Type: filesandordirs; Name: "{app}\.update"
 
 [Code]
 // 사이트 창은 Microsoft Edge WebView2 런타임이 있어야 뜬다 (Windows 11에는 기본으로 들어 있다)
@@ -74,6 +77,33 @@ begin
     RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', v) or
     RegQueryStringValue(HKCU, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', v);
   if Result then Result := (v <> '') and (v <> '0.0.0.0');
+end;
+
+// 예전(1.1.61까지) 내 계정 폴더 설치를 Program Files로 옮긴다.
+// 옛 제거 프로그램은 자동 실행 등록까지 지우므로 쓰지 않고, 옛 프로그램 파일·제거 정보·바로가기만 직접 지운다.
+// 설정·로그인·경매 보관함(%LOCALAPPDATA%\MapleBar)은 다른 폴더라 건드리지 않는다.
+// 자동 실행 등록은 남겨 두고, 새 위치에서 켜질 때 앱이 새 경로로 고쳐 등록한다.
+procedure MoveOldUserInstall();
+var key, old, progs: String;
+begin
+  key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F3C2A9E-4B7D-4E21-9A55-8C1D0E7B3F42}_is1';
+  if not RegQueryStringValue(HKCU, key, 'InstallLocation', old) then Exit;
+  old := AddBackslash(old);
+  if CompareText(old, AddBackslash(ExpandConstant('{app}'))) = 0 then Exit;
+  // 예전 설치 위치(내 계정 Programs 폴더 안의 메이플 바 폴더)가 맞을 때만 지운다
+  // (이 값은 아무 프로그램이나 바꿀 수 있어, 다른 폴더를 가리키면 지우지 않는다)
+  progs := AddBackslash(ExpandConstant('{localappdata}')) + 'Programs\';
+  if (CompareText(Copy(old, 1, Length(progs)), progs) = 0) and (Pos('\MAPLEBAR\', Uppercase(old)) > 0) and
+     (Pos('..', old) = 0) and FileExists(old + '{#AppExe}') then
+    DelTree(old, True, True, True);
+  RegDeleteKeyIncludingSubkeys(HKCU, key);
+  DeleteFile(ExpandConstant('{userdesktop}\{#AppName}.lnk'));
+  DelTree(ExpandConstant('{userprograms}\{#AppName}'), True, True, True);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then MoveOldUserInstall();
 end;
 
 function InitializeSetup(): Boolean;

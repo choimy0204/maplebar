@@ -738,7 +738,7 @@ public class BarForm : Form
             try { ok = await Task.Run(() => AutoStart.Set(want)); }
             finally { busy = false; }
             if (ok) { if (!it.IsDisposed) it.Checked = want; }
-            else MessageBox.Show("자동 실행 설정을 바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", "메이플 바");
+            else MessageBox.Show(want && !AutoStart.Installed ? "설치한 메이플 바에서 켜 주세요." : "자동 실행 설정을 바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", "메이플 바");
         };
         return it;
     }

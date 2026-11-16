@@ -1,5 +1,17 @@
 namespace MapleBar;
 
+/// <summary>주소 검사: 도메인은 끝을 점까지 맞춰 본다 (evilmaplescouter.com 같은 가짜를 막는다)</summary>
+public static class Hosts
+{
+    public static bool Is(Uri u, string domain) =>
+        u.Host.Equals(domain, StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
+    public static bool Is(string? host, string domain) =>
+        host != null && (host.Equals(domain, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
+    /// <summary>http·https 웹 주소만 (밖의 브라우저로 넘길 때)</summary>
+    public static bool IsWeb(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps);
+}
+
 public static class Webtoon
 {
     public const string Home = "https://m.comic.naver.com/"; // 내 웹툰은 페이지의 MY 버튼으로 간다
@@ -7,7 +19,7 @@ public static class Webtoon
     /// <summary>웹툰·네이버 로그인 화면 (세로로 긴 창, 스크롤 키 대상)</summary>
     public static bool IsWebtoon(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) &&
-        (u.Host.EndsWith("comic.naver.com", StringComparison.OrdinalIgnoreCase) || u.Host.Equals("nid.naver.com", StringComparison.OrdinalIgnoreCase));
+        (Hosts.Is(u, "comic.naver.com") || u.Host.Equals("nid.naver.com", StringComparison.OrdinalIgnoreCase));
     /// <summary>네이버 안의 주소 (새 창 링크를 앱 안에서 연다)</summary>
     public static bool IsNaver(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) &&
@@ -40,7 +52,7 @@ public static class Music
     /// <summary>메애기 주소 중 코디 페이지를 뺀 나머지 (숨은 뮤직 창 하나가 맡는다)</summary>
     public static bool IsMusic(string url) => IsMeaegi(url) && !Coordi.IsCoordi(url) || IsYtMusic(url);
     public static bool IsMeaegi(string url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("meaegi.com", StringComparison.OrdinalIgnoreCase);
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && Hosts.Is(u, "meaegi.com");
 
     // 유튜브 뮤직: 메이플 브금과 같은 숨은 뮤직 창 하나를 같이 쓴다 (둘 중 하나만 켜진다)
     public const string YtHome = "https://music.youtube.com/";
@@ -154,7 +166,7 @@ public static class Coordi
     public const string Base = "https://meaegi.com";
     static readonly string[] Paths = { "/dressing-room", "/analysis/coordi", "/lookbook" };
     public static bool IsCoordi(string url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("meaegi.com", StringComparison.OrdinalIgnoreCase) &&
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && Hosts.Is(u, "meaegi.com") &&
         Paths.Any(p => u.AbsolutePath.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 }
 
@@ -1742,67 +1754,6 @@ public static class Nexon
             } catch (_) {}
           };
           setInterval(tick, 250);
-        })();
-        """;
-
-    // [임시] 우리 필터·결과 창을 만들려고 경매장 구조를 저장한다 (%TEMP%\MapleBarAuction, 이 컴퓨터 안에만). 다 만들면 지운다
-    // - 저절로: 검색 조건 이름표가 든 사이트 프로그램 파일, 사이트가 받아 오는 검색 자료(주소마다 처음 몇 번만)
-    // - F9: 지금 화면 구조
-    public const string DumpScript = """
-        (() => {
-          if (location.hostname !== 'auction.maplestory.nexon.com') return;
-          const send = (u, t) => { try { chrome.webview.postMessage('mb:dump:' + u + '\n' + t); } catch (_) {} };
-          const count = k => { try { const n = Number(sessionStorage.getItem('mb-dump:' + k) || 0); sessionStorage.setItem('mb-dump:' + k, String(n + 1)); return n; } catch (_) { return 99; } };
-          const scan = async () => {
-            const srcs = new Set([...document.scripts].map(s => s.src));
-            performance.getEntriesByType('resource').forEach(r => { if (/\.js(\?|$)/.test(r.name)) srcs.add(r.name); });
-            for (const s of srcs) {
-              if (!s || !s.startsWith(location.origin) || count(s) > 0) continue;
-              try { const t = await (await fetch(s)).text(); if (/criticalDamagePercent|potentialGrade|itemCategory|starforceMin/.test(t)) send(s, t); } catch (_) {}
-            }
-          };
-          addEventListener('load', () => {
-            setTimeout(scan, 3000); setInterval(scan, 15000);
-            try { if (self.__next_f && count('next:' + location.pathname) < 2) send(location.href + '#next_f', JSON.stringify(self.__next_f)); } catch (_) {}
-          });
-          const skip = /login|logout|auth|token|otp|session|member|account|password|analytics|collect/i;
-          const keep = (u, t, type) => {
-            try {
-              const url = new URL(u, location.href);
-              if (!/nexon\.com$/.test(url.hostname) || skip.test(url.pathname) || !t) return;
-              if (count('api:' + url.hostname + url.pathname) < (type.includes('component') ? 4 : 3)) send(url.href, t);
-            } catch (_) {}
-          };
-          const of = window.fetch;
-          window.fetch = async function (...a) {
-            const r = await of.apply(this, a);
-            try {
-              const u = typeof a[0] === 'string' ? a[0] : (a[0] && a[0].url) || r.url;
-              const c = r.headers.get('content-type') || '';
-              if (/json|x-component/.test(c)) r.clone().text().then(t => keep(u, t, c)).catch(() => {});
-            } catch (_) {}
-            return r;
-          };
-          const oo = XMLHttpRequest.prototype.open;
-          XMLHttpRequest.prototype.open = function (m, u, ...rest) {
-            this.addEventListener('load', () => {
-              try {
-                const c = this.getResponseHeader('content-type') || '';
-                if (!/json/.test(c)) return;
-                keep(u, this.responseType === 'json' ? JSON.stringify(this.response) : (this.responseType === '' || this.responseType === 'text') ? this.responseText : '', c);
-              } catch (_) {}
-            });
-            return oo.call(this, m, u, ...rest);
-          };
-          addEventListener('keydown', e => {
-            if (e.key !== 'F9') return;
-            document.querySelectorAll('input,select,textarea').forEach(i => {
-              i.setAttribute('data-mb-value', i.type === 'checkbox' || i.type === 'radio' ? String(i.checked) : i.value);
-            });
-            const c = document.documentElement.cloneNode(true);
-            c.querySelectorAll('script,style,link,noscript,path,iframe').forEach(n => n.remove());
-            send(location.href, c.outerHTML);
-          }, true);
         })();
         """;
 }

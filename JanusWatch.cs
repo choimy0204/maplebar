@@ -136,7 +136,12 @@ sealed class JanusWatch
         return (b, d, r);
     }
 
+    // 누른 키 기록은 테스트 빌드에서만 켤 수 있다 (배포판은 무엇을 해도 키를 기록하지 않는다)
+#if DEBUG
     static readonly bool Debug = Environment.GetEnvironmentVariable("MB_DEBUG") == "1" || TestFlag("test-keylog");
+#else
+    const bool Debug = false;
+#endif
     bool hookOffLogged;
     // 바는 관리자 권한으로 켜져 환경 변수가 안 넘어올 수 있어, 설정 폴더의 test-keylog 파일로도 키 기록을 켠다
     static bool TestFlag(string name) => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar", name));
@@ -144,6 +149,8 @@ sealed class JanusWatch
     void Tick()
     {
         KeyHook.ComboVk = st.ComboKey;
+        KeyHook.Watch(st.Buffs.Select(b => b.Key).Concat(st.Dopes.Select(d => d.Key)).Concat(st.Repeats.Select(r => r.Key))
+            .Concat(Arrows).Concat(new[] { st.JanusKey, st.NpcKey, st.ComboKey, 0x0D }));
         if (KeyHook.Active)
         {
             // 누른 키를 하나씩, 누른 순서와 시각 그대로 처리한다 (2와 엔터가 한꺼번에 와도 둘 다 센다)

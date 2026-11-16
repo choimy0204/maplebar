@@ -58,6 +58,41 @@ public static class UI
     /// <summary>흐린 글자 (설명·꺼진 값)</summary>
     public static Color Sub => Dark ? Color.FromArgb(178, 180, 188) : Color.FromArgb(135, 135, 135);
 
+    // ── 프리텐다드 글꼴 (실행 파일 옆 Fonts 폴더) ──
+    // GDI+ 글꼴 개체는 PrivateFontCollection으로, Label이 쓰는 GDI 그리기는 AddFontResourceEx(이 프로그램 안에서만)로 알려 준다
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern int AddFontResourceEx(string name, uint fl, IntPtr res);
+    static System.Drawing.Text.PrivateFontCollection? pretendard;
+    static bool pretendardTried;
+
+    static FontFamily? PretendardFamily()
+    {
+        if (!pretendardTried)
+        {
+            pretendardTried = true;
+            try
+            {
+                var dir = Path.Combine(AppContext.BaseDirectory, "Fonts");
+                var files = new[] { "Pretendard-Regular.ttf", "Pretendard-Bold.ttf" }.Select(f => Path.Combine(dir, f)).Where(File.Exists).ToList();
+                if (files.Count > 0)
+                {
+                    var pfc = new System.Drawing.Text.PrivateFontCollection();
+                    foreach (var f in files) { pfc.AddFontFile(f); AddFontResourceEx(f, 0x10 /*FR_PRIVATE*/, IntPtr.Zero); }
+                    pretendard = pfc; // 앱이 끝날 때까지 쓴다
+                }
+            }
+            catch (Exception ex) { Log.Write("ui", "프리텐다드 글꼴을 못 불러옴", ex); }
+        }
+        return pretendard?.Families.FirstOrDefault();
+    }
+
+    /// <summary>프리텐다드 글꼴. 없으면 맑은 고딕. 만든 쪽에서 Dispose한다.</summary>
+    public static Font Pretendard(float size, FontStyle style = FontStyle.Regular)
+    {
+        var fam = PretendardFamily();
+        if (fam != null && fam.IsStyleAvailable(style)) return new Font(fam, size, style);
+        return new Font("맑은 고딕", size, style);
+    }
+
     /// <summary>
     /// 밝은 모드 기준으로 정한 색을 지금 모드에 맞게 바꾼다. 밝은 모드면 그대로 돌려준다.
     /// 다크 모드에서는 흰색·회색·옅은 바탕색처럼 밝기가 중요한 색은 밝기를 뒤집고,

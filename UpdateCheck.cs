@@ -11,7 +11,6 @@ namespace MapleBar;
 static class UpdateCheck
 {
     const string ReleaseUrl = "https://api.github.com/repos/choimy0204/maplebar/releases/latest";
-    const string ListUrl ="https://api.github.com/repos/choimy0204/maplebar/contents/dist";
     static readonly Regex SetupName = new(@"^MapleBar-Setup-(\d+(?:\.\d+){1,3})\.exe$", RegexOptions.IgnoreCase);
 
     /// <summary>켜도 되면 true. 새 버전이 있으면 업데이트를 하고 false.</summary>
@@ -25,7 +24,7 @@ static class UpdateCheck
 
         using var w = new UpdateWindow(mine, ver, url, sha, ask: true);
         w.ShowDialog();
-        if (w.File != null) StartInstall(w.File);
+        if (w.File != null && w.Hash != null) StartInstall(w.File, w.Hash);
         return false;
     }
 
@@ -53,7 +52,7 @@ static class UpdateCheck
             {
                 using var w = new UpdateWindow(mine, ver, url, sha, ask: false);
                 w.ShowDialog();
-                if (w.File != null && StartInstall(w.File)) ExitForUpdate(); // 꺼져야 설치가 시작된다
+                if (w.File != null && w.Hash != null && StartInstall(w.File, w.Hash)) ExitForUpdate(); // 꺼져야 설치가 시작된다
             });
         };
         watchTimer.Start();
@@ -78,21 +77,23 @@ static class UpdateCheck
 
     /// <summary>메이플 바가 완전히 꺼지기를 기다렸다가 조용히 설치하고, 끝나면 바로 다시 켠다 (설치 창 없이).
     /// 켜져 있는 채로 설치하면 파일을 못 바꿔 옛 버전이 다시 켜지므로 반드시 꺼진 뒤에 설치한다.</summary>
-    static bool StartInstall(string file)
+    static bool StartInstall(string file, string hash)
     {
         static string Q(string s) => "'" + s.Replace("'", "''") + "'";
         int pid = Environment.ProcessId;
         var script = $"$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $null = $p.WaitForExit(30000) }}; " +
+                     // 설치 직전에 한 번 더 맞춰 본다. 다르면 지우고 설치하지 않는다
+                     $"if ((Get-FileHash -LiteralPath {Q(file)} -Algorithm SHA256).Hash -ne {Q(hash)}) {{ Remove-Item -LiteralPath {Q(file)} -ErrorAction SilentlyContinue; exit }}; " +
                      $"Start-Process -FilePath {Q(file)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait; " +
-                     $"Remove-Item -LiteralPath {Q(file)} -ErrorAction SilentlyContinue; " +
-                     // 설치된 곳의 새 버전을 켠다 (다른 곳에서 켠 옛 파일을 다시 켜면 업데이트 창이 또 뜬다)
-                     "$k = 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6F3C2A9E-4B7D-4E21-9A55-8C1D0E7B3F42}_is1'; " +
-                     "$d = @(('HKCU:\\' + $k), ('HKLM:\\' + $k), ('HKLM:\\Software\\WOW6432Node\\' + $k.Substring(9))) | ForEach-Object { (Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).InstallLocation } | Where-Object { $_ } | Select-Object -First 1; " +
-                     $"$e = if ($d -and (Test-Path -LiteralPath (Join-Path $d 'MapleBar.exe'))) {{ Join-Path $d 'MapleBar.exe' }} else {{ {Q(Application.ExecutablePath)} }}; " +
+                     $"Remove-Item -LiteralPath {Q(Path.GetDirectoryName(file)!)} -Recurse -ErrorAction SilentlyContinue; " +
+                     // 설치된 곳의 새 버전을 켠다. 관리자만 고칠 수 있는 HKLM만 본다 (예전 내 계정 설치에서 옮겨 오면 자리가 바뀐다)
+                     "$k = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{6F3C2A9E-4B7D-4E21-9A55-8C1D0E7B3F42}_is1'; " +
+                     "$d = @(('HKLM:\\' + $k), ('HKLM:\\SOFTWARE\\WOW6432Node\\' + $k.Substring(9))) | ForEach-Object { (Get-ItemProperty -LiteralPath $_ -ErrorAction SilentlyContinue).InstallLocation } | Where-Object { $_ } | Select-Object -First 1; " +
+                     $"$e = if ($d -and (Test-Path -LiteralPath (Join-Path $d 'MapleBar.exe'))) {{ Join-Path $d 'MapleBar.exe' }} else {{ {Q(Environment.ProcessPath ?? Application.ExecutablePath)} }}; " +
                      "Start-Process -FilePath $e";
         try
         {
-            Process.Start(new ProcessStartInfo("powershell.exe",
+            Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
                 "-NoProfile -WindowStyle Hidden -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script)))
             { UseShellExecute = false, CreateNoWindow = true })?.Dispose();
             return true;
@@ -132,6 +133,11 @@ static class UpdateCheck
         catch { return null; }
     }
 
+    /// <summary>깃허브(github.com) https 주소인지. 업데이트 파일은 여기서만 받는다</summary>
+    public static bool IsGitHub([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps &&
+        u.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && u.IsDefaultPort;
+
     static (Version ver, string url, string? sha)? FindLatest()
     {
         try
@@ -142,14 +148,13 @@ static class UpdateCheck
             (Version ver, string url, string? sha)? best = null;
             void Take(string? name, string? url, string? sha)
             {
-                if (name == null || url == null) return;
+                if (name == null || !IsGitHub(url) || (sha != null && !IsGitHub(sha))) return;
                 var m = SetupName.Match(name);
                 if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return;
                 if (best == null || Key(v) > Key(best.Value.ver)) best = (v, url, sha);
             }
             // 두 주소를 한꺼번에 묻는다 (차례로 물으면 응답이 없을 때 켜지는 데 두 배로 걸린다). 결과는 아래에서 예전 순서대로 본다
             var relTask = Task.Run(() => http.GetStringAsync(ReleaseUrl));
-            var listTask = Task.Run(() => http.GetStringAsync(ListUrl));
             // 깃허브가 직접 만든 최신 릴리스의 설치 파일 (SHA256.txt가 함께 있다)
             try
             {
@@ -164,15 +169,7 @@ static class UpdateCheck
                 }
             }
             catch { }
-            // 예전 방식: 저장소 dist 폴더
-            try
-            {
-                using var doc = JsonDocument.Parse(listTask.GetAwaiter().GetResult());
-                foreach (var f in doc.RootElement.EnumerateArray())
-                    Take(f.TryGetProperty("name", out var n) ? n.GetString() : null,
-                         f.TryGetProperty("download_url", out var d) ? d.GetString() : null, null);
-            }
-            catch { }
+            // 저장소 dist 폴더(옛 방식)는 SHA256 확인이 없어 보지 않는다
             return best;
         }
         catch { return null; } // 인터넷 끊김, GitHub 응답 없음, 요청 한도 초과 등: 막지 않는다

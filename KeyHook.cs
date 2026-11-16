@@ -25,8 +25,27 @@ static class KeyHook
         16 => down[16] || down[160] || down[161],
         17 => down[17] || down[162] || down[163],
         18 => down[18] || down[164] || down[165],
-        _ => vk < 256 && down[vk],
+        _ => vk > 0 && vk < 256 && down[vk],
     };
+
+    /// <summary>쌓아 둘 키 (설정에 등록된 키만). 나머지 키는 눌렀는지만 보고 바로 버린다</summary>
+    static volatile bool[] watched = new bool[256];
+
+    /// <summary>쌓아 둘 키를 정한다. 바뀐 게 없으면 그대로 둔다</summary>
+    public static void Watch(IEnumerable<int> keys)
+    {
+        var next = new bool[256];
+        foreach (var k in keys)
+        {
+            if (k <= 0 || k >= 256) continue;
+            next[k] = true;
+            // 훅은 왼쪽·오른쪽 Shift·Ctrl·Alt를 따로 알려 준다
+            if (k == 16) next[160] = next[161] = true;
+            else if (k == 17) next[162] = next[163] = true;
+            else if (k == 18) next[164] = next[165] = true;
+        }
+        if (!next.AsSpan().SequenceEqual(watched)) watched = next;
+    }
 
     static readonly ConcurrentQueue<Press> queue = new();
     static readonly bool[] down = new bool[256];
@@ -73,6 +92,7 @@ static class KeyHook
     static IntPtr Callback(int code, IntPtr wParam, IntPtr lParam)
     {
         if (code >= 0)
+        try // 여기서 오류가 나면 앱이 꺼지므로 무슨 일이 있어도 넘긴다
         {
             int msg = (int)wParam;
             int vk = Marshal.ReadInt32(lParam) & 0xFF;
@@ -83,12 +103,14 @@ static class KeyHook
                 {
                     bool combo = IsDown(ComboVk); // 이 키를 누르기 전에 조합 키가 눌려 있었는지
                     down[vk] = true;
+                    if (!watched[vk]) return CallNextHookEx(hook, code, wParam, lParam); // 설정에 없는 키는 쌓지 않는다
                     GetWindowThreadProcessId(GetForegroundWindow(), out uint pid);
                     if (queue.Count < 512) queue.Enqueue(new Press(vk, DateTime.Now, pid, combo));
                 }
             }
             else if (msg == 0x101 || msg == 0x105) down[vk] = false; // 뗌
         }
+        catch { }
         return CallNextHookEx(hook, code, wParam, lParam);
     }
 

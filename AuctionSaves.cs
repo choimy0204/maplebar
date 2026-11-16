@@ -14,8 +14,9 @@ static class AuctionSaves
     static readonly string Dir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar", "auction-saves");
     static string IndexPath => Path.Combine(Dir, "index.json");
-    static readonly Regex IdRx = new(@"^\d{8}-\d{6}-\d{3}$");
+    static readonly Regex IdRx = new(@"^\d{8}-\d{6}-\d{3}\z");
     const int MaxCount = 200;
+    const long MaxBytes = 200L * 1024 * 1024; // 보관함 전체 200MB까지
     static readonly object gate = new();
 
     sealed class Entry
@@ -65,6 +66,10 @@ static class AuctionSaves
                     var list = Load();
                     list.Insert(0, new Entry { id = id, name = name, count = count, at = DateTimeOffset.Now.ToUnixTimeMilliseconds() });
                     while (list.Count > MaxCount) { var old = list[^1]; list.RemoveAt(list.Count - 1); TryDelete(old.id); }
+                    // 전체 크기도 정해 둔다: 넘으면 오래된 것부터 지운다 (방금 넣은 것은 남긴다)
+                    long Size(string i) { try { return new FileInfo(Path.Combine(Dir, i + ".json")).Length; } catch { return 0; } }
+                    long total = list.Sum(e => Size(e.id));
+                    while (total > MaxBytes && list.Count > 1) { var old = list[^1]; total -= Size(old.id); list.RemoveAt(list.Count - 1); TryDelete(old.id); }
                     SaveIndex(list);
                     return JsonSerializer.Serialize(new { op = "saved", id, name, list });
                 }

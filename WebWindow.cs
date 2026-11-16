@@ -19,7 +19,11 @@ public partial class WebWindow : Form
     internal static Task<CoreWebView2Environment> Env =>
         sharedEnv ??= CoreWebView2Environment.CreateAsync(null, Settings.WebDataDir,
             // 바에서 고른 곡이 숨은 창에서 바로 재생되게 한다
+#if DEBUG
             new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required" + (Environment.GetEnvironmentVariable("MB_DEBUG") == "1" ? " --remote-debugging-port=9333" : "")));
+#else
+            new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required")); // 배포판은 디버깅 포트를 열지 않는다
+#endif
 
     // [전역] 지금 열려 있는 사이트 창 전부. 생성자에서 넣고 닫힐 때 뺀다 (UI 스레드에서만 쓴다)
     static readonly List<WebWindow> open = new();
@@ -84,6 +88,7 @@ public partial class WebWindow : Form
             // 오른쪽 버튼·슬라이드 바 앞에서 글자를 끊는다
             int right = Width - Padding.Right - owner.S(30);
             foreach (Control c in Controls) if (c.Visible && c.Width > 0 && c.BackColor != Color.Transparent) right = Math.Min(right, c.Left - owner.S(6));
+            right = owner.DrawHost(g, x, right, Height); // 지금 사이트 주소 (WebWindow.Guard.cs)
             // 페이지 부가 설명(예: '메이플 코디·믹스 염색…')은 창을 펼쳤을 때만 보인다
             if (!owner.Expanded) sub = "";
             var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine;
@@ -349,7 +354,7 @@ public partial class WebWindow : Form
         if (KindOf(url) is SiteKind.YouTubePlayer or SiteKind.LivePlayer) { var ps = PlayerSize(YouTube.IsShorts(url), wa); w = ps.Width; h = ps.Height; }
         // SOOP 재생 창은 영상과 채팅을 같이 보이므로 넓게 연다 (사용자가 맞춘 1018×515)
         if (KindOf(url) == SiteKind.LivePlayer && Uri.TryCreate(url, UriKind.Absolute, out var lu)
-            && (lu.Host == "live.nexon.com" || lu.Host.EndsWith("sooplive.com") || lu.Host.EndsWith("sooplive.co.kr") || lu.Host.EndsWith("afreecatv.com")))
+            && (lu.Host == "live.nexon.com" || Hosts.Is(lu, "sooplive.com") || Hosts.Is(lu, "sooplive.co.kr") || Hosts.Is(lu, "afreecatv.com")))
         {
             // 넥슨 라이브: 위 제목 줄 32 + 영상(1000×563) + 아래 재생 바 36 + 테두리
             float d = DeviceDpi / 96f; int bh = lu.Host == "live.nexon.com" ? 649 : 515;
@@ -462,20 +467,10 @@ public partial class WebWindow : Form
                 // 브금 랜덤 재생이 고른 곡이 지금 화면에 없으면 앱이 찾아서 튼다
                 else if (m != null && m.StartsWith("mb:play:") && kind == SiteKind.Music && !yt && !IsDisposed) _ = PlayFromPage(m[8..]);
                 // 경매장 아이템을 환산 보관함에 넣는다
-                else if (m != null && m.StartsWith("mb:scouter:") && Nexon.IsAuction(cw.Source) && !IsDisposed) BeginInvoke(() => { _ = SendToScouter(m[11..]); });
+                // (보낸 쪽이 경매장 페이지 자체일 때만: 창 안에 끼워 넣은 다른 사이트가 보낸 건 받지 않는다)
+                else if (m != null && m.StartsWith("mb:scouter:") && Nexon.IsAuction(cw.Source) && Nexon.IsAuction(e.Source) && !IsDisposed) BeginInvoke(() => { _ = SendToScouter(m[11..]); });
                 // 경매장 검색 결과를 이 컴퓨터에 보관·불러오기·지우기
-                else if (m != null && m.StartsWith("mb:auc:") && Nexon.IsAuction(cw.Source) && m.Length < 6_000_000 && !IsDisposed) AuctionSaves.Handle(this, cw, m[7..]);
-                // [임시] 경매장 구조 저장. 우리 필터 창을 만들려고 쓴다 (이 컴퓨터 안에만). 다 만들면 지운다
-                else if (m != null && m.StartsWith("mb:dump:") && Nexon.IsAuction(cw.Source) && m.Length < 8_000_000)
-                {
-                    try
-                    {
-                        var dir = Path.Combine(Path.GetTempPath(), "MapleBarAuction");
-                        Directory.CreateDirectory(dir);
-                        File.WriteAllText(Path.Combine(dir, $"dump-{DateTime.Now:HHmmss}-{Interlocked.Increment(ref dumpNo)}.txt"), m[8..]);
-                    }
-                    catch (Exception ex) { Log.Write("web", "경매장 구조 저장 실패", ex); }
-                }
+                else if (m != null && m.StartsWith("mb:auc:") && Nexon.IsAuction(cw.Source) && Nexon.IsAuction(e.Source) && m.Length < 6_000_000 && !IsDisposed) AuctionSaves.Handle(this, cw, m[7..]);
             };
             // 숨은 뮤직 창은 화면에 안 보이니 광고를 건드리지 않는다
             if (kind == SiteKind.Webtoon) await cw.AddScriptToExecuteOnDocumentCreatedAsync(ScrollScript);
@@ -511,13 +506,15 @@ public partial class WebWindow : Form
                 await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.AuctionScript);
                 await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.PickScript); // 아이템 → 환산 보관함
                 await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.AuctionUiScript); // 우리 경매장 화면
-                await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.DumpScript); // [임시]
             }
             if (initScript != null) await cw.AddScriptToExecuteOnDocumentCreatedAsync(initScript);
             if (wearWin) await cw.AddScriptToExecuteOnDocumentCreatedAsync("window.__mbWearWin = true;");
             if (IsSite(startUrl)) await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.WearViewScript); // '착용 해보기'로 연 보스컷 창
             await cw.AddScriptToExecuteOnDocumentCreatedAsync(CtrlWheelScript); // Ctrl을 누른 채 휠을 굴려도 화면 배율은 그대로
             cw.Settings.IsZoomControlEnabled = false; // 배율은 프로그램 설정에서만 바꾼다
+#if !DEBUG
+            cw.Settings.AreDevToolsEnabled = false; // 개발자 도구(F12)는 테스트 빌드에서만
+#endif
             ApplyZoom();
             // 인벤은 작은 창에 맞는 모바일 화면으로 보이게 한다
             if (!browser && (Inven.IsInven(startUrl) || kind == SiteKind.Webtoon))
@@ -531,13 +528,7 @@ public partial class WebWindow : Form
                     var d = e.GetDeferral();
                     try
                     {
-                        var pop = new Form { Text = "로그인", Size = new Size(S(480), S(640)), StartPosition = FormStartPosition.CenterScreen, ShowInTaskbar = false };
-                        var pw = new WebView2 { Dock = DockStyle.Fill };
-                        pop.Controls.Add(pw);
-                        pop.Show();
-                        await pw.EnsureCoreWebView2Async(await Env);
-                        pw.CoreWebView2.WindowCloseRequested += (_, _) => pop.Close();
-                        e.NewWindow = pw.CoreWebView2;
+                        e.NewWindow = await OpenLoginPopup(cw.Source is { } src && Uri.TryCreate(src, UriKind.Absolute, out var ou) ? ou : null); // WebWindow.Guard.cs
                         e.Handled = true;
                     }
                     catch { e.Handled = true; }
@@ -565,6 +556,8 @@ public partial class WebWindow : Form
                 else OpenExternal(e.Uri);
             };
             cw.DocumentTitleChanged += (_, _) => { Text = cw.DocumentTitle; grip.Invalidate(); };
+            NoDownloads(cw); // 파일은 평소 쓰는 브라우저에서 받게 한다 (WebWindow.Guard.cs)
+            GuardNavigation(cw); // 로그인 창은 로그인 사이트 밖으로 못 가게 (WebWindow.Guard.cs)
             cw.Navigate(startUrl);
         }
         catch (Exception ex)
@@ -594,7 +587,7 @@ public partial class WebWindow : Form
 
     // 사이트가 직접 올리는 배너 이미지 폴더
     static bool IsAdPath(Uri u) =>
-        u.Host.EndsWith("maplescouter.com") && u.AbsolutePath.Contains("/ads/", StringComparison.OrdinalIgnoreCase);
+        Hosts.Is(u, "maplescouter.com") && u.AbsolutePath.Contains("/ads/", StringComparison.OrdinalIgnoreCase);
 
     static async Task BlockAds(CoreWebView2 cw, CoreWebView2Environment env)
     {
@@ -754,9 +747,8 @@ public partial class WebWindow : Form
         (u.Host == "accounts.google.com" || u.Host == "appleid.apple.com");
 
     static bool IsSite(string url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("maplescouter.com");
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && Hosts.Is(u, "maplescouter.com");
 
-    static int dumpNo; // [임시] 경매장 구조 저장 파일 번호
 
     /// <summary>경매장에서 고른 아이템을 환산 보관함(아이템메이커가 쓰는 곳)에 넣고 효율·보스컷을 보여 준다.
     /// 열린 효율·보스컷 창이 있으면 거기에 넣고 다시 읽고, 없으면 새 창을 열면서 넣는다.</summary>
@@ -1023,6 +1015,7 @@ public partial class WebWindow : Form
 
     static void OpenExternal(string url)
     {
+        if (!Hosts.IsWeb(url)) { Log.Write("web", "웹 주소가 아니라 열지 않음"); return; } // 프로그램·파일 주소는 열지 않는다
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
         catch (Exception ex) { Log.Write("web", "기본 브라우저로 열지 못함", ex); }
     }

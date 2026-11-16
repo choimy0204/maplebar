@@ -464,9 +464,24 @@ return JSON.stringify({name:a.alt||'', avatar:a.currentSrc||a.src, world:(w.inne
         if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != "https") return null;
         try
         {
-            var bytes = await http.GetByteArrayAsync(u);
-            using var ms = new MemoryStream(bytes);
-            return new Bitmap(Image.FromStream(ms));
+            // 5MB가 넘는 그림은 받지 않는다 (이 http는 페이지 글도 받으므로 여기서만 센다)
+            const int Max = 5 * 1024 * 1024;
+            using var res = await http.GetAsync(u, HttpCompletionOption.ResponseHeadersRead);
+            if (!res.IsSuccessStatusCode || res.Content.Headers.ContentLength > Max) return null;
+            using var ms = new MemoryStream();
+            await using (var src = await res.Content.ReadAsStreamAsync())
+            {
+                var buf = new byte[81920];
+                int n;
+                while ((n = await src.ReadAsync(buf)) > 0)
+                {
+                    if (ms.Length + n > Max) return null;
+                    ms.Write(buf, 0, n);
+                }
+            }
+            ms.Position = 0;
+            using var raw = Image.FromStream(ms);
+            return new Bitmap(raw);
         }
         catch { return null; }
     }

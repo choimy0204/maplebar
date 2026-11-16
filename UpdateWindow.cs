@@ -9,6 +9,11 @@ namespace MapleBar;
 sealed class UpdateWindow : Form
 {
     public string? File { get; private set; }
+    /// <summary>받은 파일의 SHA256 (설치 직전에 한 번 더 맞춰 본다)</summary>
+    public string? Hash { get; private set; }
+
+    /// <summary>받을 곳: Program Files 안이라 관리자만 쓸 수 있다 (받은 뒤 다른 프로그램이 바꿔치기 못 하게)</summary>
+    static string UpdateDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "MapleBar", ".update");
 
     readonly string url;
     readonly string? shaUrl;
@@ -119,16 +124,21 @@ sealed class UpdateWindow : Form
         bar.Visible = true;
         bar.Value = 0;
         // 앞서 받은 파일이 아직 설치 중이라 잠겨 있을 수 있어, 받을 때마다 새 폴더에 받는다
-        string file = Path.Combine(Path.GetTempPath(), "MapleBar-Update", Guid.NewGuid().ToString("N")[..8], Path.GetFileName(new Uri(url).LocalPath));
+        string file = Path.Combine(UpdateDir, Guid.NewGuid().ToString("N")[..8], Path.GetFileName(new Uri(url).LocalPath));
         try
         {
+            // 깃허브 주소에서만 받는다
+            if (!UpdateCheck.IsGitHub(url) || (shaUrl != null && !UpdateCheck.IsGitHub(shaUrl))) throw new Exception("받을 주소가 이상해요.");
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            // MaxResponseContentBufferSize: 한 번에 받는 SHA256 값 같은 작은 응답만 제한한다 (설치 파일은 아래에서 따로 센다)
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10), MaxResponseContentBufferSize = 1024 * 1024 };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("MapleBar");
             using (var res = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
             {
                 res.EnsureSuccessStatusCode();
                 long total = res.Content.Headers.ContentLength ?? 0, done = 0;
+                const long Max = 300L * 1024 * 1024; // 설치 파일은 100MB도 안 된다. 이보다 크면 이상한 파일이다
+                if (total > Max) throw new Exception("받을 파일이 너무 커요.");
                 await using var src = await res.Content.ReadAsStreamAsync();
                 await using var dst = System.IO.File.Create(file);
                 var buf = new byte[81920];
@@ -138,6 +148,7 @@ sealed class UpdateWindow : Form
                 {
                     await dst.WriteAsync(buf.AsMemory(0, n));
                     done += n;
+                    if (done > Max) throw new Exception("받을 파일이 너무 커요.");
                     if (Environment.TickCount64 - shown < 80 && done != total) continue;
                     shown = Environment.TickCount64;
                     if (total > 0)
@@ -148,14 +159,15 @@ sealed class UpdateWindow : Form
                     else status.Text = $"{done / 1048576.0:0.0} MB 받았어요";
                 }
             }
-            // 깃허브가 함께 올린 SHA256 값과 같아야 설치한다 (받다가 깨진 파일 방지)
-            if (shaUrl != null)
+            // 깃허브가 함께 올린 SHA256 값과 같아야 설치한다 (받다가 깨진 파일·바꿔치기 방지). 확인 값이 없으면 설치하지 않는다
+            if (shaUrl == null) throw new Exception("받은 파일을 확인할 수 없어요.");
             {
                 status.Text = "받은 파일을 확인하고 있어요…";
                 var want = (await http.GetStringAsync(shaUrl)).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[0];
                 string got;
                 await using (var s = System.IO.File.OpenRead(file)) got = Convert.ToHexString(await SHA256.HashDataAsync(s));
                 if (!got.Equals(want, StringComparison.OrdinalIgnoreCase)) throw new Exception("받은 파일이 원본과 달라요.");
+                Hash = got;
             }
             bar.Value = 1;
             title.Text = "다 받았어요";
@@ -171,7 +183,8 @@ sealed class UpdateWindow : Form
             bar.Visible = false;
             Buttons(("브라우저로 받기", true, () =>
             {
-                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+                if (Hosts.IsWeb(url))
+                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
                 Close();
             }), ("닫기", false, Close));
         }

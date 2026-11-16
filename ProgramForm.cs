@@ -132,7 +132,7 @@ sealed class ProgramForm : Form
             if (!ok)
             {
                 if (!auto!.IsDisposed) auto.On = AutoStart.On;
-                MessageBox.Show("자동 실행 설정을 바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", "메이플 바");
+                MessageBox.Show(v && !AutoStart.Installed ? "설치한 메이플 바에서 켜 주세요." : "자동 실행 설정을 바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", "메이플 바");
             }
         });
         p.Height = y;

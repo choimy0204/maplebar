@@ -23,7 +23,7 @@ public static class Inven
     };
 
     public static bool IsInven(string url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Host.EndsWith("inven.co.kr", StringComparison.OrdinalIgnoreCase);
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && Hosts.Is(u, "inven.co.kr");
 
     static readonly HttpClient http = MakeClient();
     static HttpClient MakeClient()
