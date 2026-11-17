@@ -114,6 +114,8 @@ static class JanusAlert
             }
             pillBmp?.Dispose(); pillBmp = null;
             pillFont?.Dispose(); pillFont = null;
+            trailPen?.Dispose(); trailPen = null;
+            edgePen?.Dispose(); edgePen = null;
             stop = null;
         };
 
@@ -162,11 +164,8 @@ static class JanusAlert
             float head = (float)(p * len);
 
             // 지나간 자리에 남는 옅은 선
-            using (var pen = new Pen(Color.FromArgb(80, M), 3 * sc) { LineJoin = LineJoin.Round })
-            {
-                var pts = Span(r, head);
-                if (pts.Length >= 2) g.DrawLines(pen, pts);
-            }
+            int n = Span(r, head);
+            if (n >= 2) g.DrawLines(TrailPen(Color.FromArgb(80, M), 3 * sc), spanPts[n]);
 
             // 머리와 꼬리: 머리에 가까울수록 크고 밝다
             float tail = len * 0.28f, step = Math.Max(2f, 4 * sc);
@@ -189,10 +188,26 @@ static class JanusAlert
             // 다 돌고 나면 테두리 전체가 한 번 빛나고 사라진다
             double u = (el - Lap) / Fade;
             float a = (float)(1 - u * u);
-            using (var pen = new Pen(Color.FromArgb((int)(50 * a), M), 20 * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
-            using (var pen = new Pen(Color.FromArgb((int)(160 * a), M), 4 * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
-            using (var pen = new Pen(Color.FromArgb((int)(140 * a), L), 1.5f * sc)) g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+            g.DrawRectangle(EdgePen(Color.FromArgb((int)(50 * a), M), 20 * sc), r.X, r.Y, r.Width, r.Height);
+            g.DrawRectangle(EdgePen(Color.FromArgb((int)(160 * a), M), 4 * sc), r.X, r.Y, r.Width, r.Height);
+            g.DrawRectangle(EdgePen(Color.FromArgb((int)(140 * a), L), 1.5f * sc), r.X, r.Y, r.Width, r.Height);
         }
+    }
+
+    // 15ms마다 그리므로 펜은 알림 하나에 두 개만 만들어 색·굵기만 바꿔 쓰고, 알림이 끝나면(stop) 푼다.
+    // 지나간 선은 모서리를 둥글게, 테두리는 기본 모서리로 그려 원래 모양과 같다
+    static Pen? trailPen, edgePen;
+    static Pen TrailPen(Color c, float w)
+    {
+        trailPen ??= new Pen(c, w) { LineJoin = LineJoin.Round };
+        trailPen.Color = c; trailPen.Width = w;
+        return trailPen;
+    }
+    static Pen EdgePen(Color c, float w)
+    {
+        edgePen ??= new Pen(c, w);
+        edgePen.Color = c; edgePen.Width = w;
+        return edgePen;
     }
 
     // 둘레 위의 점: 위쪽 가운데에서 시작해 시계 방향으로 d만큼 간 곳
@@ -206,15 +221,24 @@ static class JanusAlert
         return new PointF(r.Left, r.Bottom - s);
     }
 
-    // 시작점부터 d까지 지나간 길 (모서리마다 꺾는다)
-    static PointF[] Span(RectangleF r, float d)
+    // 지나간 길을 담는 칸: 점 수(2~6)마다 배열을 하나씩 두고 다시 쓴다 (spanPts[n]은 점 n개)
+    static readonly PointF[][] spanPts = Enumerable.Range(0, 7).Select(k => new PointF[k]).ToArray();
+    static readonly PointF[] spanTmp = new PointF[6];
+
+    // 시작점부터 d까지 지나간 길 (모서리마다 꺾는다). 점 수를 돌려주고, 점은 spanPts[점 수]에 담는다
+    static int Span(RectangleF r, float d)
     {
         float w = r.Width, h = r.Height;
-        var list = new List<PointF> { At(r, 0) };
-        foreach (var c in new[] { w / 2, w / 2 + h, w / 2 + h + w, w / 2 + 2 * h + w })
-            if (c < d) list.Add(At(r, c));
-        list.Add(At(r, d));
-        return list.ToArray();
+        int n = 0;
+        spanTmp[n++] = At(r, 0);
+        float c0 = w / 2, c1 = w / 2 + h, c2 = w / 2 + h + w, c3 = w / 2 + 2 * h + w;
+        if (c0 < d) spanTmp[n++] = At(r, c0);
+        if (c1 < d) spanTmp[n++] = At(r, c1);
+        if (c2 < d) spanTmp[n++] = At(r, c2);
+        if (c3 < d) spanTmp[n++] = At(r, c3);
+        spanTmp[n++] = At(r, d);
+        Array.Copy(spanTmp, spanPts[n], n);
+        return n;
     }
 
     static Bitmap Tint(Size size, Color c)

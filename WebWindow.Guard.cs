@@ -63,6 +63,14 @@ public partial class WebWindow
         };
     }
 
+    /// <summary>개발자 도구(F12)는 테스트 빌드에서만 연다 (사이트 창·로그인 팝업 공통)</summary>
+    static void NoDevTools(CoreWebView2 cw)
+    {
+#if !DEBUG
+        cw.Settings.AreDevToolsEnabled = false;
+#endif
+    }
+
     /// <summary>사이트 창에서는 파일을 받지 않는다. 메이플 바는 관리자 권한으로 돌아서, 여기서 받은 파일을 바로 열면
     /// 그 파일도 관리자 권한으로 실행될 수 있다. 웹 주소면 평소 쓰는 브라우저로 넘겨 거기서 받게 한다.</summary>
     static void NoDownloads(CoreWebView2 cw)
@@ -119,8 +127,19 @@ public partial class WebWindow
         pop.Controls.Add(pw);
         pop.Controls.Add(strip);
         pop.Show();
-        await pw.EnsureCoreWebView2Async(await Env);
-        var cw = pw.CoreWebView2;
+        CoreWebView2 cw;
+        try
+        {
+            await pw.EnsureCoreWebView2Async(await Env);
+            cw = pw.CoreWebView2 ?? throw new InvalidOperationException("로그인 팝업 웹뷰가 없음");
+        }
+        catch (Exception ex)
+        {
+            // 빈 창이 남지 않게 닫는다. 부른 쪽(새 창 요청)은 지금처럼 실패로 처리한다
+            Log.Write("web", "로그인 팝업을 띄우지 못함", ex);
+            if (!pop.IsDisposed) pop.Close();
+            throw;
+        }
         cw.WindowCloseRequested += (_, _) => pop.Close();
         pw.SourceChanged += (_, _) => strip.Invalidate();
 
@@ -128,9 +147,7 @@ public partial class WebWindow
         // (뒷부분만 맞추면 같은 끝을 쓰는 남의 사이트까지 열려 버린다)
         var stay = new List<string>(Logins.PopupDomains);
         if (opener != null && (opener.Scheme == Uri.UriSchemeHttps || opener.Scheme == Uri.UriSchemeHttp) && opener.Host.Length > 0) stay.Add(opener.Host);
-#if !DEBUG
-        cw.Settings.AreDevToolsEnabled = false;
-#endif
+        NoDevTools(cw);
         NoDownloads(cw);
         var noteTimer = new System.Windows.Forms.Timer { Interval = 3000 };
         noteTimer.Tick += (_, _) => { noteTimer.Stop(); note = null; if (!strip.IsDisposed) strip.Invalidate(); };

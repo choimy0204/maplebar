@@ -70,14 +70,19 @@ static class KeyHook
     public static bool Active { get => active; private set => active = value; }
 
     static Thread? starting;
+    static volatile uint hookThread; // 훅 스레드 번호 (끝낼 때 그 스레드에 그만하라고 보낸다)
+    static volatile bool stopping;   // 앱이 끝나는 중이면 훅을 새로 걸지 않는다
+    static bool exitHooked;
 
     public static void Start()
     {
-        if (Active) return;
+        if (Active || stopping) return;
         if (starting is { IsAlive: true }) return; // 앞서 켠 것이 아직 준비 중이면 하나 더 걸지 않는다
+        if (!exitHooked) { exitHooked = true; AppDomain.CurrentDomain.ProcessExit += (_, _) => Stop(); } // 앱이 끝날 때 훅을 푼다
         using var ready = new ManualResetEventSlim();
         var t = starting = new Thread(() =>
         {
+            hookThread = GetCurrentThreadId();
             proc = Callback;
             hook = SetWindowsHookEx(13 /* WH_KEYBOARD_LL */, proc, GetModuleHandle(null), 0);
             Active = hook != IntPtr.Zero;
@@ -85,13 +90,27 @@ static class KeyHook
             try { ready.Set(); } catch (ObjectDisposedException) { }
             if (!Active) return;
             // 알림은 이 스레드의 메시지 줄로 온다. 화면 스레드가 바빠도 여기서는 바로 받는다
-            while (GetMessage(out _, IntPtr.Zero, 0, 0) > 0) { }
+            // (Stop이 그만하라는 신호를 보내면 GetMessage가 0을 돌려줘 빠져나온다)
+            if (!stopping) while (GetMessage(out _, IntPtr.Zero, 0, 0) > 0) { }
             UnhookWindowsHookEx(hook);
             Active = false;
         })
         { IsBackground = true, Name = "KeyHook", Priority = ThreadPriority.AboveNormal };
         t.Start();
         ready.Wait(2000);
+    }
+
+    /// <summary>앱이 끝날 때 키 훅을 푼다. 훅 스레드가 스스로 풀게 그만하라는 신호만 보내고 잠깐 기다린다.
+    /// 어떤 순서로 불려도, 여러 번 불려도 오류를 내지 않는다.</summary>
+    static void Stop()
+    {
+        try
+        {
+            stopping = true;
+            if (hookThread != 0) PostThreadMessage(hookThread, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+            if (starting is { IsAlive: true } t && t != Thread.CurrentThread) t.Join(300);
+        }
+        catch { } // 끝나는 중이라 무엇이 이미 사라졌어도 그냥 넘어간다 (풀리지 않은 훅은 윈도우가 정리한다)
     }
 
     /// <summary>쌓인 누름을 순서대로 꺼낸다.</summary>
@@ -146,5 +165,7 @@ static class KeyHook
     [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
     [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] static extern int GetMessage(out MSG msg, IntPtr hwnd, uint min, uint max);
+    [DllImport("user32.dll")] static extern bool PostThreadMessage(uint thread, uint msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string? name);
 }

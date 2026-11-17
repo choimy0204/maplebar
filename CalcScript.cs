@@ -92,6 +92,9 @@ static class ScriptMath
     sealed class Parser(string s, Func<string, decimal> get)
     {
         int i;
+        // 괄호·부호·거듭제곱이 겹칠 때마다 Signed로 한 단계 깊어진다. 너무 깊으면 앱이 꺼지므로 그 전에 멈춘다
+        const int MaxDepth = 200;
+        int depth;
 
         public char Peek()
         {
@@ -129,10 +132,15 @@ static class ScriptMath
         // 앞에 붙은 + -
         decimal Signed()
         {
-            char c = Peek();
-            if (c is '-' or '−') { i++; return -Signed(); }
-            if (c == '+') { i++; return Signed(); }
-            return Power();
+            if (++depth > MaxDepth) throw new ScriptError("계산할 수 없는 식이에요");
+            try
+            {
+                char c = Peek();
+                if (c is '-' or '−') { i++; return -Signed(); }
+                if (c == '+') { i++; return Signed(); }
+                return Power();
+            }
+            finally { depth--; }
         }
 
         // 거듭제곱 (^ 또는 **, 오른쪽부터)

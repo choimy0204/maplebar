@@ -119,13 +119,13 @@ footer a, .note a { color: var(--accent); }
     <h1>메이플 바 패치 노트</h1>
     <p class="lead">재획하면서 자주 쓰는 알림과 사이트를 메이플 화면 위에 모아 보여 주는 프로그램이에요. 버전마다 무엇이 바뀌었는지 정리했어요.</p>
     <div class="actions">
-      <a class="btn primary dl" href="https://github.com/choimy0204/maplebar/releases/latest/download/MapleBar-Setup.exe">설치 파일 받기 <span class="dl-ver">1.1.71</span></a>
+      <a class="btn primary dl" href="https://github.com/choimy0204/maplebar/releases/latest/download/MapleBar-Setup.exe">설치 파일 받기 <span class="dl-ver">1.1.72</span></a>
       <a class="btn" href="https://github.com/choimy0204/maplebar">코드 보기 (깃허브)</a>
     </div>
     <p class="dl-note"><span class="dl-name">MapleBar-Setup.exe</span> · 1MB 미만 · 켜면 최신 버전을 받아 설치해요</p>
     <p class="visits"><img src="https://hits.sh/choimy0204.github.io/maplebar.svg?view=today-total&amp;label=%EB%B0%A9%EB%AC%B8%EC%9E%90&amp;color=d9622b" alt="방문자 수" height="20"> <span>오늘 / 전체</span></p>
     <nav class="jump" aria-label="버전 바로 가기">
-      <a href="#features">주요 기능</a><a href="#v1171">1.1.71</a><a href="#v117">1.1.7</a><a href="#v1162">1.1.62</a><a href="#v1161">1.1.61</a><a href="#v116">1.1.6</a>
+      <a href="#features">주요 기능</a><a href="#v1172">1.1.72</a><a href="#v1171">1.1.71</a><a href="#v117">1.1.7</a><a href="#v1162">1.1.62</a><a href="#v1161">1.1.61</a>
     </nav>
   </header>
 
@@ -146,10 +146,10 @@ footer a, .note a { color: var(--accent); }
         <img src="img/11.jpg" width="1280" height="720" alt="'솔 야누스가 꺼졌어요' 보라색 알림과 알림 설정 창" loading="lazy">
       </div>
       <div class="txt">
-        <h3>룬 · 솔 야누스 · 아이템 회수 알림</h3>
+        <h3>룬 · 솔 야누스 알림</h3>
         <ul>
           <li>룬이 나올 때가 되면 화면 가운데에 알려 줘요 (지금은 "룬이 곧 나와요"로 떠요)</li>
-          <li>솔 야누스가 사라질 때는 보라색, 아이템을 회수할 때는 초록색으로 알려 줘요</li>
+          <li>솔 야누스가 사라질 때는 보라색으로 알려 줘요</li>
           <li>메이플 창에서 누른 키만 읽어요. 게임에는 아무것도 보내지 않아요</li>
         </ul>
       </div>
@@ -210,7 +210,7 @@ footer a, .note a { color: var(--accent); }
       <div class="txt">
         <h3>알림 설정</h3>
         <ul>
-          <li>솔 야누스 키와 지속시간, 루나 익스텐션, 아이템 회수 알림을 정해요</li>
+          <li>솔 야누스 키와 지속시간, 루나 익스텐션을 정해요</li>
           <li>룬은 NPC 대화 키와 주기(평소 15분, 이벤트 땐 10분)를 정해요</li>
           <li>[미리 보기]로 알림이 어떻게 뜨는지 바로 볼 수 있어요</li>
         </ul>
@@ -336,9 +336,29 @@ footer a, .note a { color: var(--accent); }
     <p>최신 버전부터 순서대로 적었어요.</p>
   </div>
 
+  <article class="release" id="v1172">
+    <div class="rhead">
+      <span class="ver">1.1.72</span><span class="date">2026.11.17</span><span class="latest">최신</span>
+      <p class="title">알림 15칸 · 회수 알림 없앰 · 안정성 다듬기</p>
+    </div>
+    <div class="group"><span class="tag new">알림</span><ul class="items">
+      <li>반복 알림과 단일 알림을 15칸까지 쓸 수 있어요</li>
+      <li>아이템 회수 알림을 없앴어요</li>
+    </ul></div>
+    <div class="group"><span class="tag fix">바뀐 점</span><ul class="items">
+      <li>Ctrl+Alt+M으로 바를 숨기면 시계도 같이 숨어요</li>
+    </ul></div>
+    <div class="group"><span class="tag fix">고친 점</span><ul class="items">
+      <li>긴 계산식, 자동 실행 설정, 로그아웃, 정펜 확인에서 앱이 꺼지거나 켜지지 않던 문제를 고쳤어요</li>
+      <li>오래 켜 둬도 메모리가 덜 쌓이게 다듬었어요</li>
+    </ul></div>
+    <div class="group"><span class="tag fix">보안</span><ul class="items">
+      <li>업데이트 파일을 받을 때 주소와 크기를 더 꼼꼼히 확인해요</li>
+    </ul></div>
+  </article>
   <article class="release" id="v1171">
     <div class="rhead">
-      <span class="ver">1.1.71</span><span class="date">2026.11.17</span><span class="latest">최신</span>
+      <span class="ver">1.1.71</span><span class="date">2026.11.17</span>
       <p class="title">받기 쉬운 설치 파일 · 프리셋 화면 고침</p>
     </div>
     <div class="group"><span class="tag fix">바뀐 점</span><ul class="items">
@@ -772,7 +792,7 @@ footer a, .note a { color: var(--accent); }
             <li>사용 대기 시간(기본 3초)은 켜고 끄거나 바꿀 수 있어요</li>
           </ul>
         </li>
-        <li><strong>모든 모니터에 알림</strong>: 야누스, 아이템 회수, 룬, 버프 알림이 모든 모니터에 떠요</li>
+        <li><strong>모든 모니터에 알림</strong>: 야누스, 룬, 버프 알림이 모든 모니터에 떠요</li>
         <li><strong>알림 소리</strong>: 소리를 켜고 끄고, 크기를 조절할 수 있어요</li>
         <li><strong>바를 숨겨도 알림</strong>: 숨기거나 최소화해도 야누스·룬·버프·도핑 알림이 떠요 (메뉴에서 끌 수 있어요)</li>
         <li>인벤 새 글 알림은 게임 화면 위 가운데에 떠요</li>

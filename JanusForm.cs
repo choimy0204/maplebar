@@ -80,6 +80,8 @@ sealed class JanusForm : Form, IMessageFilter
     readonly RoundLabel?[] onceKeys = new RoundLabel?[JanusWatch.OnceSlots];
     readonly Label?[] onceStatus = new Label?[JanusWatch.OnceSlots];
     readonly Card?[] repeatCards = new Card?[JanusWatch.RepeatSlots], onceCards = new Card?[JanusWatch.OnceSlots];
+    // 키 잡기 번호: 반복 100번대, 단일 120번대 (버프 20·도핑 40번대와 겹치지 않게)
+    const int RepeatId = 100, OnceId = 120;
     int repeatPage, oncePage;
 
     void ShowPage(int p)
@@ -123,7 +125,22 @@ sealed class JanusForm : Form, IMessageFilter
     }
 
     int S(float v) => UI.Scale(v, sc);
-    static Font F(float size, FontStyle style = FontStyle.Regular) => new("맑은 고딕", size * UI.Z, style);
+    // 같은 크기·굵기 글꼴은 한 번만 만들어 같이 쓰고, 창을 정리할 때 함께 푼다 (칸을 다시 만들어도 글꼴이 쌓이지 않게)
+    readonly Dictionary<(float, FontStyle), Font> fonts = new();
+    Font F(float size, FontStyle style = FontStyle.Regular)
+    {
+        var key = (size * UI.Z, style);
+        if (!fonts.TryGetValue(key, out var f)) fonts[key] = f = new Font("맑은 고딕", key.Item1, style);
+        return f;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing); // 컨트롤이 먼저 정리된 뒤에 글꼴을 푼다
+        if (!disposing) return;
+        foreach (var f in fonts.Values) f.Dispose();
+        fonts.Clear();
+    }
 
     JanusForm(Settings st, JanusWatch watch, float sc, bool toon, bool buff)
     {
@@ -226,13 +243,11 @@ sealed class JanusForm : Form, IMessageFilter
             More =
                 "야누스 키를 누르면 그때부터 알림 주기만큼 세고 알려 드려요. 다시 깔면 처음부터 다시 셉니다.\n" +
                 "처음 깐 뒤 50초 안에 또 깐 건 세지 않아요. 0분 0초면 세지 않아요.\n" +
-                "다시 알리기를 켜면 알림 뒤에도 안 깔았을 때 정한 초 뒤에 한 번 더 알려요.\n" +
-                "아이템은 깔고 1분 30초 뒤 사라져요. 65초에 연두색 빛으로 주우라고 알려 드려요.",
+                "다시 알리기를 켜면 알림 뒤에도 안 깔았을 때 정한 초 뒤에 한 번 더 알려요.",
             Preview = () => JanusAlert.Play(sc),
             Switches = new (string, bool, Action<bool>)[]
             {
                 ("다시 알리기", st.JanusRealertOn, v => st.JanusRealertOn = v),
-                ("아이템 회수 알림", st.PickupOn, v => st.PickupOn = v),
             },
             Step2 = ("다시 알리기", st.JanusRealertSec, Enumerable.Range(1, 12).Select(n => n * 5).ToArray(), v => v + "초", v => st.JanusRealertSec = v),
             LiveHint = () =>
@@ -1145,7 +1160,7 @@ sealed class JanusForm : Form, IMessageFilter
 
     static readonly Color Teal = Color.FromArgb(0, 165, 155);
 
-    /// <summary>2페이지: 왼쪽 반복 주기 알림 3칸 · 오른쪽 단일 알림 3칸 (◀ ▶로 한 칸씩) · 알림 띄울 모니터. 끝난 높이를 돌려준다.</summary>
+    /// <summary>2페이지: 왼쪽 반복 주기 알림 15칸 · 오른쪽 단일 알림 15칸 (◀ ▶로 한 칸씩) · 알림 띄울 모니터. 끝난 높이를 돌려준다.</summary>
     int MakePage2(int x, int top, int colW, int gap, int fullW)
     {
         int hw = (fullW - gap) / 2, ox = x + hw + gap;
@@ -1162,7 +1177,7 @@ sealed class JanusForm : Form, IMessageFilter
         int y = Math.Max(
             Column(x, "반복 주기 알림", "트리거 키를 누르면 정한 주기마다 알려요. 다시 누르면 처음부터 세요."),
             Column(ox, "단일 알림", "트리거 키를 누르면 정한 시간 뒤에 한 번 알려요. 다시 누르면 처음부터 세요."));
-        // 3칸은 같은 자리에 겹쳐 두고 ◀ ▶로 한 칸씩 본다
+        // 15칸은 같은 자리에 겹쳐 두고 ◀ ▶로 한 칸씩 본다
         MakeSlotNav(x, y, hw, JanusWatch.RepeatSlots, () => repeatPage, v => repeatPage = v,
             i => st.Repeats[i].Title(i), i => Color.FromArgb(st.Repeats[i].Argb));
         y += MakeSlotNav(ox, y, hw, JanusWatch.OnceSlots, () => oncePage, v => oncePage = v,
@@ -1213,7 +1228,7 @@ sealed class JanusForm : Form, IMessageFilter
         // 두 칸은 값 이름이 같아 아래에서 한 번에 다룬다
         RepeatSlot? rs = once ? null : st.Repeats[i];
         OnceSlot? os = once ? st.Onces[i] : null;
-        int code = (once ? 50 : 30) + i;
+        int code = (once ? OnceId : RepeatId) + i;
         string defName = once ? $"단일 알림 {i + 1}" : $"반복 알림 {i + 1}";
         int Argb() => rs?.Argb ?? os!.Argb;
         void SetArgb(int v) { if (rs != null) rs.Argb = v; else os!.Argb = v; }
@@ -1377,6 +1392,7 @@ sealed class JanusForm : Form, IMessageFilter
         };
         combo.Controls.Add(arrow);
         var menu = UI.Rounded(new ContextMenuStrip { Font = F(10), ShowImageMargin = false, ShowCheckMargin = true });
+        combo.Disposed += (_, _) => menu.Dispose(); // 메뉴는 창이 대신 치우지 않는다 (글꼴은 창이 정리할 때 푼다)
         void ShowPicked()
         {
             combo.Text = "   " + (picked?.Text ?? "더 넣을 모니터가 없어요");
@@ -1719,8 +1735,8 @@ sealed class JanusForm : Form, IMessageFilter
         Style(shortsPrevKey, 11, st.ShortsPrevKey);
         for (int i = 0; i < JanusWatch.BuffSlots; i++) Style(buffKeys[i], 20 + i, st.Buffs[i].Key);
         for (int i = 0; i < JanusWatch.DopeSlots; i++) Style(dopeKeys[i], 40 + i, st.Dopes[i].Key);
-        for (int i = 0; i < JanusWatch.RepeatSlots; i++) Style(repeatKeys[i], 30 + i, st.Repeats[i].Key);
-        for (int i = 0; i < JanusWatch.OnceSlots; i++) Style(onceKeys[i], 50 + i, st.Onces[i].Key);
+        for (int i = 0; i < JanusWatch.RepeatSlots; i++) Style(repeatKeys[i], RepeatId + i, st.Repeats[i].Key);
+        for (int i = 0; i < JanusWatch.OnceSlots; i++) Style(onceKeys[i], OnceId + i, st.Onces[i].Key);
     }
 
     static string Clock(double sec)
@@ -1887,8 +1903,8 @@ sealed class JanusForm : Form, IMessageFilter
                     {
                         case >= 20 and < 20 + JanusWatch.BuffSlots: st.Buffs[capturing - 20].Combo = true; break;
                         case >= 40 and < 40 + JanusWatch.DopeSlots: st.Dopes[capturing - 40].Combo = true; break;
-                        case >= 30 and < 30 + JanusWatch.RepeatSlots: st.Repeats[capturing - 30].Combo = true; break;
-                        case >= 50 and < 50 + JanusWatch.OnceSlots: st.Onces[capturing - 50].Combo = true; break;
+                        case >= RepeatId and < RepeatId + JanusWatch.RepeatSlots: st.Repeats[capturing - RepeatId].Combo = true; break;
+                        case >= OnceId and < OnceId + JanusWatch.OnceSlots: st.Onces[capturing - OnceId].Combo = true; break;
                     }
                     csw.On = true;
                 }
@@ -1907,8 +1923,8 @@ sealed class JanusForm : Form, IMessageFilter
                     case 11: st.ShortsPrevKey = vk; break;
                     case >= 20 and < 20 + JanusWatch.BuffSlots: st.Buffs[capturing - 20].Key = vk; break;
                     case >= 40 and < 40 + JanusWatch.DopeSlots: st.Dopes[capturing - 40].Key = vk; break;
-                    case >= 30 and < 30 + JanusWatch.RepeatSlots: st.Repeats[capturing - 30].Key = vk; break;
-                    case >= 50 and < 50 + JanusWatch.OnceSlots: st.Onces[capturing - 50].Key = vk; break;
+                    case >= RepeatId and < RepeatId + JanusWatch.RepeatSlots: st.Repeats[capturing - RepeatId].Key = vk; break;
+                    case >= OnceId and < OnceId + JanusWatch.OnceSlots: st.Onces[capturing - OnceId].Key = vk; break;
                 }
                 st.Save();
             }

@@ -66,9 +66,6 @@ sealed class JanusWatch
         if (st.JanusStart == null) return;
         st.JanusStart = null; st.Save();
     }
-    // 아이템은 설치 1분 30초 뒤 사라지므로 65초에 회수하라고 알린다
-    const double PickupSec = 65;
-    readonly List<DateTime> pickups = new();
     DateTime? lastInstall;           // 마지막으로 센 설치 (50초 안의 추가 설치는 세지 않음)
 
     public DateTime? LastKey { get; private set; }
@@ -151,11 +148,27 @@ sealed class JanusWatch
     // 바는 관리자 권한으로 켜져 환경 변수가 안 넘어올 수 있어, 설정 폴더의 test-keylog 파일로도 키 기록을 켠다
     static bool TestFlag(string name) => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MapleBar", name));
 
+    // 훅에 알려 줄 키 목록. 틱마다 새로 만들지 않고 같은 칸에 다시 채워, 지난번과 다를 때만 훅에 알린다
+    readonly List<int> hookKeys = new(), hookKeysSent = new();
+
+    void SyncHookKeys()
+    {
+        hookKeys.Clear();
+        foreach (var b in st.Buffs) hookKeys.Add(b.Key);
+        foreach (var d in st.Dopes) hookKeys.Add(d.Key);
+        foreach (var r in st.Repeats) hookKeys.Add(r.Key);
+        foreach (var o in st.Onces) hookKeys.Add(o.Key);
+        hookKeys.AddRange(Arrows);
+        hookKeys.Add(st.JanusKey); hookKeys.Add(st.NpcKey); hookKeys.Add(st.ComboKey); hookKeys.Add(st.ErdaKey); hookKeys.Add(0x0D);
+        if (CollectionsMarshal.AsSpan(hookKeys).SequenceEqual(CollectionsMarshal.AsSpan(hookKeysSent))) return;
+        hookKeysSent.Clear(); hookKeysSent.AddRange(hookKeys);
+        KeyHook.Watch(hookKeys);
+    }
+
     void Tick()
     {
         KeyHook.ComboVk = st.ComboKey;
-        KeyHook.Watch(st.Buffs.Select(b => b.Key).Concat(st.Dopes.Select(d => d.Key)).Concat(st.Repeats.Select(r => r.Key)).Concat(st.Onces.Select(o => o.Key))
-            .Concat(Arrows).Concat(new[] { st.JanusKey, st.NpcKey, st.ComboKey, st.ErdaKey, 0x0D }));
+        SyncHookKeys();
         // 전체 알림을 꺼 두면: 누른 키는 버리고 세지도 울리지도 않는다. 끄는 순간 세던 것은 모두 멈춘다
         if (!st.AlertsOn)
         {
@@ -208,8 +221,8 @@ sealed class JanusWatch
         Step(DateTime.Now, fg, janus, npc, buff, enter, dope, arrows);
     }
 
-    // 반복 주기 알림 3칸: 칸마다 키를 누르면 그때부터 정한 주기마다 정한 색으로 알린다. 다시 누르면 처음부터 센다
-    public const int RepeatSlots = 3;
+    // 반복 주기 알림 15칸: 칸마다 키를 누르면 그때부터 정한 주기마다 정한 색으로 알린다. 다시 누르면 처음부터 센다
+    public const int RepeatSlots = 15;
     public const int RepeatMinSec = 5;
     readonly bool[] repeatDown = new bool[RepeatSlots];
     readonly DateTime?[] repeatNext = new DateTime?[RepeatSlots]; // 다음에 알릴 시각
@@ -288,8 +301,8 @@ sealed class JanusWatch
         repeatNext[i] is DateTime t && st.Repeats[i].Start != null ? Math.Max(0, (t - DateTime.Now).TotalSeconds) : null;
     public void CancelRepeat(int i) { if (st.Repeats[i].Start != null) { st.Repeats[i].Start = null; st.Save(); } repeatNext[i] = null; }
 
-    // 단일 알림 3칸: 칸마다 키를 누르면 그때부터 세어 정한 시간이 되면 한 번 알리고 멈춘다. 세는 중에 다시 누르면 처음부터
-    public const int OnceSlots = 3;
+    // 단일 알림 15칸: 칸마다 키를 누르면 그때부터 세어 정한 시간이 되면 한 번 알리고 멈춘다. 세는 중에 다시 누르면 처음부터
+    public const int OnceSlots = 15;
     readonly bool[] onceDown = new bool[OnceSlots];
     readonly DateTime?[] onceKeyAt = new DateTime?[OnceSlots];
     /// <summary>마지막으로 키를 인식한 단일 알림 칸 (설정 창 표시용)</summary>
@@ -355,7 +368,6 @@ sealed class JanusWatch
         for (int i = 0; i < DopeSlots; i++) DopeTick(i, now, inGame, (dope >> i & 1) != 0, arrows, enter);
         if (!st.JanusOn)
         {
-            pickups.Clear();
             ClearJanus(now);
             return;
         }
@@ -367,19 +379,9 @@ sealed class JanusWatch
         {
             lastInstall = now;
             LastKey = now; LastKind = "설치";
-            if (st.PickupOn) pickups.Add(now.AddSeconds(PickupSec));
             // 도는 중에 다시 깔면 그때부터 알림 주기를 새로 센다
             if (!Endless(st)) { st.JanusStart = now; st.Save(); }
         }
-
-        // 아이템 회수 알림 (설치마다 한 번)
-        if (!st.PickupOn) pickups.Clear();
-        for (int i = pickups.Count - 1; i >= 0; i--)
-            if (now >= pickups[i])
-            {
-                pickups.RemoveAt(i);
-                if (!Mute) JanusAlert.Play(sc, "아이템을 회수하세요", Color.FromArgb(120, 220, 60), Color.FromArgb(225, 255, 200), AlertSound.Kind.Pickup);
-            }
 
         if (Endless(st))
         {
@@ -445,7 +447,7 @@ sealed class JanusWatch
     void StopAll()
     {
         ClearJanus(DateTime.Now);
-        pickups.Clear(); realertAt = null; lastInstall = null;
+        realertAt = null; lastInstall = null;
         CancelRune(); arrowCount = 0; runeAlerted = false;
         CancelErda();
         for (int i = 0; i < BuffSlots; i++)

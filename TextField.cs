@@ -59,7 +59,7 @@ public sealed class TextField : Control
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         bool focus = tb.Focused;
-        using var path = UI.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), Radius);
+        using var path = UI.EdgePath(this, Radius);
         using (var b = new SolidBrush(focus ? UI.Back : Fill)) g.FillPath(b, path);
         if (focus) { using var pen = new Pen(UI.Accent, 1.5f); g.DrawPath(pen, path); }
     }

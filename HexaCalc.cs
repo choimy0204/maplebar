@@ -213,10 +213,10 @@ function fillGrid(){
  let h='',te=0,tp=0;
  if(!sel){const f=ALL.find(c=>lvl(c.k)<30)||ALL[0];sel=f.k} // 처음부터 오른쪽 칸이 비지 않게 아직 덜 올린 코어를 골라 둔다
  for(const g of GROUPS){const c=COL[g[0]];
-  h+='<div class="grp"><div class="gl"><span class="tag" style="background:'+c[0]+';color:'+c[1]+'">'+g[0]+'</span>'+g[1]+'</div><div class="tiles">';
+  h+='<div class="grp"><div class="gl"><span class="tag" style="background:'+c[0]+';color:'+c[1]+'">'+esc(g[0])+'</span>'+esc(g[1])+'</div><div class="tiles">';
   for(const x of g[2]){const k=x[0],L=lvl(k),m=meta(k),r=cost(x[1],L,30);te+=r[0];tp+=r[1];
    h+='<div class="tile'+(sel===k?' on':'')+(L>=30?' max':'')+'" data-k="'+k+'" title="'+esc(m[0])+'" style="border-color:'+c[0]+';background:'+c[2]+'">'+
-    (m[1]?'<img src="'+esc(m[1])+'" alt="">':'<em>'+g[0]+'</em>')+'<span class="lv">'+L+'</span></div>'}
+    (m[1]?'<img src="'+esc(m[1])+'" alt="">':'<em>'+esc(g[0])+'</em>')+'<span class="lv">'+L+'</span></div>'}
   h+='</div></div>'}
  h+='<div class="sum"><span>전부 30레벨까지 더</span><img src="'+ERDA+'" alt="솔 에르다"><b>'+fmt(te)+'</b><img src="'+PIECE+'" alt="조각"><b>'+fmt(tp)+'</b></div>';
  grid.innerHTML=h;
@@ -234,7 +234,7 @@ function fillPanel(){
  if(!sel){pane.innerHTML='<p class="empty">코어를 누르면 필요한 개수를 볼 수 있어요</p>';return}
  const core=ALL.find(c=>c.k===sel),L=lvl(sel),m=meta(sel);
  let cells='';for(let i=1;i<=30;i++)cells+='<i data-l="'+i+'"></i>';
- pane.innerHTML='<div class="top">'+(m[1]?'<img src="'+esc(m[1])+'" alt="">':'')+'<div><div class="nm">'+esc(m[0]||core.gname)+'</div><div class="now">'+core.gname+' · 지금 '+L+'레벨</div></div><div class="rg"></div></div>'+
+ pane.innerHTML='<div class="top">'+(m[1]?'<img src="'+esc(m[1])+'" alt="">':'')+'<div><div class="nm">'+esc(m[0]||core.gname)+'</div><div class="now">'+esc(core.gname)+' · 지금 '+L+'레벨</div></div><div class="rg"></div></div>'+
   '<div class="bar">'+cells+'</div><div class="sc"><span style="grid-column:1">1</span><span style="grid-column:10">10</span><span style="grid-column:20">20</span><span style="grid-column:30">30</span></div>'+
   '<div class="hint"><span class="hv">'+HINT+'</span><button data-act="reset">처음대로</button></div>'+
   '<div class="res"><div><img src="'+ERDA+'" alt=""><span><small>솔 에르다</small><b class="e"></b>개</span></div><div><img src="'+PIECE+'" alt=""><span><small>솔 에르다 조각</small><b class="pc"></b>개</span></div></div>';

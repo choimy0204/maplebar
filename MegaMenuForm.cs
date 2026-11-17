@@ -158,6 +158,7 @@ public class MegaMenuForm : Form
 
     protected override void Dispose(bool disposing)
     {
+        if (disposing) anim.Dispose(); // 펼침 타이머를 먼저 멈추고 푼다
         base.Dispose(disposing); // 라벨이 먼저 정리된 뒤에 글꼴을 푼다
         if (disposing) { titleFont.Dispose(); itemFont.Dispose(); }
     }

@@ -40,6 +40,8 @@ sealed class ClockForm : Form
         secFont = new Font("Segoe UI Semibold", 16f * sc, GraphicsUnit.Pixel);
         smallFont = new Font("맑은 고딕", 13f * sc, FontStyle.Bold, GraphicsUnit.Pixel);
         dateFont = new Font("맑은 고딕", 12.5f * sc, FontStyle.Bold, GraphicsUnit.Pixel);
+        probeG = Graphics.FromImage(probe);
+        probeG.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         tick.Tick += (_, _) => Redraw();
         BuildMenu();
     }
@@ -53,7 +55,7 @@ sealed class ClockForm : Form
             if (Visible) { Hide(); tick.Stop(); }
             return;
         }
-        if (!Visible) { using (Draw(DateTime.Now)) { } pos = Home(game); } // 크기를 먼저 알아야 제자리에 처음부터 뜬다
+        if (!Visible) { Draw(DateTime.Now); pos = Home(game); } // 크기를 먼저 알아야 제자리에 처음부터 뜬다
         Redraw(force: !Visible);
         if (dragFrom == null) MoveTo(Home(game));
         if (!tick.Enabled) tick.Start();
@@ -94,7 +96,18 @@ sealed class ClockForm : Form
     }
 
     // ── 그리기 ──
-    Bitmap? bmp;
+    Bitmap? bmp; // 화면에 올리는 그림. 크기가 같으면 다시 쓴다 (화면에는 올릴 때 복사되어 들어간다)
+    // 글자 재기·그리기에 쓰는 것들은 바뀌지 않으므로 한 번만 만든다
+    readonly StringFormat fmt = MakeFormat();
+    readonly Bitmap probe = new(1, 1);
+    readonly Graphics probeG;
+
+    static StringFormat MakeFormat()
+    {
+        var f = (StringFormat)StringFormat.GenericTypographic.Clone();
+        f.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces;
+        return f;
+    }
 
     void Redraw(bool force = false)
     {
@@ -102,10 +115,7 @@ sealed class ClockForm : Form
         string key = now.ToString(st.ClockSeconds ? "yyyyMMddHHmmss" : "yyyyMMddHHmm") + st.Clock24 + st.ClockDate + st.ClockSeconds + hover;
         if (!force && key == drawnKey) { KeepTop(); return; }
         drawnKey = key;
-        var old = bmp;
-        bmp = Draw(now);
-        old?.Dispose();
-        Present(bmp);
+        Present(Draw(now));
     }
 
     static float Ascent(Font f) => f.Size * f.FontFamily.GetCellAscent(f.Style) / f.FontFamily.GetEmHeight(f.Style);
@@ -121,12 +131,8 @@ sealed class ClockForm : Form
         string? top = h24 ? null : (now.Hour < 12 ? "오전" : "오후");
         string? bottom = date ? now.ToString("M월 d일 ddd", Ko) : null;
         if (top == null && bottom == null && date) top = now.ToString("dddd", Ko);
-        using var fmt = (StringFormat)StringFormat.GenericTypographic.Clone();
-        fmt.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces;
 
-        using var probe = new Bitmap(1, 1);
-        using var pg = Graphics.FromImage(probe);
-        pg.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        var pg = probeG;
         float W(string s, Font f) => pg.MeasureString(s, f, PointF.Empty, fmt).Width;
 
         // 폭은 가장 넓은 값 기준 (분·날짜가 바뀔 때마다 들썩이지 않게)
@@ -141,7 +147,13 @@ sealed class ClockForm : Form
         int cardH = (int)Math.Ceiling(digitH + S(30));
         size = new Size(cardW + 2 * M, cardH + 2 * M);
 
-        var b = new Bitmap(size.Width, size.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        // 그림판은 다시 쓴다. 크기가 바뀔 때만 새로 만든다 (아래에서 투명하게 지우고 처음부터 그린다)
+        if (bmp == null || bmp.Size != size)
+        {
+            bmp?.Dispose();
+            bmp = new Bitmap(size.Width, size.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        }
+        var b = bmp;
         using var g = Graphics.FromImage(b);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -301,6 +313,7 @@ sealed class ClockForm : Form
         if (disposing)
         {
             tick.Dispose(); bmp?.Dispose(); shadowBrush.Dispose();
+            fmt.Dispose(); probeG.Dispose(); probe.Dispose();
             bigFont.Dispose(); smallFont.Dispose(); secFont.Dispose(); dateFont.Dispose();
             var menuFont = ContextMenuStrip?.Font; ContextMenuStrip?.Dispose(); menuFont?.Dispose(); // 폼이 메뉴를 대신 치워 주지 않는다
         }

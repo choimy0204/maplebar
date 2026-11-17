@@ -5,7 +5,7 @@ namespace MapleBar;
 /// <summary>알림 소리: 소리 파일 없이 짧은 음을 직접 만들어 낸다. 알림마다 소리가 다르다.</summary>
 static class AlertSound
 {
-    public enum Kind { Janus, Pickup, Rune, Buff, Dope }
+    public enum Kind { Janus, Rune, Buff, Dope }
 
     /// <summary>켜기·크기를 읽을 설정 (JanusWatch가 넣는다)</summary>
     public static Settings? St;
@@ -21,8 +21,6 @@ static class AlertSound
     {
         // 띵–동: 높은 음에서 낮은 음으로
         Kind.Janus => new[] { new Note(1318.5, 0, 0.45), new Note(1046.5, 0.2, 0.6) },
-        // 톡톡톡: 짧게 세 번
-        Kind.Pickup => new[] { new Note(1568, 0, 0.09), new Note(1568, 0.11, 0.09), new Note(1568, 0.22, 0.12) },
         // 띠링: 세 음이 올라간다
         Kind.Rune => new[] { new Note(1046.5, 0, 0.4), new Note(1318.5, 0.09, 0.4), new Note(1568, 0.18, 0.55) },
         // 띵 띵: 같은 음 두 번

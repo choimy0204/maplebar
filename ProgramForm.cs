@@ -162,8 +162,10 @@ sealed class ProgramForm : Form
             var btn = UI.Button("로그인", "", async () =>
             {
                 if (Logins.IsIn(service.Key) != true) { hooks.OpenUrl(service.LoginUrl); return; }
-                if (AskBox.Show(this, service.Name + "에서 정말 로그아웃 하시겠어요?", "메이플 바 안에서만 로그아웃돼요.", "로그아웃"))
-                    await Logins.LogoutAsync(service.Key);
+                if (!AskBox.Show(this, service.Name + "에서 정말 로그아웃 하시겠어요?", "메이플 바 안에서만 로그아웃돼요.", "로그아웃")) return;
+                // async void라 여기서 잡지 않으면 실패가 앱 전체 오류로 번진다
+                try { await Logins.LogoutAsync(service.Key); }
+                catch (Exception ex) { Log.Write("로그인", service.Key + " 로그아웃 실패", ex); }
             }, sc, null, UI.HoverBack);
             btn.Radius = S(8);
             btn.Location = new Point(w - btn.PreferredSize.Width, y + (rowH - btn.PreferredSize.Height) / 2);
@@ -456,7 +458,7 @@ sealed class ProgramForm : Form
         {
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             using var pen = new Pen(UI.Line);
-            using var path = UI.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), Radius);
+            using var path = UI.EdgePath(this, Radius);
             e.Graphics.DrawPath(pen, path);
         }
     }

@@ -186,6 +186,10 @@ public static class UI
         return p;
     }
 
+    /// <summary>컨트롤 테두리를 따라 그릴 둥근 사각형. 선이 가장자리에서 잘리지 않게 반 픽셀 안쪽에 둔다.</summary>
+    public static GraphicsPath EdgePath(Control c, float radius) =>
+        RoundRect(new RectangleF(0.5f, 0.5f, c.Width - 1.5f, c.Height - 1.5f), radius);
+
     // ── 윈도우 11 둥근 모서리 (창·펼침 메뉴) ──
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
 

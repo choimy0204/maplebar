@@ -262,9 +262,15 @@ sealed class StudyForm : Form
         }
     }
 
+    /// <summary>공부 묶음 파일 크기 상한. 글 파일로는 넘을 일이 없고, 잘못 고른 큰 파일을 통째로 읽지 않게 한다</summary>
+    const long MaxFileBytes = 20L * 1024 * 1024;
+
     /// <summary>UTF-8로 읽고, 글자가 깨지면 한국어 메모장 형식(CP949)으로 다시 읽는다</summary>
     static string ReadText(string path)
     {
+        // 너무 크면 읽지 못한 파일과 같은 길로 보낸다 (LoadFiles가 잡아 "파일을 못 읽었어요")
+        long size = new FileInfo(path).Length;
+        if (size > MaxFileBytes) throw new IOException($"파일이 너무 큼 ({size} 바이트)");
         var bytes = File.ReadAllBytes(path);
         var text = new UTF8Encoding(false, false).GetString(bytes).TrimStart('﻿');
         if (!text.Contains('�')) return text;

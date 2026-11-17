@@ -421,11 +421,14 @@ public partial class WebWindow : Form
 
     async Task InitAsync(string url)
     {
+        bool made = false; // 공용 환경과 이 창의 웹뷰를 다 만들었나
         try
         {
             var env = await Env;
             if (IsDisposed) return; // 기다리는 동안 창이 닫혔다
             await web.EnsureCoreWebView2Async(env);
+            made = true;
+            if (IsDisposed) return; // 웹뷰를 준비하는 동안 창이 닫혔다
             var cw = web.CoreWebView2;
             // 바가 다크 모드면 사이트에도 '다크 모드 쓰는 중'이라고 알려 준다 (자체 다크 화면이 있는 사이트는 그걸 띄운다)
             try { cw.Profile.PreferredColorScheme = UI.Dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light; }
@@ -465,7 +468,8 @@ public partial class WebWindow : Form
                 string? m = null; try { m = e.TryGetWebMessageAsString(); } catch { }
                 if (m == "mb:close" && !IsDisposed) BeginInvoke(() => { if (!IsDisposed) Close(); });
                 // 브금 랜덤 재생이 고른 곡이 지금 화면에 없으면 앱이 찾아서 튼다
-                else if (m != null && m.StartsWith("mb:play:") && kind == SiteKind.Music && !yt && !IsDisposed) _ = PlayFromPage(m[8..]);
+                // (보낸 쪽이 메애기 페이지일 때만)
+                else if (m != null && m.StartsWith("mb:play:") && kind == SiteKind.Music && !yt && Music.IsMeaegi(e.Source) && !IsDisposed) _ = PlayFromPage(m[8..]);
                 // 경매장 아이템을 환산 보관함에 넣는다
                 // (보낸 쪽이 경매장 페이지 자체일 때만: 창 안에 끼워 넣은 다른 사이트가 보낸 건 받지 않는다)
                 else if (m != null && m.StartsWith("mb:scouter:") && Nexon.IsAuction(cw.Source) && Nexon.IsAuction(e.Source) && !IsDisposed) BeginInvoke(() => { _ = SendToScouter(m[11..]); });
@@ -488,7 +492,9 @@ public partial class WebWindow : Form
                     "if(el.dataset.mbPromo||!R.test(el.textContent||'')||[...el.children].some(c=>R.test(c.textContent||'')))continue;let n=el;" +
                     "for(let i=0;i<8&&n&&n!==document.body&&(n.textContent||'').length<400;i++,n=n.parentElement){if(/v2\\s*써보기/.test(n.textContent||'')){" +
                     "n.style.setProperty('display','none','important');el.dataset.mbPromo='1';break}}}}catch(e){}};" +
-                    "setInterval(promo,700)})();");
+                    // 0.7초마다 보되, 그사이 페이지 글·구조가 바뀌었을 때만 다시 찾는다 (바뀐 게 없으면 결과도 같다)
+                    "let dirty=true,watch=false;try{new MutationObserver(()=>{dirty=true}).observe(document,{childList:true,subtree:true,characterData:true});watch=true}catch(e){}" +
+                    "setInterval(()=>{if(dirty||!watch){dirty=false;promo()}},700)})();");
             }
             else if (kind is SiteKind.YouTube or SiteKind.YouTubePlayer or SiteKind.YouTubeComments) await InitYouTube(cw); // 유튜브는 광고를 막지 않는다
             else if (kind is SiteKind.Live or SiteKind.LivePlayer or SiteKind.LiveChat) await InitLive(cw); // 방송 사이트도 광고를 막지 않는다
@@ -512,9 +518,7 @@ public partial class WebWindow : Form
             if (IsSite(startUrl)) await cw.AddScriptToExecuteOnDocumentCreatedAsync(Nexon.WearViewScript); // '착용 해보기'로 연 보스컷 창
             await cw.AddScriptToExecuteOnDocumentCreatedAsync(CtrlWheelScript); // Ctrl을 누른 채 휠을 굴려도 화면 배율은 그대로
             cw.Settings.IsZoomControlEnabled = false; // 배율은 프로그램 설정에서만 바꾼다
-#if !DEBUG
-            cw.Settings.AreDevToolsEnabled = false; // 개발자 도구(F12)는 테스트 빌드에서만
-#endif
+            NoDevTools(cw); // WebWindow.Guard.cs
             ApplyZoom();
             // 인벤은 작은 창에 맞는 모바일 화면으로 보이게 한다
             if (!browser && (Inven.IsInven(startUrl) || kind == SiteKind.Webtoon))
@@ -546,11 +550,7 @@ public partial class WebWindow : Form
                 }
                 if (Music.IsMusic(e.Uri) && ShowMusic(e.Uri)) return;
                 if (YouTube.IsVideo(e.Uri)) { ShowYouTube(e.Uri, settings, sc); return; }
-                if (Live.IsPlayer(e.Uri))
-                {
-                    if (kind == SiteKind.Live && settings.LiveSameWindow) cw.Navigate(e.Uri); else ShowLive(e.Uri, settings, sc);
-                    return;
-                }
+                if (Live.IsPlayer(e.Uri)) { OpenPlayer(e.Uri, live: true); return; } // WebWindow.YouTube.cs
                 if (browser) { cw.Navigate(e.Uri); return; } // 브라우저 창은 새 창 링크도 이 창에서 연다
                 if (IsSite(e.Uri) || Inven.IsInven(e.Uri) || Music.IsMeaegi(e.Uri) || Webtoon.IsNaver(e.Uri) || YouTube.IsYouTube(e.Uri) || Live.IsLive(e.Uri) || Nexon.IsNexon(e.Uri)) new WebWindow(e.Uri, settings, sc).Show();
                 else OpenExternal(e.Uri);
@@ -562,7 +562,7 @@ public partial class WebWindow : Form
         }
         catch (Exception ex)
         {
-            sharedEnv = null;
+            if (!made) sharedEnv = null; // 환경·웹뷰 만들기에서 실패했을 때만 다음 창에서 다시 만든다
             if (IsDisposed) return; // 이미 닫힌 창에는 안내 창을 띄우지 않는다
             MessageBox.Show(this, "사이트 화면을 띄우지 못했어요.\nMicrosoft Edge WebView2 런타임이 필요해요.\n\n" + ex.Message,
                 "메이플 바", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -584,6 +584,8 @@ public partial class WebWindow : Form
         // 인벤 자체 광고 서버
         "zicf.inven.co.kr", "ads-partners.coupang.com", "coupangad",
     };
+    // 위 글자 중 하나라도 주소 이름에 들어 있는지 요청마다 한 번에 찾는다 (하나씩 비교하던 것과 결과는 같다)
+    static readonly System.Buffers.SearchValues<string> AdHostSet = System.Buffers.SearchValues.Create(AdHosts, StringComparison.OrdinalIgnoreCase);
 
     // 사이트가 직접 올리는 배너 이미지 폴더
     static bool IsAdPath(Uri u) =>
@@ -596,7 +598,7 @@ public partial class WebWindow : Form
         {
             if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var u)) return;
             var host = u.Host;
-            if (IsAdPath(u) || AdHosts.Any(h => host.Contains(h, StringComparison.OrdinalIgnoreCase)))
+            if (IsAdPath(u) || host.AsSpan().ContainsAny(AdHostSet))
                 e.Response = env.CreateWebResourceResponse(null, 403, "Blocked", "");
         };
         // 사이트가 화면을 다시 그리며 head를 바꿔도 숨김 스타일이 남도록 계속 확인한다

@@ -131,9 +131,10 @@ sealed class UpdateWindow : Form
             if (!UpdateCheck.IsGitHub(url) || (shaUrl != null && !UpdateCheck.IsGitHub(shaUrl))) throw new Exception("받을 주소가 이상해요.");
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             // MaxResponseContentBufferSize: 한 번에 받는 SHA256 값 같은 작은 응답만 제한한다 (설치 파일은 아래에서 따로 센다)
-            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10), MaxResponseContentBufferSize = 1024 * 1024 };
+            // 넘겨 주는 주소를 하나씩 확인하려고 자동으로 따라가지 않는다
+            using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(10), MaxResponseContentBufferSize = 1024 * 1024 };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("MapleBar");
-            using (var res = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
+            using (var res = await GetGitHub(http, url, HttpCompletionOption.ResponseHeadersRead))
             {
                 res.EnsureSuccessStatusCode();
                 long total = res.Content.Headers.ContentLength ?? 0, done = 0;
@@ -163,7 +164,13 @@ sealed class UpdateWindow : Form
             if (shaUrl == null) throw new Exception("받은 파일을 확인할 수 없어요.");
             {
                 status.Text = "받은 파일을 확인하고 있어요…";
-                var want = (await http.GetStringAsync(shaUrl)).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[0];
+                string text;
+                using (var res = await GetGitHub(http, shaUrl, HttpCompletionOption.ResponseContentRead))
+                {
+                    res.EnsureSuccessStatusCode();
+                    text = await res.Content.ReadAsStringAsync();
+                }
+                var want = FindHash(text, Path.GetFileName(file)) ?? throw new Exception("받은 파일을 확인할 수 없어요.");
                 string got;
                 await using (var s = System.IO.File.OpenRead(file)) got = Convert.ToHexString(await SHA256.HashDataAsync(s));
                 if (!got.Equals(want, StringComparison.OrdinalIgnoreCase)) throw new Exception("받은 파일이 원본과 달라요.");
@@ -188,6 +195,39 @@ sealed class UpdateWindow : Form
                 Close();
             }), ("닫기", false, Close));
         }
+    }
+
+    /// <summary>github.com 주소를 받는다. 넘겨 주는 주소는 깃허브 것만 따라간다 (bootstrap Getter와 같은 규칙)</summary>
+    static async Task<HttpResponseMessage> GetGitHub(HttpClient http, string url, HttpCompletionOption option)
+    {
+        var u = new Uri(url);
+        for (int hop = 0; hop < 6; hop++)
+        {
+            var res = await http.GetAsync(u, option);
+            int code = (int)res.StatusCode;
+            if (code >= 300 && code < 400 && res.Headers.Location != null)
+            {
+                u = new Uri(u, res.Headers.Location);
+                res.Dispose();
+                if (!UpdateCheck.IsGitHubFile(u)) throw new Exception("받을 주소가 이상해요.");
+                continue;
+            }
+            return res;
+        }
+        throw new Exception("받을 주소가 이상해요.");
+    }
+
+    /// <summary>SHA256.txt에서 이 파일 이름의 값을 찾는다 ("값  파일이름" 줄, bootstrap Getter와 같은 규칙)</summary>
+    static string? FindHash(string text, string name)
+    {
+        foreach (var line in text.Split('\n'))
+        {
+            var p = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (p.Length >= 2 && p[0].Length == 64 && p[0].All(Uri.IsHexDigit) &&
+                p[1].TrimStart('*').Equals(name, StringComparison.OrdinalIgnoreCase))
+                return p[0];
+        }
+        return null;
     }
 
     // 테두리 없는 창이라 아무 데나 잡고 끌 수 있게 한다

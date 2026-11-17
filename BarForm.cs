@@ -34,6 +34,7 @@ public class BarForm : Form
     {
         base.Dispose(disposing); // 컨트롤이 먼저 정리된 뒤에 글꼴을 푼다
         if (!disposing) return;
+        searchFlash?.Dispose();
         foreach (var f in ownedFonts) f.Dispose();
         ownedFonts.Clear();
     }
@@ -234,6 +235,7 @@ public class BarForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("뮤직 끄기", null, (_, _) => WebWindow.StopMusic());
         musicPill.ContextMenuStrip = menu;
+        musicPill.Disposed += (_, _) => DisposeMenu(menu); // 칸은 메뉴를 대신 치우지 않으므로 칸이 정리될 때 메뉴와 글꼴을 같이 푼다
         right.Controls.Add(musicPill);
         musicDock = new MusicDock(this, right, musicPill, settings, sc, LayoutBar, () => new Rectangle(Left, Top, Width, Math.Max(S(10), VisibleBottom - Top)));
         WebWindow.MusicChanged += OnMusicChanged;
@@ -443,6 +445,8 @@ public class BarForm : Form
         return name.Length > 0 ? name : (settings.StarNick ?? "").Trim();
     }
 
+    System.Windows.Forms.Timer? searchFlash; // 닉네임 없이 검색하면 검색칸 색을 잠깐 바꿨다 되돌린다
+
     void Search(string path)
     {
         var name = NameOrStar();
@@ -450,9 +454,14 @@ public class BarForm : Form
         {
             search.Focus();
             searchBox.BackColor = UI.T(Color.FromArgb(255, 240, 230));
-            var t = new System.Windows.Forms.Timer { Interval = 400 };
-            t.Tick += (_, _) => { searchBox.BackColor = UI.Back; t.Dispose(); };
-            t.Start();
+            // 타이머 하나를 다시 쓴다. 다시 누르면 처음부터 0.4초를 센다
+            if (searchFlash == null)
+            {
+                searchFlash = new System.Windows.Forms.Timer { Interval = 400 };
+                searchFlash.Tick += (_, _) => { searchFlash.Stop(); searchBox.BackColor = UI.Back; };
+            }
+            searchFlash.Stop();
+            searchFlash.Start();
             return;
         }
         settings.AddRecent(name);
@@ -719,12 +728,12 @@ public class BarForm : Form
         return it;
     }
 
-    // 시계는 게임이 화면에 있거나 바가 보일 때 띄운다 (바를 숨겨도 게임 중엔 보인다)
+    // 시계는 게임이 화면에 있거나 바가 보일 때 띄운다 (Ctrl+Alt+M 등으로 직접 숨기면 시계도 숨긴다)
     void SyncClock()
     {
         if (clock == null) return;
         var game = settings.ClockOn ? Game.Area() : null;
-        bool want = settings.ClockOn && (game != null || (Visible && WindowState != FormWindowState.Minimized && Opacity > 0));
+        bool want = settings.ClockOn && !userHidden && (game != null || (Visible && WindowState != FormWindowState.Minimized && Opacity > 0));
         clock.Sync(want, game);
     }
 
@@ -739,7 +748,9 @@ public class BarForm : Form
             busy = true;
             bool want = !AutoStart.On, ok;
             // 작업 스케줄러 명령이 끝날 때까지 화면이 멈추지 않게 뒤에서 돌린다
+            // 뜻밖의 오류가 나도 앱이 꺼지지 않게 기록만 남기고 "바꾸지 못했어요"로 안내한다
             try { ok = await Task.Run(() => AutoStart.Set(want)); }
+            catch (Exception ex) { ok = false; Log.Write("바", "자동 실행 설정을 바꾸지 못함", ex); }
             finally { busy = false; }
             if (ok) { if (!it.IsDisposed) it.Checked = want; }
             else MessageBox.Show(want && !AutoStart.Installed ? "설치한 메이플 바에서 켜 주세요." : "자동 실행 설정을 바꾸지 못했어요. 잠시 뒤 다시 해 주세요.", "메이플 바");

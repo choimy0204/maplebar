@@ -322,7 +322,7 @@ sealed class StudyCard : Form
     {
         if (hot)
         {
-            using var path = UI.RoundRect(new RectangleF(r.X, r.Y, r.Width, r.Height), S(6));
+            using var path = UI.RoundRect(r, S(6));
             using var b = new SolidBrush(UI.HoverBack);
             g.FillPath(b, path);
         }
@@ -334,7 +334,7 @@ sealed class StudyCard : Form
     void PauseButton(Graphics g)
     {
         var r = PauseRect;
-        using (var path = UI.RoundRect(new RectangleF(r.X, r.Y, r.Width, r.Height), S(6)))
+        using (var path = UI.RoundRect(r, S(6)))
         using (var bg = new SolidBrush(paused ? UI.Accent : hover == 5 ? UI.T(Color.FromArgb(255, 226, 190)) : UI.SoftAccent))
             g.FillPath(bg, path);
         float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f, h = S(10);

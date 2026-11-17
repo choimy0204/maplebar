@@ -170,7 +170,14 @@ if(!b||b.disabled) return false; b.click(); return true;
         var cw = ctl.CoreWebView2;
         for (int i = 0; i < 15 && !disposed; i++)
         {
-            var s = await cw.ExecuteScriptAsync(ReadJs);
+            string s;
+            try { s = await cw.ExecuteScriptAsync(ReadJs); }
+            catch (Exception ex)
+            {
+                // 웹 화면이 닫혔거나 페이지가 바뀌는 중이면 읽지 못한 것으로 둔다
+                if (!disposed) Log.Write("정펜", "장비 읽기 실패", ex);
+                return Result.Unknown;
+            }
             switch (s.Trim('"'))
             {
                 case "yes": return Result.Yes;

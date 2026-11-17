@@ -77,7 +77,6 @@ public class Settings
     public bool JanusRealertOn { get; set; }    // 알림 뒤에도 안 깔았으면 JanusRealertSec초 뒤 한 번 더 알림
     public int JanusRealertSec { get; set; } = 10;
     public bool LunaExt { get; set; } = true;   // 안 쓴다 (5석펫 스위치로 합침). 예전 설정 파일과 맞추려고 남겨 둔다
-    public bool PickupOn { get; set; } = true;  // 설치 65초 뒤 아이템 회수 알림
     public bool JanusEarly { get; set; }        // 야누스가 꺼지기 5초 전에 미리 알림 (다시 깔 여유)
     public bool PetOn { get; set; }             // 5석펫: 게더링(쿨 90초)마다 야누스 시간이 더해진다
     public DateTime? PetGatherAt { get; set; }   // 지금 세는 야누스의 게더링 박자 기준 (이 시각 + 90초×k)
@@ -115,9 +114,9 @@ public class Settings
     public string? StarNick { get; set; }
     public bool PendantOn { get; set; }
     public int PendantBuff { get; set; }           // 버프 칸 번호 (0~2)
-    // 반복 주기 알림 3칸: 키를 누르면 정한 주기마다 정한 색으로 알린다
+    // 반복 주기 알림 15칸: 키를 누르면 정한 주기마다 정한 색으로 알린다
     public List<RepeatSlot> Repeats { get; set; } = new();
-    // 단일 알림 3칸: 키를 누르면 정한 시간 뒤에 한 번만 알린다
+    // 단일 알림 15칸: 키를 누르면 정한 시간 뒤에 한 번만 알린다
     public List<OnceSlot> Onces { get; set; } = new();
     // 전체 알림 켜기·끄기: 끄면 모든 알림이 키를 세지도 울리지도 않는다 (칸마다 켜 둔 값은 그대로)
     public bool AlertsOn { get; set; } = true;
@@ -185,24 +184,32 @@ public class Settings
                 return FixBuffs(s);
             }
         }
-        catch (Exception ex) { Log.Write("settings", "설정을 읽지 못해 기본값으로 시작함", ex); }
+        catch (Exception ex)
+        {
+            Log.Write("settings", "설정을 읽지 못해 기본값으로 시작함", ex);
+            // 다음 저장이 깨진 파일을 덮어쓰기 전에 settings.json.bad로 남겨 둔다 (원래 설정을 되살릴 수 있게)
+            try { if (File.Exists(FilePath)) File.Copy(FilePath, FilePath + ".bad", true); } catch { }
+        }
         return FixBuffs(new());
     }
 
-    /// <summary>버프 칸을 3개로 맞춘다 (기본 30·20·10분). 예전 버프 하나짜리 설정은 같은 시간 칸으로 옮긴다.</summary>
+    /// <summary>버프 칸을 3개로, 반복·단일 알림 칸을 15개로 맞춘다 (버프 기본 30·20·10분). 예전 버프 하나짜리 설정은 같은 시간 칸으로 옮긴다.</summary>
     static Settings FixBuffs(Settings s)
     {
         bool fresh = s.Buffs.Count == 0;
         int[] mins = { 30, 20, 10 };
         while (s.Buffs.Count < 3) s.Buffs.Add(new BuffSlot { Min = mins[s.Buffs.Count] });
         if (s.Buffs.Count > 3) s.Buffs.RemoveRange(3, s.Buffs.Count - 3);
-        int[] colors = { RepeatSlot.Palette[2], RepeatSlot.Palette[4], RepeatSlot.Palette[6] };
-        while (s.Repeats.Count < 3) s.Repeats.Add(new RepeatSlot { Argb = colors[s.Repeats.Count] });
-        if (s.Repeats.Count > 3) s.Repeats.RemoveRange(3, s.Repeats.Count - 3);
+        // 반복·단일 알림 칸 수를 맞춘다. 새 칸 색은 팔레트를 돌아가며 쓴다 (앞 3칸은 예전 색 그대로)
+        int[] colors = { 2, 4, 6, 0, 3, 5, 7, 1 }, onceColors = { 1, 3, 7, 5, 0, 2, 4, 6 };
+        s.Repeats ??= new();
+        while (s.Repeats.Count < JanusWatch.RepeatSlots)
+            s.Repeats.Add(new RepeatSlot { Argb = RepeatSlot.Palette[colors[s.Repeats.Count % colors.Length]] });
+        if (s.Repeats.Count > JanusWatch.RepeatSlots) s.Repeats.RemoveRange(JanusWatch.RepeatSlots, s.Repeats.Count - JanusWatch.RepeatSlots);
         s.Onces ??= new();
-        int[] onceColors = { RepeatSlot.Palette[1], RepeatSlot.Palette[3], RepeatSlot.Palette[7] };
-        while (s.Onces.Count < 3) s.Onces.Add(new OnceSlot { Argb = onceColors[s.Onces.Count] });
-        if (s.Onces.Count > 3) s.Onces.RemoveRange(3, s.Onces.Count - 3);
+        while (s.Onces.Count < JanusWatch.OnceSlots)
+            s.Onces.Add(new OnceSlot { Argb = RepeatSlot.Palette[onceColors[s.Onces.Count % onceColors.Length]] });
+        if (s.Onces.Count > JanusWatch.OnceSlots) s.Onces.RemoveRange(JanusWatch.OnceSlots, s.Onces.Count - JanusWatch.OnceSlots);
         s.AlertScreens ??= new() { "ALL" };
         s.AlertPresets ??= new();
         s.AlertPresets.RemoveAll(p => p == null || string.IsNullOrWhiteSpace(p.Name));
@@ -330,7 +337,6 @@ public class AlertPreset
     public int? JanusCycleSec { get; set; }
     public bool JanusRealertOn { get; set; }
     public int JanusRealertSec { get; set; } = 10;
-    public bool PickupOn { get; set; } = true;
     public bool RuneOn { get; set; }
     public int NpcKey { get; set; }
     public int RuneMin { get; set; } = 15;
@@ -359,7 +365,7 @@ public class AlertPreset
             SoundOn = s.SoundOn, SoundVol = s.SoundVol, AlertVisual = s.AlertVisual, AlertFlash = s.AlertFlash, AlertEdge = s.AlertEdge,
             ComboKey = s.ComboKey,
             JanusOn = s.JanusOn, JanusKey = s.JanusKey, JanusMod = s.JanusMod, JanusCycleSec = JanusWatch.Cycle(s),
-            JanusRealertOn = s.JanusRealertOn, JanusRealertSec = s.JanusRealertSec, PickupOn = s.PickupOn,
+            JanusRealertOn = s.JanusRealertOn, JanusRealertSec = s.JanusRealertSec,
             RuneOn = s.RuneOn, NpcKey = s.NpcKey, RuneMin = s.RuneMin,
             ErdaOn = s.ErdaOn, ErdaKey = s.ErdaKey, ErdaEarly = s.ErdaEarly,
             Buffs = Copy(s.Buffs), Dopes = Copy(s.Dopes), Repeats = Copy(s.Repeats), Onces = Copy(s.Onces),
@@ -379,7 +385,7 @@ public class AlertPreset
         s.SoundOn = SoundOn; s.SoundVol = SoundVol; s.AlertVisual = AlertVisual; s.AlertFlash = AlertFlash; s.AlertEdge = AlertEdge;
         s.ComboKey = ComboKey;
         s.JanusOn = JanusOn; s.JanusKey = JanusKey; s.JanusMod = JanusMod; s.JanusCycleSec = JanusCycleSec ?? 0;
-        s.JanusRealertOn = JanusRealertOn; s.JanusRealertSec = JanusRealertSec; s.PickupOn = PickupOn;
+        s.JanusRealertOn = JanusRealertOn; s.JanusRealertSec = JanusRealertSec;
         s.RuneOn = RuneOn; s.NpcKey = NpcKey; s.RuneMin = RuneMin;
         s.ErdaOn = ErdaOn; s.ErdaKey = ErdaKey; s.ErdaEarly = ErdaEarly;
         s.MapleNick = MapleNick; s.PendantOn = PendantOn; s.PendantBuff = PendantBuff;
@@ -392,7 +398,7 @@ public class AlertPreset
         for (int i = 0; i < dopes.Count && i < s.Dopes.Count; i++) dopes[i].Start = s.Dopes[i].Start;
         var reps = Copy(Repeats);
         for (int i = 0; i < reps.Count && i < s.Repeats.Count; i++) reps[i].Start = s.Repeats[i].Start;
-        // 칸 수(3칸)는 지금 설정에 맞춘다: 모자라면 지금 칸을 그대로 두고, 넘치면 버린다
+        // 칸 수는 지금 설정에 맞춘다: 모자라면 지금 칸을 그대로 두고, 넘치면 버린다
         for (int i = buffs.Count; i < s.Buffs.Count; i++) buffs.Add(s.Buffs[i]);
         for (int i = dopes.Count; i < s.Dopes.Count; i++) dopes.Add(s.Dopes[i]);
         for (int i = reps.Count; i < s.Repeats.Count; i++) reps.Add(s.Repeats[i]);

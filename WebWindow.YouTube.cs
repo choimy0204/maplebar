@@ -297,6 +297,15 @@ public partial class WebWindow
         catch (Exception ex) { Log.Write("web", "쇼츠를 넘기지 못함", ex); }
     }
 
+    /// <summary>목록 창에서 고른 영상·방송: '현재 창' 모드인 목록 창이면 이 창에서 열고, 아니면 재생 창으로 연다</summary>
+    void OpenPlayer(string url, bool live)
+    {
+        bool same = live ? kind == SiteKind.Live && settings.LiveSameWindow : kind == SiteKind.YouTube && settings.YtSameWindow;
+        if (same) web.CoreWebView2?.Navigate(url);
+        else if (live) ShowLive(url, settings, sc);
+        else ShowYouTube(url, settings, sc);
+    }
+
     async Task InitYouTube(CoreWebView2 cw)
     {
         if (kind == SiteKind.YouTubePlayer)
@@ -320,9 +329,7 @@ public partial class WebWindow
             if (m == null || !m.StartsWith("mb:yt:", StringComparison.Ordinal)) return;
             var u = m[6..];
             if (!YouTube.IsVideo(u) || IsDisposed) return;
-            // '이 창에서' 모드면 목록 창에서 그대로 연다 (댓글 창은 늘 재생 창으로)
-            if (kind == SiteKind.YouTube && settings.YtSameWindow) BeginInvoke(() => web.CoreWebView2?.Navigate(u));
-            else BeginInvoke(() => ShowYouTube(u, settings, sc));
+            BeginInvoke(() => OpenPlayer(u, live: false)); // '이 창에서' 모드면 목록 창에서 그대로 연다 (댓글 창은 늘 재생 창으로)
         };
         // 놓친 경우(뒤로 가기, 페이지가 직접 옮김 등): 목록 창이 영상 페이지로 가면 재생 창으로 넘기고 목록으로 돌아온다
         if (kind == SiteKind.YouTubeComments) return;

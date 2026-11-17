@@ -19,15 +19,19 @@ static class Thumbs
     /// <summary>받아 둔 그림을 준다. 아직 없으면 받기 시작하고, 다 받으면 owner를 다시 그린다.</summary>
     public static Image? Get(string? url, Control owner)
     {
-        if (string.IsNullOrEmpty(url) || !url.StartsWith("http")) return null;
+        if (string.IsNullOrEmpty(url)) return null;
         lock (cache)
         {
             if (cache.TryGetValue(url, out var img)) return img;
-            if (!loading.Add(url)) return null;
+            // 받아 둔 적 없는 주소만 본다: http·https 웹 주소가 아니면 받지 않고 ♪로 둔다
+            if (!IsWeb(url) || !loading.Add(url)) return null;
         }
         _ = LoadAsync(url, owner);
         return null;
     }
+
+    static bool IsWeb(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp);
 
     static async Task LoadAsync(string url, Control owner)
     {
@@ -734,7 +738,7 @@ public sealed class MusicPicker : Form
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using var pen = new Pen(box.Focused ? UI.Accent : UI.Line, S(1));
-            using var p = UI.RoundRect(new RectangleF(0.5f, 0.5f, frame.Width - 1.5f, frame.Height - 1.5f), S(8));
+            using var p = UI.EdgePath(frame, S(8));
             e.Graphics.DrawPath(pen, p);
         };
         box.Location = new Point(S(10), S(7));

@@ -138,6 +138,12 @@ static class UpdateCheck
         Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps &&
         u.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && u.IsDefaultPort;
 
+    /// <summary>넘겨 주는 주소: 깃허브가 파일을 두는 곳(objects.githubusercontent.com 등)까지만 (bootstrap Getter와 같은 규칙)</summary>
+    public static bool IsGitHubFile(Uri u) =>
+        u.Scheme == Uri.UriSchemeHttps && u.IsDefaultPort &&
+        (u.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+         u.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
+
     static (Version ver, string url, string? sha)? FindLatest()
     {
         try
@@ -148,7 +154,8 @@ static class UpdateCheck
             (Version ver, string url, string? sha)? best = null;
             void Take(string? name, string? url, string? sha)
             {
-                if (name == null || !IsGitHub(url) || (sha != null && !IsGitHub(sha))) return;
+                // 확인 값(SHA256.txt)이 없는 릴리스는 받아도 설치할 수 없으니 업데이트로 보지 않는다
+                if (name == null || !IsGitHub(url) || !IsGitHub(sha)) return;
                 var m = SetupName.Match(name);
                 if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return;
                 if (best == null || Key(v) > Key(best.Value.ver)) best = (v, url, sha);
