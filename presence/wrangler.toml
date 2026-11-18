@@ -6,6 +6,14 @@ compatibility_date = "2025-01-01"
 name = "COUNTER"
 class_name = "Counter"
 
+[[durable_objects.bindings]]
+name = "PARTY"
+class_name = "Party"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Counter"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Party"]

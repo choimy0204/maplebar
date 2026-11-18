@@ -13,6 +13,13 @@
 // q = {save:{left, wait}, load:{left, wait}}: 오늘 남은 횟수, 다시 할 수 있을 때까지 초
 // full = {save, load}: 서버 전체 하루 한도를 넘었는지
 // IP는 그날의 무작위 비밀값으로 해시해서만 쓰고 원본은 저장하지 않는다. 비밀값은 날마다 새로 만든다.
+//
+// 파티 방 (Durable Object 클래스 Party. 인스턴스 "lobby"는 코드 표, 방마다 인스턴스 하나)
+// POST /party/create {pw}        → {ok, code, room, ticket}
+// POST /party/join   {code, pw}  → {ok, room, ticket}
+// 실패하면 {ok:false, err}. err: bad·wrong·gone·full·tries·busy
+// GET  /party/ws?room=&ticket=   WebSocket. 메시지는 JSON 한 줄 (hello·state·close·disband·leave·ping)
+// 비밀번호는 해시로만 저장하고, 코드는 12시간 뒤, 빈 방은 15분 뒤 지운다.
 
 const KEEP = 30; // 돌려줄 날 수
 
@@ -46,6 +53,7 @@ export default {
       });
       return env.COUNTER.get(env.COUNTER.idFromName("cfg")).fetch(inner);
     }
+    if (p.startsWith("/party/")) return partyRoute(req, env, p);
     if (p === "/ask" || p.startsWith("/ask/")) return askRoute(req, env, p);
     const ok = (req.method === "POST" && p === "/hit") || (req.method === "GET" && p === "/count");
     if (!ok) return new Response("not found", { status: 404 });
@@ -276,8 +284,395 @@ export class Counter {
   }
 }
 
+// ── 파티 방 ──
+const PARTY = {
+  bodyMax: 1024,                 // 만들기·입장 본문 한도
+  msgMax: 4096,                  // 소켓 메시지 한도
+  maxMembers: 6,
+  codeKeepMs: 12 * 3600 * 1000,  // 코드 보관
+  emptyMs: 15 * 60 * 1000,       // 빈 방을 지우기까지
+  makePerHour: 10,               // 같은 IP 만들기 1시간
+  failPer10Min: 10,              // 같은 IP 입장 실패 10분
+  codeFails: 20,                 // 같은 코드 실패 이만큼이면 잠금
+  ratePer10s: 30,                // 소켓당 10초 메시지
+  alphabet: "ABCDEFGHJKLMNPQRSTUVWXYZ23456789",
+};
+
+async function partyRoute(req, env, p) {
+  if (req.method === "POST" && (p === "/party/create" || p === "/party/join")) {
+    const len = Number(req.headers.get("Content-Length") || 0);
+    if (len > PARTY.bodyMax) return Response.json({ ok: false, err: "bad" }, { status: 413 });
+    const body = await req.text();
+    if (body.length > PARTY.bodyMax) return Response.json({ ok: false, err: "bad" }, { status: 413 });
+    // 바깥 머리글은 버리고 IP만 넘긴다
+    const inner = new Request("https://party" + p.slice(6), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Ip": req.headers.get("CF-Connecting-IP") || "" },
+      body,
+    });
+    return env.PARTY.get(env.PARTY.idFromName("lobby")).fetch(inner);
+  }
+  if (req.method === "GET" && p === "/party/ws") {
+    const room = new URL(req.url).searchParams.get("room") || "";
+    if (!/^[0-9a-f]{32}$/.test(room)) return new Response("forbidden", { status: 403 });
+    return env.PARTY.get(env.PARTY.idFromName(room)).fetch(req);
+  }
+  return new Response("not found", { status: 404 });
+}
+
+export class Party {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(req) {
+    const p = new URL(req.url).pathname;
+    if (p === "/create" || p === "/join") return this.lobby(req, p.slice(1));
+    if (p === "/drop") return this.drop(req);
+    if (p === "/r/init") return this.roomInit(req);
+    if (p === "/r/join") return this.roomJoin();
+    if (p === "/r/expire") return this.roomExpire();
+    if (p === "/party/ws") return this.roomSocket(req);
+    return new Response("not found", { status: 404 });
+  }
+
+  async alarm() {
+    const kind = await this.state.storage.get("kind");
+    if (kind === "lobby") return this.lobbyAlarm();
+    if (kind === "room") return this.roomAlarm();
+  }
+
+  // ── 로비 ("lobby" 인스턴스) ──
+
+  db() {
+    const sql = this.state.storage.sql;
+    if (!this.ready) {
+      sql.exec("CREATE TABLE IF NOT EXISTS codes(code TEXT PRIMARY KEY, room TEXT, salt TEXT, hash TEXT, created INTEGER, fails INTEGER DEFAULT 0)");
+      sql.exec("CREATE TABLE IF NOT EXISTS ev(who TEXT, kind TEXT, at INTEGER)");
+      sql.exec("CREATE TABLE IF NOT EXISTS salts(day TEXT PRIMARY KEY, v TEXT)");
+      this.ready = true;
+    }
+    return sql;
+  }
+  one(q, ...a) { return this.db().exec(q, ...a).toArray()[0]; }
+  run(q, ...a) { this.db().exec(q, ...a); }
+
+  /** IP를 그날의 비밀값으로 해시한다. 원본 IP는 남기지 않는다 */
+  async who(ip, day) {
+    this.run("INSERT OR IGNORE INTO salts(day, v) VALUES (?, ?)", day, randHex(32));
+    const salt = this.one("SELECT v FROM salts WHERE day = ?", day).v;
+    const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt + "|" + ip));
+    return toHex(new Uint8Array(h)).slice(0, 32);
+  }
+
+  recent(who, kind, ms, now) {
+    return this.one("SELECT COUNT(*) AS n FROM ev WHERE who = ? AND kind = ? AND at > ?", who, kind, now - ms).n;
+  }
+
+  /** 오래된 코드·기록을 지운다. 지운 코드의 방에는 모집이 끝났다고 알린다 */
+  async cleanup(now) {
+    const old = this.db().exec("SELECT code, room FROM codes WHERE created <= ?", now - PARTY.codeKeepMs).toArray();
+    this.run("DELETE FROM codes WHERE created <= ?", now - PARTY.codeKeepMs);
+    this.run("DELETE FROM ev WHERE at <= ?", now - 3600 * 1000);
+    this.run("DELETE FROM salts WHERE day < ?", kstDay(now));
+    for (const r of old) {
+      try { await this.roomStub(r.room).fetch(new Request("https://party/r/expire", { method: "POST" })); } catch { }
+    }
+  }
+
+  roomStub(room) {
+    return this.env.PARTY.get(this.env.PARTY.idFromName(room));
+  }
+
+  async ensureLobbyAlarm(now) {
+    await this.state.storage.put("kind", "lobby");
+    if ((await this.state.storage.getAlarm()) == null) await this.state.storage.setAlarm(now + 3600 * 1000);
+  }
+
+  async lobbyAlarm() {
+    const now = Date.now();
+    await this.cleanup(now);
+    if (this.one("SELECT COUNT(*) AS n FROM codes").n > 0) await this.state.storage.setAlarm(now + 3600 * 1000);
+  }
+
+  async lobby(req, op) {
+    let b;
+    try { b = JSON.parse((await req.text()) || "{}"); } catch { return Response.json({ ok: false, err: "bad" }); }
+    if (!b || typeof b !== "object" || Array.isArray(b)) return Response.json({ ok: false, err: "bad" });
+    const pw = typeof b.pw === "string" ? b.pw : "";
+    if (pw.length < 4 || pw.length > 20) return Response.json({ ok: false, err: "bad" });
+
+    const now = Date.now();
+    await this.ensureLobbyAlarm(now);
+    await this.cleanup(now);
+    const who = await this.who(req.headers.get("X-Ip") || "", kstDay(now));
+
+    if (op === "create") {
+      if (this.recent(who, "mk", 3600 * 1000, now) >= PARTY.makePerHour) return Response.json({ ok: false, err: "busy" });
+      this.run("INSERT INTO ev(who, kind, at) VALUES (?, 'mk', ?)", who, now);
+      const room = randHex(16);
+      const salt = randHex(16);
+      const hash = await pbkdf2(pw, salt);
+      let code = "";
+      for (let i = 0; i < 20; i++) {
+        const c = newCode();
+        if (!this.one("SELECT 1 AS x FROM codes WHERE code = ?", c)) { code = c; break; }
+      }
+      if (!code) return Response.json({ ok: false, err: "busy" });
+      // 코드를 먼저 잡아 두고(다른 요청이 같은 코드를 못 쓰게) 방을 만든다
+      this.run("INSERT INTO codes(code, room, salt, hash, created, fails) VALUES (?, ?, ?, ?, ?, 0)", code, room, salt, hash, now);
+      const res = await this.roomStub(room).fetch(new Request("https://party/r/init", {
+        method: "POST", body: JSON.stringify({ code, room }),
+      }));
+      const r = await res.json();
+      if (!r.ok) {
+        this.run("DELETE FROM codes WHERE code = ?", code);
+        return Response.json({ ok: false, err: "busy" });
+      }
+      return Response.json({ ok: true, code, room, ticket: r.ticket });
+    }
+
+    // 입장
+    const code = typeof b.code === "string" ? b.code.replace(/\s+/g, "").toUpperCase() : "";
+    if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return Response.json({ ok: false, err: "bad" });
+    if (this.recent(who, "fail", 10 * 60 * 1000, now) >= PARTY.failPer10Min) return Response.json({ ok: false, err: "tries" });
+    const row = this.one("SELECT * FROM codes WHERE code = ?", code);
+    if (!row) {
+      this.run("INSERT INTO ev(who, kind, at) VALUES (?, 'fail', ?)", who, now); // 없는 코드도 실패로 센다
+      return Response.json({ ok: false, err: "gone" });
+    }
+    if (row.fails >= PARTY.codeFails) return Response.json({ ok: false, err: "tries" });
+    if (!(await verify(pw, row.salt, row.hash))) {
+      this.run("INSERT INTO ev(who, kind, at) VALUES (?, 'fail', ?)", who, Date.now());
+      this.run("UPDATE codes SET fails = fails + 1 WHERE code = ?", code);
+      return Response.json({ ok: false, err: "wrong" });
+    }
+    const res = await this.roomStub(row.room).fetch(new Request("https://party/r/join", { method: "POST" }));
+    const r = await res.json();
+    if (!r.ok) {
+      if (r.err === "gone") this.run("DELETE FROM codes WHERE code = ?", code);
+      return Response.json({ ok: false, err: r.err });
+    }
+    return Response.json({ ok: true, room: row.room, ticket: r.ticket });
+  }
+
+  async drop(req) {
+    let b;
+    try { b = await req.json(); } catch { return new Response("bad", { status: 400 }); }
+    this.run("DELETE FROM codes WHERE code = ? AND room = ?", String(b.code), String(b.room));
+    return new Response("ok");
+  }
+
+  // ── 방 (방마다 인스턴스) ──
+
+  async tickets() {
+    return (await this.state.storage.get("tk")) || [];
+  }
+
+  async loadRoom() {
+    if (!this.room) this.room = (await this.state.storage.get("room")) || "";
+  }
+
+  /** 로비에서 이 방의 코드를 지운다 */
+  async dropCode(code) {
+    if (!code) return;
+    await this.loadRoom();
+    try {
+      await this.env.PARTY.get(this.env.PARTY.idFromName("lobby")).fetch(new Request("https://party/drop", {
+        method: "POST", body: JSON.stringify({ code, room: this.room }),
+      }));
+    } catch { }
+  }
+
+  async roomInit(req) {
+    const b = await req.json();
+    const owner = { id: randHex(4), ticket: randHex(16), owner: true, job: "", seq: 1 };
+    this.room = b.room;
+    await this.state.storage.put({ kind: "room", room: b.room, tk: [owner], code: b.code, seq: 1 });
+    await this.state.storage.setAlarm(Date.now() + PARTY.emptyMs);
+    return Response.json({ ok: true, ticket: owner.ticket });
+  }
+
+  async roomJoin() {
+    const tk = await this.tickets();
+    const code = (await this.state.storage.get("code")) || null;
+    if (tk.length === 0 || !code) return Response.json({ ok: false, err: "gone" });
+    if (tk.length >= PARTY.maxMembers) return Response.json({ ok: false, err: "full" });
+    const seq = ((await this.state.storage.get("seq")) || 0) + 1;
+    const m = { id: randHex(4), ticket: randHex(16), owner: false, job: "", seq };
+    tk.push(m);
+    await this.state.storage.put({ tk, seq });
+    if ((await this.state.storage.getAlarm()) == null && this.state.getWebSockets().length === 0)
+      await this.state.storage.setAlarm(Date.now() + PARTY.emptyMs);
+    await this.sendMembers(tk);
+    return Response.json({ ok: true, ticket: m.ticket });
+  }
+
+  /** 코드가 오래돼서 모집이 끝났다 */
+  async roomExpire() {
+    const tk = await this.tickets();
+    if (tk.length === 0) return new Response("ok");
+    await this.state.storage.put("code", null);
+    await this.sendMembers(tk);
+    return new Response("ok");
+  }
+
+  async roomAlarm() {
+    if (this.state.getWebSockets().length > 0) return;
+    const code = await this.state.storage.get("code");
+    await this.loadRoom();
+    await this.wipe();
+    await this.dropCode(code);
+  }
+
+  /** 방 기록을 모두 지운다 */
+  async wipe() {
+    await this.state.storage.deleteAlarm();
+    await this.state.storage.deleteAll();
+  }
+
+  async membersMsg(tk) {
+    const code = (await this.state.storage.get("code")) || null;
+    return JSON.stringify({
+      t: "members",
+      list: [...tk].sort((a, b) => a.seq - b.seq).map((m) => ({ id: m.id, job: m.job, owner: m.owner })),
+      code,
+    });
+  }
+
+  async sendMembers(tk) {
+    const msg = await this.membersMsg(tk);
+    for (const ws of this.state.getWebSockets()) send(ws, msg);
+  }
+
+  async roomSocket(req) {
+    if (req.headers.get("Upgrade") !== "websocket") return new Response("upgrade required", { status: 426 });
+    const ticket = new URL(req.url).searchParams.get("ticket") || "";
+    const tk = await this.tickets();
+    const me = tk.find((m) => sameKey(ticket, m.ticket));
+    if (!me) return new Response("forbidden", { status: 403 });
+
+    // 같은 ticket이 다시 붙으면 예전 소켓은 닫는다
+    for (const old of this.state.getWebSockets(me.id)) {
+      try { old.close(1000, "replaced"); } catch { }
+    }
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    this.state.acceptWebSocket(server, [me.id]);
+    server.serializeAttachment({ id: me.id, w: Date.now(), n: 0 });
+    await this.state.storage.deleteAlarm();
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async webSocketMessage(ws, data) {
+    const at = ws.deserializeAttachment() || {};
+    const now = Date.now();
+    if (now - at.w > 10000) { at.w = now; at.n = 0; }
+    at.n++;
+    ws.serializeAttachment(at);
+    if (at.n > PARTY.ratePer10s) {
+      send(ws, JSON.stringify({ t: "err", err: "rate" }));
+      try { ws.close(1008, "rate"); } catch { }
+      return;
+    }
+    if (typeof data !== "string" || data.length > PARTY.msgMax) return;
+    let m;
+    try { m = JSON.parse(data); } catch { return; }
+    if (!m || typeof m !== "object" || typeof m.t !== "string") return;
+
+    const tk = await this.tickets();
+    const me = tk.find((x) => x.id === at.id);
+    if (!me) { try { ws.close(1000, "gone"); } catch { } return; }
+
+    if (m.t === "ping") return send(ws, '{"t":"pong"}');
+
+    if (m.t === "hello") {
+      me.job = typeof m.job === "string" ? m.job.slice(0, 40) : "";
+      await this.state.storage.put("tk", tk);
+      send(ws, JSON.stringify({ t: "welcome", id: me.id, owner: me.owner }));
+      await this.sendMembers(tk);
+      const states = await this.state.storage.list({ prefix: "st:" });
+      for (const [k, v] of states) {
+        send(ws, JSON.stringify({ t: "state", id: k.slice(3), s: v.s, use: v.use, age: Math.max(0, now - v.at) }));
+      }
+      return;
+    }
+
+    if (m.t === "state") {
+      if (!m.s || typeof m.s !== "object" || Array.isArray(m.s)) return send(ws, '{"t":"err","err":"bad"}');
+      const use = ["origin", "burst", "semi", "ascent"].includes(m.use) ? m.use : null;
+      await this.state.storage.put("st:" + me.id, { s: m.s, use, at: now });
+      const out = JSON.stringify({ t: "state", id: me.id, s: m.s, use, age: 0 });
+      for (const other of this.state.getWebSockets()) if (other !== ws) send(other, out);
+      return;
+    }
+
+    if (m.t === "close" || m.t === "disband") {
+      if (!me.owner) return send(ws, '{"t":"err","err":"bad"}');
+      const code = await this.state.storage.get("code");
+      await this.dropCode(code);
+      if (m.t === "close") {
+        await this.state.storage.put("code", null);
+        await this.sendMembers(tk);
+        return;
+      }
+      const socks = this.state.getWebSockets();
+      for (const s of socks) send(s, '{"t":"bye","why":"disband"}');
+      await this.wipe();
+      for (const s of socks) { try { s.close(1000, "disband"); } catch { } }
+      return;
+    }
+
+    if (m.t === "leave") {
+      const rest = tk.filter((x) => x.id !== me.id);
+      try { ws.close(1000, "leave"); } catch { }
+      if (rest.length === 0) {
+        const code = await this.state.storage.get("code");
+        await this.wipe();
+        await this.dropCode(code);
+        return;
+      }
+      await this.state.storage.delete("st:" + me.id);
+      if (me.owner) {
+        // 방장이 나가면 남은 사람 중 가장 먼저 들어온 사람이 방장이 된다
+        const next = rest.reduce((a, b) => (b.seq < a.seq ? b : a));
+        next.owner = true;
+      }
+      await this.state.storage.put("tk", rest);
+      await this.sendMembers(rest);
+      return;
+    }
+  }
+
+  async webSocketClose(ws) {
+    try { ws.close(1000, "bye"); } catch { }
+    await this.afterDisconnect(ws);
+  }
+
+  async webSocketError(ws) {
+    await this.afterDisconnect(ws);
+  }
+
+  /** 연결된 소켓이 하나도 없으면 15분 뒤 방을 지운다 */
+  async afterDisconnect(ws) {
+    if ((await this.tickets()).length === 0) return;
+    if (this.state.getWebSockets().some((s) => s !== ws)) return;
+    await this.state.storage.setAlarm(Date.now() + PARTY.emptyMs);
+  }
+}
+
+function newCode() {
+  const b = crypto.getRandomValues(new Uint8Array(6));
+  return [...b].map((x) => PARTY.alphabet[x % 32]).join("");
+}
+
+function send(ws, msg) {
+  try { ws.send(msg); } catch { }
+}
+
 // ── 1:1 문의 ──
-// POST /ask          {kind, body, reply, site, ms} → {ok} 또는 {ok:false, err: short·long·fast·daily·full·bad}
+// POST /ask         {kind, body, reply, site, ms} → {ok} 또는 {ok:false, err: short·long·fast·daily·full·bad}
 //                    사이트(choimy0204.github.io)에서만 받는다. site는 봇 거르는 숨은 칸, ms는 페이지를 연 뒤 보낸 데까지 걸린 시간
 // GET  /ask/admin    개발자용 읽기 페이지 (비밀 열쇠 ADMIN_KEY를 넣어야 글이 보인다)
 // POST /ask/list {}  ·  /ask/read {id, unread?}  ·  /ask/del {id}   헤더 X-Key 필요 → {ok, items, keepDays}
