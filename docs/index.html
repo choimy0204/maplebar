@@ -97,6 +97,8 @@ a { color: var(--accent); }
 .eyebrow::before { content: ""; width: 18px; height: 2px; background: currentColor; border-radius: 2px; }
 .hero h1 { margin: 14px 0 0; font-size: clamp(34px, 6.4vw, 56px); line-height: 1.15; font-weight: 800; letter-spacing: -.03em; text-wrap: balance; }
 .hero h1 em { font-style: normal; color: var(--accent); }
+.hero h1 { word-break: keep-all; }
+.nw { white-space: nowrap; }
 .hero .lead { margin: 16px 0 0; color: var(--hero-muted); font-size: 17px; max-width: 30em; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
 .btn {
@@ -209,38 +211,11 @@ kbd {
 .show-more { justify-self: center; }
 
 /* 문의 */
-.ask { display: grid; gap: 24px; }
-@media (min-width: 900px) { .ask { grid-template-columns: 1fr 1.3fr; align-items: start; } }
-.ask-side { display: grid; gap: 12px; }
-.ask-side ul { margin: 0; padding-left: 1.2em; color: var(--muted); display: grid; gap: 4px; font-size: 15px; }
-.form { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 22px; display: grid; gap: 18px; box-shadow: var(--shadow); }
-.field { display: grid; gap: 8px; border: 0; margin: 0; padding: 0; min-width: 0; }
-.field > label, .field > legend { font-weight: 700; font-size: 15px; padding: 0; }
-.field .hint { font-size: 13px; color: var(--muted); margin: -2px 0 0; }
-.kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.kinds label { position: relative; }
-.kinds input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.kinds span {
-  display: block; text-align: center; padding: 10px 6px; border-radius: var(--r-sm); border: 1px solid var(--line);
-  background: var(--panel-2); font-weight: 600; font-size: 14px; cursor: pointer;
-}
-.kinds input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
-.kinds input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
-.form textarea, .form input[type="text"] {
-  width: 100%; font: inherit; font-size: 15px; color: var(--ink); background: var(--panel-2);
-  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px;
-}
-.form textarea { min-height: 150px; resize: vertical; line-height: 1.6; }
-.form textarea:focus, .form input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
-.count { justify-self: end; font-family: var(--font-mono); font-size: 12px; color: var(--muted); margin-top: -4px; }
-.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
-.send-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.send-row .btn { min-width: 140px; }
-.send-row .btn[disabled] { opacity: .6; cursor: default; transform: none; }
-.privacy { font-size: 13px; color: var(--muted); margin: 0; }
-.msg { margin: 0; font-size: 14px; font-weight: 600; }
-.msg.ok { color: var(--ok); }
-.msg.err { color: var(--err); }
+.ask { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; box-shadow: var(--shadow);
+  display: grid; gap: 18px; align-items: center; }
+@media (min-width: 720px) { .ask { grid-template-columns: 1fr auto; padding: 28px 32px; } }
+.btn.kakao { background: #fee500; color: #191919; border-color: #fee500; justify-self: start; }
+.btn.kakao:hover { background: #f5dc00; }
 
 /* 아래 */
 footer { margin-top: 80px; border-top: 1px solid var(--line); background: var(--panel); }
@@ -272,7 +247,7 @@ footer b { color: var(--ink); }
   <div class="container">
     <div>
       <div class="eyebrow">재획 도우미</div>
-      <h1>재획은 편하게,<br><em>알림은 메이플 바</em>가</h1>
+      <h1>여러분들의 <span class="nw">재획 비서,</span><br><em>메이플 어시스트</em></h1>
       <p class="lead">재획하면서 자주 쓰는 알림과 사이트를 메이플 화면 위에 모아 보여 주는 프로그램이에요.</p>
       <div class="actions">
         <a class="btn primary dl" href="https://github.com/choimy0204/maplebar/releases/latest/download/MapleBar-Setup.exe">
@@ -1041,52 +1016,12 @@ footer b { color: var(--ink); }
 
   <section id="ask" aria-labelledby="ask-h">
     <div class="ask">
-      <div class="ask-side">
-        <div class="sec-head" style="margin:0">
-          <div class="eyebrow">문의</div>
-          <h2 id="ask-h">1:1 문의</h2>
-          <p>안 되는 점이나 바랐으면 하는 기능을 적어 주세요. 개발자만 읽어요.</p>
-        </div>
-        <ul>
-          <li>안 될 때는 무엇을 하다가 어떻게 됐는지 적어 주세요</li>
-          <li>답장을 받고 싶으면 메이플 닉네임이나 메일을 남겨 주세요</li>
-          <li>글은 하루에 3번까지 보낼 수 있어요</li>
-        </ul>
+      <div class="sec-head" style="margin:0">
+        <div class="eyebrow">문의</div>
+        <h2 id="ask-h">카카오톡으로 물어보세요</h2>
+        <p>안 되는 점이나 바랐으면 하는 기능을 카카오톡 오픈채팅으로 보내 주세요.</p>
       </div>
-
-      <form class="form" id="ask-form" novalidate>
-        <fieldset class="field">
-          <legend>무엇에 대한 글인가요?</legend>
-          <div class="kinds">
-            <label><input type="radio" name="kind" value="bug" checked><span>안 돼요</span></label>
-            <label><input type="radio" name="kind" value="idea"><span>기능 제안</span></label>
-            <label><input type="radio" name="kind" value="etc"><span>그 밖의 것</span></label>
-          </div>
-        </fieldset>
-
-        <div class="field">
-          <label for="ask-body">내용</label>
-          <textarea id="ask-body" name="body" maxlength="1000" required></textarea>
-          <span class="count" id="ask-count">0 / 1000</span>
-        </div>
-
-        <div class="field">
-          <label for="ask-reply">답장 받을 곳 <span style="font-weight:500;color:var(--muted)">· 안 적어도 돼요</span></label>
-          <input type="text" id="ask-reply" name="reply" maxlength="80" autocomplete="off">
-          <p class="hint">메이플 닉네임이나 메일. 비워 두면 답장을 드릴 수 없어요.</p>
-        </div>
-
-        <div class="hp" aria-hidden="true">
-          <label for="ask-site">이 칸은 비워 두세요</label>
-          <input type="text" id="ask-site" name="site" tabindex="-1" autocomplete="off">
-        </div>
-
-        <div class="send-row">
-          <button class="btn primary" type="submit" id="ask-send">보내기</button>
-          <p class="msg" id="ask-msg" role="status" aria-live="polite"></p>
-        </div>
-        <p class="privacy">보낸 글과 답장 받을 곳만 저장하고, 90일 뒤에 지워요. IP 주소는 저장하지 않아요.</p>
-      </form>
+      <a class="btn kakao" href="https://open.kakao.com/o/s0lEoOii" target="_blank" rel="noopener">카카오톡 문의하기</a>
     </div>
   </section>
 </main>
@@ -1094,7 +1029,7 @@ footer b { color: var(--ink); }
 <footer>
   <div class="container">
     <span><b>메이플 바</b> · 메이플 바는 게임에 키 입력을 보내지 않아요. 게임 창 위치와 키 누름만 읽어요.</span>
-    <span>코드는 모두 <a href="https://github.com/choimy0204/maplebar">깃허브</a>에 공개돼 있어요. 의견은 <a href="#ask">1:1 문의</a>나 인벤 글 댓글로 남겨 주세요.</span>
+    <span>코드는 모두 <a href="https://github.com/choimy0204/maplebar">깃허브</a>에 공개돼 있어요. 의견은 <a href="#ask">카카오톡</a>이나 인벤 글 댓글로 남겨 주세요.</span>
   </div>
 </footer>
 
@@ -1129,58 +1064,6 @@ fetch("https://api.github.com/repos/choimy0204/maplebar/releases/latest")
   });
 })();
 
-// 1:1 문의
-(function () {
-  var ENDPOINT = "https://maplebar-presence.zaebbi.workers.dev/ask";
-  var form = document.getElementById("ask-form");
-  var body = document.getElementById("ask-body");
-  var count = document.getElementById("ask-count");
-  var send = document.getElementById("ask-send");
-  var msg = document.getElementById("ask-msg");
-  var opened = Date.now();
-
-  function say(text, kind) { msg.textContent = text; msg.className = "msg" + (kind ? " " + kind : ""); }
-  body.addEventListener("input", function () { count.textContent = body.value.length + " / 1000"; });
-
-  var errs = {
-    short: "내용을 5글자 넘게 적어 주세요.",
-    long: "내용이 너무 길어요. 1000글자까지 적을 수 있어요.",
-    fast: "조금 천천히 다시 보내 주세요.",
-    daily: "오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요.",
-    full: "지금은 글을 받을 수 없어요. 나중에 다시 보내 주세요.",
-    bad: "보내지 못했어요. 다시 해 주세요."
-  };
-
-  form.addEventListener("submit", function (e) {
-    e.preventDefault();
-    var text = body.value.trim();
-    if (text.length < 5) { say(errs.short, "err"); body.focus(); return; }
-    if (!ENDPOINT || ENDPOINT.indexOf("http") !== 0) { say("문의 받기를 아직 준비하고 있어요.", "err"); return; }
-    send.disabled = true; say("보내는 중…");
-    fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        kind: (form.querySelector("input[name=kind]:checked") || {}).value || "etc",
-        body: text,
-        reply: document.getElementById("ask-reply").value.trim(),
-        site: document.getElementById("ask-site").value,
-        ms: Date.now() - opened
-      })
-    })
-      .then(function (r) { return r.json().catch(function () { return { ok: false, err: "bad" }; }); })
-      .then(function (j) {
-        if (j && j.ok) {
-          form.reset(); count.textContent = "0 / 1000";
-          say("잘 보냈어요. 읽고 나서 답장을 드릴게요.", "ok");
-        } else {
-          say(errs[(j && j.err) || "bad"] || errs.bad, "err");
-        }
-      })
-      .catch(function () { say(errs.bad, "err"); })
-      .finally(function () { send.disabled = false; });
-  });
-})();
 </script>
 </body>
 </html>
