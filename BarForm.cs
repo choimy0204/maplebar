@@ -634,6 +634,7 @@ public class BarForm : Form
         cms.Items.Add(look.Item("", "알림 설정", "야누스 · 룬 · 버프", () => { if (janus != null) JanusForm.Open(this, settings, janus, sc); }));
         cms.Items.Add(look.Item("", "자기계발 카드", "재획하며 보는 공부 카드", () => StudyForm.Open(this, settings, sc)));
         cms.Items.Add(look.Item("", "웹툰·쇼츠 키", "넘기는 키 정하기", () => { if (janus != null) JanusForm.Open(this, settings, janus, sc, toon: true); }));
+        cms.Items.Add(look.Item("", "설정 관리", "저장 · 불러오기", () => CfgForm.Open(this, settings, sc))); // 구름
         cms.Items.Add(new ToolStripSeparator());
         cms.Items.Add(look.Item("", "바 숨기기", "단축키로 다시 꺼내요", HideAll, "Ctrl+Alt+M"));
         cms.Items.Add(look.Item("", "개발자 정보", "공지사항 · 문의", () => DevInfo.Open(this)));

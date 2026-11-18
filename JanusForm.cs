@@ -1894,9 +1894,11 @@ sealed class JanusForm : Form, IMessageFilter
                     if (KeyHook.ModBit(vk) != 0) { captureMod = vk; UpdateKeys(); return true; }
                     st.JanusMod = vk == 0 ? 0 : captureMod;
                 }
+                // Shift 하나만 키로 받을 때는 왼쪽·오른쪽을 나눈다 (오른쪽 Shift는 스캔 코드 0x36)
+                else if (vk == 16) vk = ShiftSide(msg.LParam);
                 // 버프·반복·도핑 키를 받을 때 조합 키를 먼저 누르면: 조합 키는 칸 키로 받지 않고 다음 키를 기다린다.
                 // 그 다음 키를 칸 키로 받고 이 칸의 '조합 키 누른 채로 쓰기'를 켠다.
-                if (capturing >= 20 && st.ComboKey != 0 && vk == st.ComboKey) { captureCombo = true; return true; }
+                if (capturing >= 20 && JanusWatch.KeyIs(st.ComboKey, vk)) { captureCombo = true; return true; }
                 if (capturing >= 20 && captureCombo && vk != 0 && comboSws.TryGetValue(capturing, out var csw))
                 {
                     switch (capturing)
@@ -1954,6 +1956,9 @@ sealed class JanusForm : Form, IMessageFilter
     [DllImport("imm32.dll")] static extern int ImmGetVirtualKey(IntPtr hWnd);
     [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
 
+    /// <summary>Shift 키 메시지가 왼쪽(160)인지 오른쪽(161)인지 스캔 코드로 가린다</summary>
+    static int ShiftSide(IntPtr lParam) => ((lParam.ToInt64() >> 16) & 0xFF) == 0x36 ? 161 : 160;
+
     /// <summary>한글 입력기가 가로챈 키(ProcessKey)의 실제 키를 찾는다.</summary>
     static Keys RealKey(ref Message msg)
     {
@@ -1981,7 +1986,7 @@ sealed class JanusForm : Form, IMessageFilter
         if (capturing == 1 && captureMod != 0 && (m.Msg == 0x101 || m.Msg == 0x105)
             && (int)m.WParam == captureMod && ((m.LParam.ToInt64() >> 24) & 1) == 0)
         {
-            st.JanusKey = captureMod; st.JanusMod = 0; st.Save();
+            st.JanusKey = captureMod == 16 ? ShiftSide(m.LParam) : captureMod; st.JanusMod = 0; st.Save();
             capturing = 0; captureMod = 0;
             UpdateKeys(); UpdateStatus();
             return true;

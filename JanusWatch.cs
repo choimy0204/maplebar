@@ -124,12 +124,12 @@ sealed class JanusWatch
         bool comboTaken = false;
         if (held)
         {
-            for (int i = 0; i < BuffSlots; i++) if (ComboOnBuff(i) && st.Buffs[i].Key == vk) comboTaken = true;
-            for (int i = 0; i < DopeSlots; i++) if (ComboOnDope(i) && st.Dopes[i].Key == vk) comboTaken = true;
-            for (int i = 0; i < RepeatSlots; i++) if (ComboOnRepeat(i) && st.Repeats[i].Key == vk) comboTaken = true;
-            for (int i = 0; i < OnceSlots; i++) if (ComboOnOnce(i) && st.Onces[i].Key == vk) comboTaken = true;
+            for (int i = 0; i < BuffSlots; i++) if (ComboOnBuff(i) && KeyIs(st.Buffs[i].Key, vk)) comboTaken = true;
+            for (int i = 0; i < DopeSlots; i++) if (ComboOnDope(i) && KeyIs(st.Dopes[i].Key, vk)) comboTaken = true;
+            for (int i = 0; i < RepeatSlots; i++) if (ComboOnRepeat(i) && KeyIs(st.Repeats[i].Key, vk)) comboTaken = true;
+            for (int i = 0; i < OnceSlots; i++) if (ComboOnOnce(i) && KeyIs(st.Onces[i].Key, vk)) comboTaken = true;
         }
-        bool Hit(int key, bool combo) => key == vk && (combo ? held : !comboTaken);
+        bool Hit(int key, bool combo) => KeyIs(key, vk) && (combo ? held : !comboTaken);
         int b = 0, d = 0, r = 0, o = 0;
         for (int i = 0; i < BuffSlots; i++) if (Hit(st.Buffs[i].Key, ComboOnBuff(i))) b |= 1 << i;
         for (int i = 0; i < DopeSlots; i++) if (Hit(st.Dopes[i].Key, ComboOnDope(i))) d |= 1 << i;
@@ -182,8 +182,8 @@ sealed class JanusWatch
             // 누른 키를 하나씩, 누른 순서와 시각 그대로 처리한다 (2와 엔터가 한꺼번에 와도 둘 다 센다)
             foreach (var p in KeyHook.Drain())
             {
-                // 훅은 왼쪽·오른쪽 Shift·Ctrl·Alt를 따로 알려 준다 → 설정에 저장된 공통 키로 맞춘다
-                int vk = p.Vk switch { 160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, var v => v };
+                // 훅은 왼쪽·오른쪽 Shift·Ctrl·Alt를 따로 알려 준다. 설정 키와는 KeyIs로 맞춘다
+                int vk = p.Vk;
                 if (vk == 0) continue;
                 bool g = Game.IsGame(p.Pid);
                 var (mask, dmask, rmask, omask) = SlotMasks(vk, p.Combo);
@@ -191,9 +191,9 @@ sealed class JanusWatch
                     Log.Write("키", $"vk={vk} 조합={p.Combo} 게임={g} pid={p.Pid} 버프칸={mask} 도핑칸={dmask}");
                 for (int i = 0; i < RepeatSlots; i++) if ((rmask >> i & 1) != 0) RepeatKey(i, p.At, g);
                 for (int i = 0; i < OnceSlots; i++) if ((omask >> i & 1) != 0) OnceKey(i, p.At, g);
-                if (vk == st.ErdaKey) ErdaKey(p.At, g);
-                bool janusHit = vk == st.JanusKey && (st.JanusMod == 0 || (p.Mods & KeyHook.ModBit(st.JanusMod)) != 0);
-                Step(p.At, g, janusHit, vk == st.NpcKey, mask, vk == 0x0D,
+                if (KeyIs(st.ErdaKey, vk)) ErdaKey(p.At, g);
+                bool janusHit = KeyIs(st.JanusKey, vk) && (st.JanusMod == 0 || (p.Mods & KeyHook.ModBit(st.JanusMod)) != 0);
+                Step(p.At, g, janusHit, KeyIs(st.NpcKey, vk), mask, vk == 0x0D,
                     dmask, Array.IndexOf(Arrows, vk) >= 0 ? 1 : 0);
             }
             Step(DateTime.Now, false, false, false, 0, false, 0, 0); // 시간이 다 됐는지만 본다
@@ -679,6 +679,13 @@ sealed class JanusWatch
         return hit;
     }
 
+    /// <summary>누른 키(vk)가 설정 키(set)인지. 예전에 저장한 Shift·Ctrl·Alt(16·17·18)는 왼쪽·오른쪽 둘 다로 본다.
+    /// 왼쪽 Shift(160)·오른쪽 Shift(161)로 정한 키는 그쪽만 맞다</summary>
+    public static bool KeyIs(int set, int vk) => set != 0 && (set == vk || set == vk switch
+    {
+        160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, _ => -1,
+    });
+
     /// <summary>같이 누르는 키가 있으면 "Shift+Num 9"처럼 붙여 쓴다</summary>
     public static string KeyName(int mod, int vk) => mod == 0 || vk == 0 ? KeyName(vk) : KeyName(mod) + "+" + KeyName(vk);
 
@@ -686,7 +693,9 @@ sealed class JanusWatch
     {
         >= Keys.NumPad0 and <= Keys.NumPad9 => "Num " + (vk - 0x60),
         Keys.Decimal => "Num .",
-        Keys.ShiftKey or Keys.LShiftKey or Keys.RShiftKey => "Shift",
+        Keys.ShiftKey => "Shift",
+        Keys.LShiftKey => "왼쪽 Shift",
+        Keys.RShiftKey => "오른쪽 Shift",
         Keys.ControlKey or Keys.LControlKey or Keys.RControlKey => "Ctrl",
         Keys.Menu or Keys.LMenu or Keys.RMenu => "Alt",
         >= Keys.D0 and <= Keys.D9 => ((char)vk).ToString(),
