@@ -12,20 +12,26 @@ public static class SiteMenu
     public const string InfoPath = "/ko/info";      // 캐릭터정보: ?name=닉네임
     public const string BossCutPath = "/ko/result"; // 효율∙보스컷: ?name=닉네임
 
-    // 닉네임(?name=)을 붙여 여는 페이지: 캐릭터정보 + 분석&최적화 전체
+    // 닉네임(?name=)을 붙여 여는 페이지: 환산 메뉴 전체 (캐릭터정보 + 분석&최적화)
     static HashSet<string>? namePages;
     public static HashSet<string> NamePages => namePages ??= BuildNamePages(); // Top보다 먼저 초기화되지 않게 늦게 만든다
 
     static HashSet<string> BuildNamePages()
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { InfoPath, BossCutPath };
-        foreach (var it in Top.First(t => t.Name == "분석&최적화").Items!)
+        foreach (var it in Top.First(t => t.Name == ConvertName).Items!)
             if (it.Path != null) set.Add(it.Path);
         return set;
     }
 
     /// <summary>예전(1.1.62까지) 이름은 "AI"였다. 설정에 남은 옛 이름은 Settings.Load가 바꿔 준다</summary>
     public const string ToolsName = "도구";
+
+    /// <summary>예전의 "캐릭터정보"·"분석&최적화"를 합친 메뉴 이름. 설정에 남은 옛 이름은 Settings.Load가 바꿔 준다</summary>
+    public const string ConvertName = "환산";
+
+    /// <summary>맨 오른쪽 파티 메뉴 이름</summary>
+    public const string PartyName = "파티 구성";
 
     static MenuEntry H(string t) => new(t, null);
     static MenuEntry I(string t, string p) => new(t, p);
@@ -55,9 +61,11 @@ public static class SiteMenu
     public static readonly TopMenu[] Top =
     {
         new("직접입력", "/ko/manual/input", null),
-        new("캐릭터정보", InfoPath, null),
-        new("분석&최적화", null, new[]
+        // 환산: 캐릭터정보와 분석&최적화를 한 메뉴로 합쳤다
+        new(ConvertName, null, new[]
         {
+            H("캐릭터"),
+            I("캐릭터정보", InfoPath),
             H("보스 / 사냥 분석"),
             I("효율∙보스컷", BossCutPath), I("파티 보스컷", "/ko/multi-result"),
             I("보스세팅 최적화", "/ko/optimizer"), I("주간 보스 정산", "/ko/boss-income"),
@@ -125,6 +133,11 @@ public static class SiteMenu
             I("ChatGPT", Ai.ChatGpt), I("Claude", Ai.Claude),
             H("유틸리티"),
             I("계산기", CalcForm.Path), I("메모", MemoForm.Path),
+        }),
+        // 파티 구성: 바가 직접 여는 작은 창 (맨 오른쪽). 파티에 들어가 있으면 글자를 눌러 파티 창을 연다
+        new(PartyName, PartyForm.Path, new[]
+        {
+            I("파티 창설", PartyForm.CreatePath), I("파티 입장", PartyForm.JoinPath), I("설정", PartyForm.SettingsPath),
         }),
     };
 }

@@ -107,6 +107,8 @@ public class Settings
     public DateTime? DopeStart { get; set; }       // 실제로 효과가 시작되는 시각 (사용 대기를 더한 값)
     public bool DopeDelayOn { get; set; } = true;  // 쓰고 몇 초 뒤에 효과가 붙는 경우
     public int DopeDelaySec { get; set; } = 3;
+    /// <summary>파티 보스 쿨타임 설정 (직업 줄임말·키·감소·알림)</summary>
+    public PartyBossSettings Party { get; set; } = new();
     public List<DopeSlot> Dopes { get; set; } = new(); // 위의 도핑 하나짜리 칸은 예전 설정을 옮기는 데만 쓴다
     // 정령의 펜던트 확인: 고른 버프가 도는 동안 maple.gg에서 장비를 보고, 안 꼈으면 20초마다 알린다
     public string? MapleNick { get; set; }
@@ -219,7 +221,27 @@ public class Settings
         for (int i = 0; i < s.BarHiddenTops.Count; i++) if (s.BarHiddenTops[i] == "AI") { s.BarHiddenTops[i] = SiteMenu.ToolsName; renamed = true; }
         for (int i = 0; i < s.BarHiddenItems.Count; i++)
             if (s.BarHiddenItems[i].StartsWith("AI/", StringComparison.Ordinal)) { s.BarHiddenItems[i] = SiteMenu.ToolsName + s.BarHiddenItems[i][2..]; renamed = true; }
+        // "캐릭터정보"와 "분석&최적화" 메뉴가 "환산" 하나로 합쳐졌다: 바 순서·숨김 설정을 옮긴다
+        const string oldInfo = "캐릭터정보", oldAnalysis = "분석&최적화";
+        if (s.BarOrder.Contains(oldInfo) || s.BarOrder.Contains(oldAnalysis))
+        {
+            int at = s.BarOrder.FindIndex(n => n == oldInfo || n == oldAnalysis);
+            s.BarOrder.RemoveAll(n => n == oldInfo || n == oldAnalysis);
+            if (!s.BarOrder.Contains(SiteMenu.ConvertName)) s.BarOrder.Insert(Math.Min(at, s.BarOrder.Count), SiteMenu.ConvertName);
+            renamed = true;
+        }
+        if (s.BarHiddenTops.Contains(oldInfo) || s.BarHiddenTops.Contains(oldAnalysis))
+        {
+            bool bothHidden = s.BarHiddenTops.Contains(oldInfo) && s.BarHiddenTops.Contains(oldAnalysis);
+            s.BarHiddenTops.RemoveAll(n => n == oldInfo || n == oldAnalysis);
+            if (bothHidden && !s.BarHiddenTops.Contains(SiteMenu.ConvertName)) s.BarHiddenTops.Add(SiteMenu.ConvertName);
+            renamed = true;
+        }
+        for (int i = 0; i < s.BarHiddenItems.Count; i++)
+            if (s.BarHiddenItems[i].StartsWith(oldAnalysis + "/", StringComparison.Ordinal))
+            { s.BarHiddenItems[i] = SiteMenu.ConvertName + s.BarHiddenItems[i][oldAnalysis.Length..]; renamed = true; }
         if (renamed) s.Save();
+        s.Party ??= new();
         s.Decks ??= new();
         s.CalcPresets ??= new();
         s.CalcPresets.RemoveAll(p => p == null);
@@ -351,6 +373,7 @@ public class AlertPreset
     public List<RepeatSlot> Repeats { get; set; } = new();
     public List<OnceSlot>? Onces { get; set; }
     public List<string> AlertScreens { get; set; } = new() { "ALL" };
+    public PartyBossSettings? Party { get; set; }
 
     // 칸 목록은 JSON으로 한 번 돌려 따로 떼어 낸 복사본을 쓴다 (원본을 고쳐도 프리셋이 바뀌지 않게)
     static List<T> Copy<T>(List<T>? src) =>
@@ -371,6 +394,7 @@ public class AlertPreset
             Buffs = Copy(s.Buffs), Dopes = Copy(s.Dopes), Repeats = Copy(s.Repeats), Onces = Copy(s.Onces),
             MapleNick = s.MapleNick, PendantOn = s.PendantOn, PendantBuff = s.PendantBuff,
             AlertScreens = new(s.AlertScreens ?? new()),
+            Party = s.Party?.Clone(),
         };
         foreach (var b in p.Buffs) { b.Start = null; b.KeyAt = null; b.EnterAt = null; }
         foreach (var d in p.Dopes) d.Start = null;
@@ -391,6 +415,18 @@ public class AlertPreset
         s.MapleNick = MapleNick; s.PendantOn = PendantOn; s.PendantBuff = PendantBuff;
         s.AlertScreens = new(AlertScreens ?? new() { "ALL" });
         if (s.AlertScreens.Count == 0) s.AlertScreens.Add("ALL");
+        if (Party != null)
+        {
+            // 불러온 값은 믿지 않는다: 줄임말 4자·키 0~255·초 0~9·퍼센트 0~50으로 맞춘다
+            var p = Party.Clone();
+            p.Job = new string((p.Job ?? "").Where(c => !char.IsControl(c)).ToArray()).Trim();
+            if (p.Job.Length > 4) p.Job = p.Job[..4];
+            p.OriginKey = Math.Clamp(p.OriginKey, 0, 255); p.BurstKey = Math.Clamp(p.BurstKey, 0, 255);
+            p.SemiKey = Math.Clamp(p.SemiKey, 0, 255); p.AscentKey = Math.Clamp(p.AscentKey, 0, 255);
+            p.SecCut = Math.Clamp(p.SecCut, 0, 9);
+            p.PctCut = double.IsNaN(p.PctCut) ? 0 : Math.Clamp(p.PctCut, 0, 50);
+            s.Party = p;
+        }
         var buffs = Copy(Buffs);
         for (int i = 0; i < buffs.Count && i < s.Buffs.Count; i++)
         { buffs[i].Start = s.Buffs[i].Start; buffs[i].KeyAt = s.Buffs[i].KeyAt; buffs[i].EnterAt = s.Buffs[i].EnterAt; }

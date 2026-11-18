@@ -46,6 +46,9 @@ public class BarForm : Form
         UI.Z = Game.Area() is Rectangle game ? Game.ZoomFor(game, DeviceDpi) : UI.FitZoom(Screen.PrimaryScreen!, DeviceDpi);
         sc = DeviceDpi / 96f * UI.Z;
         UI.Dark = settings.DarkMode; // 이 바와 앞으로 여는 창이 쓸 색
+        PartyHub.St = settings;      // 파티 보스 설정 (파티 창·연결·보스 표시가 같이 쓴다)
+        PartyLink.Init(this);
+        PartyForm.Watch(this, settings, sc);
         Text = "메이플 바";
         FormBorderStyle = FormBorderStyle.None;
         TopMost = true;
@@ -483,6 +486,8 @@ public class BarForm : Form
         if (path == CalcForm.Path) { CalcForm.Open(this, settings, sc); return; }
         // 메모: 스티커 메모 같은 작은 창
         if (path == MemoForm.Path) { MemoForm.Open(this, settings, sc); return; }
+        // 파티 구성: 파티 창설·입장·설정 작은 창 (파티 중이면 상태 창)
+        if (PartyForm.IsPath(path)) { PartyForm.Open(this, settings, sc, path); return; }
         // 뮤직은 이미 열린 창에서 페이지만 바꾼다 (노래가 두 곳에서 겹쳐 나오지 않게)
         if (Music.IsMusic(path))
         {
@@ -1296,6 +1301,7 @@ public class BarForm : Form
         showWait?.Unregister(null);
         foreach (var t in new[] { gameTimer, chipTimer, keepTop, foldTimer, megaTimer }) { t.Stop(); t.Dispose(); }
         janus?.Stop();
+        PartyLink.Shutdown();
         pendant?.Dispose(); pendant = null;
         study?.Dispose(); study = null;
         inven?.Stop();
