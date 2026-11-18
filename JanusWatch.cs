@@ -88,6 +88,7 @@ sealed class JanusWatch
         for (int i = 0; i < DopeSlots; i++)
             if (DopeEnd(i) is DateTime de && now >= de.AddMinutes(1)) { st.Dopes[i].Start = null; st.Save(); }
         KeyHook.Start();
+        PartyBoss.Init(sc);
         poll.Tick += (_, _) => Tick();
         poll.Start();
     }
@@ -160,10 +161,16 @@ sealed class JanusWatch
         foreach (var o in st.Onces) hookKeys.Add(o.Key);
         hookKeys.AddRange(Arrows);
         hookKeys.Add(st.JanusKey); hookKeys.Add(st.NpcKey); hookKeys.Add(st.ComboKey); hookKeys.Add(st.ErdaKey); hookKeys.Add(0x0D);
+        if (PartyHub.Active) hookKeys.AddRange(PartyKeys());
         if (CollectionsMarshal.AsSpan(hookKeys).SequenceEqual(CollectionsMarshal.AsSpan(hookKeysSent))) return;
         hookKeysSent.Clear(); hookKeysSent.AddRange(hookKeys);
         KeyHook.Watch(hookKeys);
     }
+
+    // 파티 보스 키 네 개 (오리진·극딜·준극·어센트). 설정이 없으면 0
+    int[] PartyKeys() => st.Party is PartyBossSettings p
+        ? new[] { p.OriginKey, p.BurstKey, p.SemiKey, p.AscentKey } : new int[4];
+    readonly bool[] partyDown = new bool[4];
 
     void Tick()
     {
@@ -173,7 +180,13 @@ sealed class JanusWatch
         if (!st.AlertsOn)
         {
             if (alertsWereOn) { alertsWereOn = false; StopAll(); }
-            if (KeyHook.Active) KeyHook.Drain();
+            if (KeyHook.Active)
+            {
+                // 파티 보스 키는 전체 알림과 상관없이 센다
+                foreach (var p in KeyHook.Drain())
+                    if (p.Vk != 0 && PartyHub.Active && Game.IsGame(p.Pid)) PartyBoss.Key(p.Vk);
+            }
+            else PartyKeysPolled();
             return;
         }
         alertsWereOn = true;
@@ -186,6 +199,7 @@ sealed class JanusWatch
                 int vk = p.Vk;
                 if (vk == 0) continue;
                 bool g = Game.IsGame(p.Pid);
+                if (g && PartyHub.Active) PartyBoss.Key(vk);
                 var (mask, dmask, rmask, omask) = SlotMasks(vk, p.Combo);
                 if (Debug && (vk == st.ComboKey || st.Buffs.Any(b => b.Key == vk) || st.Dopes.Any(d => d.Key == vk) || vk == 0x0D))
                     Log.Write("키", $"vk={vk} 조합={p.Combo} 게임={g} pid={p.Pid} 버프칸={mask} 도핑칸={dmask}");
@@ -213,6 +227,7 @@ sealed class JanusWatch
         int arrows = 0;
         for (int i = 0; i < 4; i++) if (Pressed(Arrows[i], ref arrowDown[i])) arrows++;
         bool fg = Game.Foreground();
+        PartyKeysPolled();
         if (Pressed(st.ErdaKey, ref erdaDown)) ErdaKey(DateTime.Now, fg);
         for (int i = 0; i < RepeatSlots; i++)
             if (Pressed(st.Repeats[i].Key, ref repeatDown[i]) && (SlotMasks(st.Repeats[i].Key, held).rep >> i & 1) != 0) RepeatKey(i, DateTime.Now, fg);
@@ -668,6 +683,16 @@ sealed class JanusWatch
         }
     }
 
+
+    // 훅이 없을 때 파티 보스 키를 직접 확인한다 (메이플 창이 앞에 있을 때만 넘긴다)
+    void PartyKeysPolled()
+    {
+        if (!PartyHub.Active) return;
+        var keys = PartyKeys();
+        bool fg = Game.Foreground();
+        for (int i = 0; i < 4; i++)
+            if (Pressed(keys[i], ref partyDown[i]) && fg) PartyBoss.Key(keys[i]);
+    }
 
     static bool Pressed(int vk, ref bool was)
     {
