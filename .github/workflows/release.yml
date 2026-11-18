@@ -33,9 +33,12 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           $tag = $env:TAG.TrimStart("v")
+          # v1.1.8-partyboss처럼 뒤에 이름이 붙으면 시험판: 앞 숫자만 csproj와 맞춰 본다
+          $base = $tag.Split("-")[0]
           $ver = ([xml](Get-Content MapleBar.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-          if ($tag -ne $ver) { throw "태그($tag)와 MapleBar.csproj 버전($ver)이 달라요" }
+          if ($base -ne $ver) { throw "태그($tag)와 MapleBar.csproj 버전($ver)이 달라요" }
           "VER=$ver" >> $env:GITHUB_ENV
+          "PRE=$(if ($tag -ne $base) { '1' } else { '' })" >> $env:GITHUB_ENV
 
       - name: exe 만들기
         run: dotnet publish MapleBar.csproj -c Release -r win-x64 --self-contained true -o publish
@@ -87,4 +90,10 @@ jobs:
           "@
           # 같은 버전을 다시 올리면(핫픽스) 예전 릴리스를 지우고 새로 만든다
           gh release view $env:TAG *> $null; if ($LASTEXITCODE -eq 0) { gh release delete $env:TAG --yes }
-          gh release create $env:TAG "dist\MapleBar-Setup-$env:VER.exe" dist\SHA256.txt dist\MapleBar-Setup.exe --title "메이플 바 $env:VER" --notes $notes
+          if ($env:PRE) {
+            # 시험판: 자동 업데이트와 받기용 설치기는 releases/latest만 보므로 시험판은 건드리지 않는다.
+            # 고정 설치기는 최신 정식판을 받으니 올리지 않는다.
+            gh release create $env:TAG "dist\MapleBar-Setup-$env:VER.exe" dist\SHA256.txt --prerelease --title "메이플 바 $env:TAG (시험판)" --notes $notes
+          } else {
+            gh release create $env:TAG "dist\MapleBar-Setup-$env:VER.exe" dist\SHA256.txt dist\MapleBar-Setup.exe --title "메이플 바 $env:VER" --notes $notes
+          }
