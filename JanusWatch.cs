@@ -440,7 +440,8 @@ sealed class JanusWatch
 
     /// <summary>바의 칩을 눌렀을 때: 세던 시간을 지운다.</summary>
     public void Stop() { poll.Stop(); poll.Dispose(); } // 끝낸 감시는 다시 켜지 않는다 (바를 새로 만들 때 새 감시가 생긴다)
-    public void CancelJanus() => ClearJanus(DateTime.Now);
+    // 칸을 누르면 50초 무시 기록도 지운다 (잘못 누른 뒤 칸을 누르고 다시 깔면 바로 맞춰지게)
+    public void CancelJanus() { ClearJanus(DateTime.Now); lastInstall = null; }
 
     bool alertsWereOn = true; // 처음부터 꺼져 있으면 첫 확인 때 남은 시간을 비운다
     /// <summary>세던 알림을 모두 멈춘다 (전체 알림을 끌 때). 칸마다 켜 둔 값은 바꾸지 않는다</summary>
@@ -679,12 +680,10 @@ sealed class JanusWatch
         return hit;
     }
 
-    /// <summary>누른 키(vk)가 설정 키(set)인지. 예전에 저장한 Shift·Ctrl·Alt(16·17·18)는 왼쪽·오른쪽 둘 다로 본다.
-    /// 왼쪽 Shift(160)·오른쪽 Shift(161)로 정한 키는 그쪽만 맞다</summary>
-    public static bool KeyIs(int set, int vk) => set != 0 && (set == vk || set == vk switch
-    {
-        160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, _ => -1,
-    });
+    /// <summary>누른 키(vk)가 설정 키(set)인지. Shift·Ctrl·Alt는 왼쪽·오른쪽을 같은 키로 본다
+    /// (1.1.8에서 왼쪽·오른쪽 Shift(160·161)로 저장된 키도 둘 다로 맞춘다)</summary>
+    public static bool KeyIs(int set, int vk) => set != 0 && Side(set) == Side(vk);
+    static int Side(int vk) => vk switch { 160 or 161 => 16, 162 or 163 => 17, 164 or 165 => 18, _ => vk };
 
     /// <summary>같이 누르는 키가 있으면 "Shift+Num 9"처럼 붙여 쓴다</summary>
     public static string KeyName(int mod, int vk) => mod == 0 || vk == 0 ? KeyName(vk) : KeyName(mod) + "+" + KeyName(vk);
@@ -693,9 +692,7 @@ sealed class JanusWatch
     {
         >= Keys.NumPad0 and <= Keys.NumPad9 => "Num " + (vk - 0x60),
         Keys.Decimal => "Num .",
-        Keys.ShiftKey => "Shift",
-        Keys.LShiftKey => "왼쪽 Shift",
-        Keys.RShiftKey => "오른쪽 Shift",
+        Keys.ShiftKey or Keys.LShiftKey or Keys.RShiftKey => "Shift",
         Keys.ControlKey or Keys.LControlKey or Keys.RControlKey => "Ctrl",
         Keys.Menu or Keys.LMenu or Keys.RMenu => "Alt",
         >= Keys.D0 and <= Keys.D9 => ((char)vk).ToString(),
