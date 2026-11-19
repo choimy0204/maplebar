@@ -21,7 +21,19 @@ public class BarForm : Form
     readonly FlowLayoutPanel left, right;
     readonly Panel searchBox;
     readonly TextBox search = new();
-    readonly Label recentChip;
+    readonly RecentDrop drop;
+
+    long dropHiddenAt;
+    void HideDropIfLeft()
+    {
+        if (search.Focused && ActiveForm == this) return;
+        if (drop.Visible) dropHiddenAt = Environment.TickCount64;
+        drop.Hide();
+    }
+
+    void ShowDrop() => drop.Open(new Point(searchBox.PointToScreen(Point.Empty).X, Bottom + S(8)), searchBox.Width,
+        // 글이 통째로 골라져 있으면(막 들어온 상태) 걸러 내지 않고 모두 보여 준다
+        search.SelectionLength > 0 && search.SelectionLength == search.TextLength ? "" : search.Text.Trim());
     readonly float sc;
 
     int S(int v) => UI.Scale(v, sc);
@@ -138,10 +150,43 @@ public class BarForm : Form
         search.Font = OwnFont(new Font("맑은 고딕", 10.5f * UI.Z));
         search.Width = searchBox.Width - S(44);
         search.Location = new Point(S(12), (searchBox.Height - search.PreferredHeight) / 2);
+        // 최근 검색 목록: 검색칸에 들어오면 콤보박스처럼 아래로 펼쳐진다
+        drop = new RecentDrop(this, settings, sc)
+        {
+            PickInfo = n => { search.Text = n; Search(SiteMenu.InfoPath); },
+        };
+        drop.VisibleChanged += (_, _) => menusOpen = Math.Max(0, menusOpen + (drop.Visible ? 1 : -1));
+        // 칸을 눌렀을 때·글자를 칠 때만 펼친다. 포커스가 들락날락할 때마다 열고 닫으면 깜빡이므로,
+        // 닫는 건 잠깐 뒤에 정말로 칸을 떠났는지 보고 정한다
+        search.MouseDown += (_, _) => { if (!drop.Visible) ShowDrop(); };
+        // 칸에 포커스가 오면 펼친다 (방금 닫힌 직후면 다시 열지 않아 깜빡이지 않게)
+        search.GotFocus += (_, _) => BeginInvoke(() =>
+        {
+            if (search.Focused && ActiveForm == this && Environment.TickCount64 - dropHiddenAt > 400) ShowDrop();
+        });
+        // 포커스가 있는 칸 위에 마우스를 올려도 펼친다
+        search.MouseEnter += (_, _) => { if (search.Focused && !drop.Visible) ShowDrop(); };
+        search.TextChanged += (_, _) => { if (search.Focused && ActiveForm == this) ShowDrop(); };
+        search.LostFocus += (_, _) => BeginInvoke(HideDropIfLeft);
+        Deactivate += (_, _) => BeginInvoke(HideDropIfLeft);
         search.KeyDown += (_, e) =>
         {
-            if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Search(SiteMenu.InfoPath); }
-            else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; search.Clear(); }
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                if (drop.Selected is string pick) search.Text = pick;
+                Search(SiteMenu.InfoPath);
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                e.SuppressKeyPress = true;
+                if (drop.Visible) drop.Hide(); else search.Clear();
+            }
+            else if (e.KeyCode is Keys.Down or Keys.Up)
+            {
+                e.Handled = true;
+                if (!drop.Visible) ShowDrop(); else drop.Step(e.KeyCode == Keys.Down ? 1 : -1);
+            }
         };
         // 🔍 글자는 파란 컬러 그림으로 나와서 튀므로, 돋보기를 글씨색으로 직접 그린다
         var searchIcon = UI.Button(" ", "캐릭터정보 검색 (Enter)", () => Search(SiteMenu.InfoPath), sc);
@@ -156,14 +201,11 @@ public class BarForm : Form
         search.LostFocus += (_, _) => searchBox.Invalidate();
         right.Controls.Add(searchBox);
 
-
-        recentChip = UI.Button("", "최근 검색한 캐릭터", ShowRecentMenu, sc,
-            // 다크 모드: 누런 갈색 칸 대신 차콜 칸에 호박색 글씨
-            fore: UI.Dark ? UI.AccentText : Color.FromArgb(150, 80, 0),
-            back: UI.Dark ? UI.HoverBack : Color.FromArgb(255, 243, 224));
-        recentChip.Margin = new Padding(S(8), 0, S(4), 0);
-        right.Controls.Add(recentChip);
-        UpdateRecentChip();
+        // 설정 아이콘 왼쪽: 전체 알림 켜기·끄기 (끄면 각 알림 스위치는 그대로 두고 아무 알림도 세지 않는다)
+        alertSw = new RectSwitch(sc, "", settings.AlertsOn) { Bell = true, Margin = new Padding(S(6), 0, S(4), 0) };
+        alertSw.Changed += v => { settings.AlertsOn = v; settings.Save(); TipAlert(); };
+        TipAlert();
+        right.Controls.Add(alertSw);
 
         Label? gear = null;
         // ⚙ 글자는 컬러 그림(꽃처럼 보임)으로 나와서, 톱니바퀴를 직접 그린다
@@ -173,6 +215,10 @@ public class BarForm : Form
         right.Controls.Add(UI.Button("—", "바 숨기기 (Ctrl+Alt+M으로 다시 열기)", HideAll, sc));
         right.Controls.Add(UI.Button("✕", "종료 (열린 창도 모두 닫힘)", Close, sc));
     }
+
+    readonly RectSwitch alertSw;
+
+    void TipAlert() => UI.SetTip(alertSw, alertSw.On ? "누르면 알림을 모두 꺼요" : "누르면 알림을 다시 켜요");
 
     void DrawGear(Graphics g, Rectangle r, Color color)
     {
@@ -464,9 +510,9 @@ public class BarForm : Form
             searchFlash.Start();
             return;
         }
+        drop.Hide();
         settings.AddRecent(name);
         settings.Save();
-        UpdateRecentChip();
 
         // 열린 캐릭터 창을 모두 이 캐릭터로 바꾸고, 누른 화면이 없으면 새 창으로 연다
         bool shown = WebWindow.ApplyName(name, path);
@@ -522,71 +568,6 @@ public class BarForm : Form
         }
     }
 
-    void ShowRecentMenu()
-    {
-        var cms = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 10f * UI.Z), ShowImageMargin = false });
-        // 별표한 캐릭터는 기록에서 밀려나거나 지워져도 목록에 남긴다
-        var names = settings.Recent.ToList();
-        var star = settings.StarNick;
-        if (star != null && !names.Any(x => string.Equals(x, star, StringComparison.OrdinalIgnoreCase))) names.Insert(0, star);
-        if (names.Count == 0)
-        {
-            cms.Items.Add(new ToolStripMenuItem("검색 기록이 없어요") { Enabled = false });
-        }
-        // 별 칸: 글 왼쪽의 ★/☆. 누르면 메뉴를 닫지 않고 별만 바꾼다
-        var tip = new ToolTip { InitialDelay = 0, ShowAlways = true };
-        cms.Disposed += (_, _) => tip.Dispose();
-        var items = new List<(ToolStripMenuItem mi, string n)>();
-        long starAt = 0; bool tipOn = false;
-        bool StarHit() => Environment.TickCount64 - starAt < 600;
-        int StarW() => TextRenderer.MeasureText("★ ", cms.Font).Width + S(6);
-        bool IsStarred(string n) => string.Equals(settings.StarNick, n, StringComparison.OrdinalIgnoreCase);
-        void Paint() { foreach (var (m, n) in items) m.Text = (IsStarred(n) ? "★  " : "☆  ") + n; }
-        cms.Closing += (_, e) => { if (StarHit() && e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true; };
-        foreach (var name in names)
-        {
-            var n = name;
-            var mi = new ToolStripMenuItem(n);
-            items.Add((mi, n));
-            mi.MouseMove += (_, e) =>
-            {
-                bool on = e.X < StarW();
-                if (on == tipOn) return;
-                tipOn = on;
-                if (on) tip.Show("별표한 캐릭터는 검색칸이 비어 있을 때\n기본으로 불러와요", cms, cms.PointToClient(Cursor.Position) + new Size(S(14), S(18)));
-                else tip.Hide(cms);
-            };
-            mi.MouseLeave += (_, _) => { if (tipOn) { tipOn = false; tip.Hide(cms); } };
-            mi.MouseDown += (_, e) =>
-            {
-                if (e.Button != MouseButtons.Left || e.X >= StarW()) return;
-                starAt = Environment.TickCount64;
-                // 다른 캐릭터를 누르면 그쪽으로 옮기고, 같은 캐릭터를 다시 누르면 끈다
-                settings.StarNick = IsStarred(n) ? null : n;
-                settings.Save();
-                Paint();
-            };
-            EventHandler openInfo = (_, _) => { if (StarHit()) return; search.Text = n; Search(SiteMenu.InfoPath); };
-            mi.Click += openInfo;
-            var info = new ToolStripMenuItem("캐릭터정보");
-            info.Click += openInfo;
-            var boss = new ToolStripMenuItem("보스컷");
-            boss.Click += (_, _) => { search.Text = n; Search(SiteMenu.BossCutPath); };
-            mi.DropDownItems.Add(info);
-            mi.DropDownItems.Add(boss);
-            cms.Items.Add(mi);
-        }
-        Paint();
-        if (settings.Recent.Count > 0)
-        {
-            cms.Items.Add(new ToolStripSeparator());
-            var clear = new ToolStripMenuItem("기록 지우기");
-            clear.Click += (_, _) => { settings.Recent.Clear(); settings.Save(); UpdateRecentChip(); };
-            cms.Items.Add(clear);
-        }
-        ShowBelowBar(cms, recentChip);
-    }
-
     Control? closedByAnchor;
     long closedAt;
     int menusOpen; // 바의 메뉴가 열려 있는 동안은 바를 맨 위로 올리지 않는다 (메뉴가 바 뒤로 숨지 않게)
@@ -614,12 +595,6 @@ public class BarForm : Form
         };
         // 화면 오른쪽을 넘으면 윈도우가 알아서 안쪽으로 옮긴다
         cms.Show(new Point(anchor.PointToScreen(Point.Empty).X, Bottom + S(8)));
-    }
-
-    void UpdateRecentChip()
-    {
-        recentChip.Text = settings.Recent.Count > 0 ? settings.Recent[0] + " ▾" : "최근 ▾";
-        if (IsHandleCreated) LayoutBar();
     }
 
     void ShowSettingsMenu(Control anchor)
@@ -907,10 +882,7 @@ public class BarForm : Form
         }
         var erdaChip = new TimerChip(TimerChip.Kind.Buff, sc) { Key = "erda", Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.ErdaMain };
         erdaChip.Click += (_, _) => { w.CancelErda(); if (erdaChip.SetTime(null)) LayoutBar(); };
-        // 전체 알림을 꺼 두면 맨 앞에 OFF 칩 (누르면 다시 켠다)
-        var offChip = new TimerChip(TimerChip.Kind.Off, sc) { Key = "off", Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
-        offChip.Click += (_, _) => { settings.AlertsOn = true; settings.Save(); if (offChip.SetShown(false)) LayoutBar(); };
-        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips).Append(offChip))
+        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips))
         {
             right.Controls.Add(c);
             right.Controls.SetChildIndex(c, 0);
@@ -918,7 +890,7 @@ public class BarForm : Form
         // 칩을 끌어서 바에서 떼어 내거나 다시 붙인다 (떼어 둔 자리는 저장)
         // 바가 보이면 보이고, 직접 숨겼을 때는 설정에 따라 남긴다 (게임을 꺼서 저절로 숨으면 같이 숨는다)
         var dock = chipDock = new ChipDock(settings, this, sc, LayoutBar, () => Visible || (userHidden && !settings.ChipsHideWithBar));
-        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips).Append(offChip)) dock.Add(c);
+        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips)) dock.Add(c);
         dock.Restore();
         chipTimer.Tick += (_, _) =>
         {
@@ -931,7 +903,6 @@ public class BarForm : Form
                 changed |= buffChips[i].SetTime(w.BuffRemaining(i));
             }
             for (int i = 0; i < dopeChips.Length; i++) changed |= dopeChips[i].SetTime(w.DopeRemaining(i));
-            changed |= offChip.SetShown(!settings.AlertsOn);
             if (changed) LayoutBar();
             dock.Sync();
         };

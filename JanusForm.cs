@@ -179,15 +179,6 @@ sealed class JanusForm : Form, IMessageFilter
             allOff.Radius = S(6);
             Controls.Add(allOff);
             allOff.Location = new Point(close.Left - S(8) - allOff.PreferredWidth, y + S(2));
-            // 전체 알림 켜기: 끄면 각 알림 스위치는 그대로 두고 아무 알림도 세지 않는다
-            var allSw = new Toggle { On = st.AlertsOn, Size = new Size(S(40), S(22)) };
-            allSw.Location = new Point(allOff.Left - S(12) - allSw.Width, allOff.Top + (allOff.PreferredSize.Height - allSw.Height) / 2);
-            var allLabel = new Label { Text = "전체 알림", Font = F(9.5f, FontStyle.Bold), AutoSize = true, ForeColor = UI.Text };
-            allLabel.Location = new Point(allSw.Left - S(6) - allLabel.PreferredWidth, allOff.Top + (allOff.PreferredSize.Height - allLabel.PreferredHeight) / 2);
-            allSw.Changed += v => { st.AlertsOn = v; st.Save(); UpdateStatus(); };
-            // 바의 OFF 칩을 눌러 다시 켜면 이 스위치도 따라간다
-            liveHints.Add(() => { if (allSw.On != st.AlertsOn) allSw.On = st.AlertsOn; });
-            Controls.Add(allSw); Controls.Add(allLabel);
             // 1 · 2 페이지 넘기기는 머리 줄 가운데에 하나만 둔다 (페이지를 넘겨도 그 자리)
             int navW = S(230);
             MakePageTabs((pad + contentR - navW) / 2, y, navW);

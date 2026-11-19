@@ -52,7 +52,8 @@ public static class UI
     public static Color HoverBack => Dark ? Color.FromArgb(64, 70, 77) : Color.FromArgb(242, 242, 242);
     /// <summary>연한 강조 바탕 위 글씨 (다크에서는 조금 더 밝은 호박색)</summary>
     public static Color AccentText => Dark ? Color.FromArgb(242, 184, 119) : Accent;
-    public static Color SoftAccent => Dark ? Color.FromArgb(74, 58, 42) : Color.FromArgb(255, 243, 224);
+    /// <summary>가리킨·고른 칸 바탕. 다크에서는 어두운 주황(갈색)을 쓰지 않는다: 사용자가 여러 번 빼 달라고 한 색. 회색 칸 + 호박색 글자로.</summary>
+    public static Color SoftAccent => Dark ? HoverBack : Color.FromArgb(255, 243, 224);
     // 호박색: 스크립트·메모처럼 노란 느낌이 어울리는 곳 (갈색으로 탁해지지 않게 채도를 높인 칸 + 밝은 글자)
     public static Color AmberSoft => HoverBack; // 갈색 대신 차분한 회색 칸 + 호박색 글자 (바의 선택 칸과 같은 느낌)
     public static Color AmberText => AccentText;
@@ -141,6 +142,9 @@ public static class UI
     }
 
     static readonly ToolTip tip = new();
+
+    /// <summary>바뀌는 풍선 도움말을 단다 (Button으로 만들지 않은 칸용)</summary>
+    public static void SetTip(Control c, string text) => tip.SetToolTip(c, text);
 
     /// <summary>둥근 알약 모양 버튼. 마우스를 올리면 배경이 바뀐다.</summary>
     public static RoundLabel Button(string text, string tooltip, Action onClick, float sc,
