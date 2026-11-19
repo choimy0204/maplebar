@@ -119,6 +119,8 @@ sealed class ProgramForm : Form
         Row(p, ref y, "바 고정", "끄면 바를 안 쓸 때 3초 뒤 접혀요", !st.BarAutoHide, v => hooks.SetPinned(v));
         Row(p, ref y, "바를 숨겨도 알림 받기", "끄면 바를 숨긴 동안 알림이 뜨지 않아요", st.AlertWhenHidden,
             v => { st.AlertWhenHidden = v; st.Save(); });
+        Row(p, ref y, "바를 숨기면 떼어 낸 알림도 숨기기", "끄면 Ctrl+Alt+M으로 바를 숨겨도 떼어 낸 알림은 남아요", st.ChipsHideWithBar,
+            v => { st.ChipsHideWithBar = v; st.Save(); });
         // 자동 실행은 작업 스케줄러에 등록하므로 뒤에서 돌리고, 실패하면 스위치를 되돌린다
         bool busy = false;
         JanusForm.Toggle? auto = null;

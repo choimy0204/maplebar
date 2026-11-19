@@ -884,8 +884,8 @@ public class BarForm : Form
     // 타이머가 도는 동안 바 오른쪽 앞에 아이콘과 남은 시간을 띄운다
     void AddTimerChips(JanusWatch w)
     {
-        var janusChip = new TimerChip(TimerChip.Kind.Janus, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
-        var runeChip = new TimerChip(TimerChip.Kind.Rune, sc) { Visible = false, Margin = new Padding(S(2), 0, S(6), 0) };
+        var janusChip = new TimerChip(TimerChip.Kind.Janus, sc) { Key = "janus", Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+        var runeChip = new TimerChip(TimerChip.Kind.Rune, sc) { Key = "rune", Visible = false, Margin = new Padding(S(2), 0, S(6), 0) };
         // 칩을 누르면 그 타이머를 취소한다 (설정은 톱니 메뉴에서)
         janusChip.Click += (_, _) => { w.CancelJanus(); if (janusChip.SetTime(null)) LayoutBar(); };
         runeChip.Click += (_, _) => { w.CancelRune(); if (runeChip.SetTime(null)) LayoutBar(); };
@@ -894,7 +894,7 @@ public class BarForm : Form
         for (int i = 0; i < buffChips.Length; i++)
         {
             int slot = i;
-            var bc = buffChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+            var bc = buffChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Key = "buff" + i, Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
             bc.Click += (_, _) => { w.CancelBuff(slot); if (bc.SetTime(null)) LayoutBar(); };
         }
         // 도핑 칸마다 칩 하나 
@@ -902,19 +902,24 @@ public class BarForm : Form
         for (int i = 0; i < dopeChips.Length; i++)
         {
             int slot = i;
-            var dc = dopeChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.DopeColors(i).main };
+            var dc = dopeChips[i] = new TimerChip(TimerChip.Kind.Buff, sc) { Key = "dope" + i, Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.DopeColors(i).main };
             dc.Click += (_, _) => { w.CancelDope(slot); if (dc.SetTime(null)) LayoutBar(); };
         }
-        var erdaChip = new TimerChip(TimerChip.Kind.Buff, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.ErdaMain };
+        var erdaChip = new TimerChip(TimerChip.Kind.Buff, sc) { Key = "erda", Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.ErdaMain };
         erdaChip.Click += (_, _) => { w.CancelErda(); if (erdaChip.SetTime(null)) LayoutBar(); };
         // 전체 알림을 꺼 두면 맨 앞에 OFF 칩 (누르면 다시 켠다)
-        var offChip = new TimerChip(TimerChip.Kind.Off, sc) { Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+        var offChip = new TimerChip(TimerChip.Kind.Off, sc) { Key = "off", Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
         offChip.Click += (_, _) => { settings.AlertsOn = true; settings.Save(); if (offChip.SetShown(false)) LayoutBar(); };
         foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips).Append(offChip))
         {
             right.Controls.Add(c);
             right.Controls.SetChildIndex(c, 0);
         }
+        // 칩을 끌어서 바에서 떼어 내거나 다시 붙인다 (떼어 둔 자리는 저장)
+        // 바가 보이면 보이고, 직접 숨겼을 때는 설정에 따라 남긴다 (게임을 꺼서 저절로 숨으면 같이 숨는다)
+        var dock = chipDock = new ChipDock(settings, this, sc, LayoutBar, () => Visible || (userHidden && !settings.ChipsHideWithBar));
+        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips).Append(offChip)) dock.Add(c);
+        dock.Restore();
         chipTimer.Tick += (_, _) =>
         {
             bool changed = janusChip.SetTime(w.Remaining);
@@ -928,6 +933,7 @@ public class BarForm : Form
             for (int i = 0; i < dopeChips.Length; i++) changed |= dopeChips[i].SetTime(w.DopeRemaining(i));
             changed |= offChip.SetShown(!settings.AlertsOn);
             if (changed) LayoutBar();
+            dock.Sync();
         };
         chipTimer.Start();
     }
@@ -1060,6 +1066,7 @@ public class BarForm : Form
     // 다른 '항상 위' 창(사이트 창, 다른 프로그램)이 바를 덮지 않게 계속 맨 위로 올린다
     readonly System.Windows.Forms.Timer keepTop = new() { Interval = 500 };
     InvenWatcher? inven;
+    ChipDock? chipDock;
 
     void StayOnTop()
     {
@@ -1067,6 +1074,7 @@ public class BarForm : Form
         SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP | SWP_NOOWNERZORDER);
         musicDock?.RaiseCard();
         if (lyrics is { Visible: true, IsHandleCreated: true }) SetWindowPos(lyrics.Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_KEEP | SWP_NOOWNERZORDER);
+        chipDock?.RaiseAll(); // 떼어 낸 알림은 바보다 위에
     }
 
     protected override void OnLocationChanged(EventArgs e)

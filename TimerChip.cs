@@ -8,7 +8,7 @@ sealed class TimerChip : Control
 {
     public enum Kind { Janus, Rune, Buff, Off } // Off: 전체 알림을 꺼 둔 표시 (아이콘 없이 "OFF")
     /// <summary>버프 칩 색 (20분 주황 · 10분 노랑)</summary>
-    public Color BuffTint { get => buffTint; set { if (value != buffTint) { buffTint = value; Invalidate(); } } }
+    public Color BuffTint { get => buffTint; set { if (value != buffTint) { buffTint = value; Invalidate(); Changed?.Invoke(); } } }
     Color buffTint = Color.FromArgb(255, 140, 0);
 
     readonly Kind kind;
@@ -18,6 +18,21 @@ sealed class TimerChip : Control
     static readonly ToolTip tip = new();
     readonly Font chipFont; // 이 칩이 만든 글꼴 (칩을 정리할 때 푼다)
 
+    /// <summary>떼어 둔 자리를 저장할 때 쓰는 칩 이름</summary>
+    public string Key { get; init; } = "";
+    /// <summary>칩이 떠 있어야 하는지 (바에서 떼어 내 숨겨 두어도 그대로)</summary>
+    public bool On { get; private set; }
+    /// <summary>바에서 떼어 냈는지. 떼어 내면 바에서는 숨기고, 따로 뜬 칸이 대신 보인다</summary>
+    public bool Detached { get => detached; set { detached = value; Visible = On && !value; } }
+    bool detached;
+    /// <summary>바로 돌아오는 중: 바에서 자리는 차지하되 그리지는 않는다</summary>
+    public bool Ghost { get => ghost; set { if (ghost != value) { ghost = value; Invalidate(); } } }
+    bool ghost;
+    /// <summary>바에 붙은 칩을 끌기 시작하면 (누른 점, 칩 안 좌표)</summary>
+    public event Action<TimerChip, Point>? DragOut;
+    /// <summary>마우스를 올렸을 때 보이는 설명 (누르면 무엇을 하는지까지)</summary>
+    public string TipText { get; }
+
     public TimerChip(Kind kind, float sc)
     {
         this.kind = kind; this.sc = sc;
@@ -26,23 +41,68 @@ sealed class TimerChip : Control
         BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
         Font = chipFont = new Font("맑은 고딕", 10f * UI.Z, FontStyle.Bold);
-        tip.SetToolTip(this, kind switch
+        TipText = kind switch
         {
             Kind.Janus => "솔 야누스 남은 시간 (누르면 취소)",
             Kind.Rune => "다음 룬까지 남은 시간 (누르면 취소)",
             Kind.Off => "알림이 모두 꺼져 있어요 (누르면 켜요)",
             _ => "버프 남은 시간 (누르면 취소)",
-        });
+        };
+        tip.SetToolTip(this, TipText + "\n끌어서 원하는 곳에 둘 수 있어요");
         Size = new Size(S(kind == Kind.Off ? 50 : 84), S(31));
         if (kind == Kind.Off) text = "OFF";
     }
 
-    /// <summary>OFF 칩을 보이거나 숨긴다. 보이고 숨김이 바뀌면 true.</summary>
+    /// <summary>OFF 칩을 보이거나 숨긴다. 바에서 보이고 숨김이 바뀌면 true.</summary>
     public bool SetShown(bool show)
     {
-        if (show == Visible) return false;
-        Visible = show;
+        On = show;
+        bool vis = show && !detached;
+        if (vis == Visible) return false;
+        Visible = vis;
         return true;
+    }
+
+    // ── 끌기: 조금 움직여야 끌기로 보고, 그냥 누르면 원래처럼 누른 것 ──
+    Point downAt;
+    bool armed, dragged;
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        dragged = false;
+        armed = e.Button == MouseButtons.Left && DragOut != null;
+        downAt = e.Location;
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (!armed || (e.Button & MouseButtons.Left) == 0) return;
+        if (Math.Abs(e.X - downAt.X) + Math.Abs(e.Y - downAt.Y) < S(6)) return;
+        armed = false;
+        dragged = true;
+        Capture = false; // 이제부터는 떠 있는 칸이 마우스를 따라간다
+        DragOut?.Invoke(this, downAt);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        armed = false;
+    }
+
+    protected override void OnClick(EventArgs e)
+    {
+        if (dragged) { dragged = false; return; } // 끌어서 뗀 것은 누른 것이 아니다
+        base.OnClick(e);
+    }
+
+    /// <summary>떠 있는 칸을 눌렀을 때: 바에서 누른 것과 같은 일을 한다</summary>
+    public void Tap()
+    {
+        dragged = false;
+        base.OnClick(EventArgs.Empty);
     }
 
     int S(float v) => UI.Scale(v, sc);
@@ -58,13 +118,15 @@ sealed class TimerChip : Control
     {
         bool show = sec != null || ready;
         string t = ready ? "나옴" : sec is double s ? $"{(int)s / 60}:{(int)s % 60:00}" : "";
-        if (t != text || ready != alert) { text = t; alert = ready; Invalidate(); }
-        if (show == Visible) return false;
-        Visible = show;
-        return true;
+        if (t != text || ready != alert) { text = t; alert = ready; Invalidate(); Changed?.Invoke(); }
+        return SetShown(show);
     }
 
-    Color Tint => kind switch
+    /// <summary>글자나 색이 바뀌면 (떠 있는 칸을 다시 그리라고)</summary>
+    public event Action? Changed;
+
+    /// <summary>칩 색 (떠 있는 칸의 테두리에도 쓴다)</summary>
+    public Color Tint => kind switch
     {
         Kind.Janus => Color.FromArgb(135, 80, 235),
         Kind.Rune => Color.FromArgb(20, 150, 220),
@@ -74,9 +136,16 @@ sealed class TimerChip : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g = e.Graphics;
+        if (ghost) return;
+        Render(e.Graphics, Size);
+    }
+
+    /// <summary>칩을 g에 그린다. 떠 있는 칸은 크기를 바꿔 가며 그리므로 글자 맞춤(GridFit)을 끈다.</summary>
+    public void Render(Graphics g, Size size, bool smooth = false)
+    {
+        int Width = size.Width, Height = size.Height;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        g.TextRenderingHint = smooth ? TextRenderingHint.AntiAlias : TextRenderingHint.AntiAliasGridFit;
 
         var c = Tint;
         using (var path = UI.RoundRect(new RectangleF(0, 0, Width - 1, Height - 1), (Height - 1) * 0.25f)) // 둥근 직사각형

@@ -122,6 +122,8 @@ static class CfgSync
     {
         p.Name = name;
         p.SoundVol = Math.Clamp(p.SoundVol, 0, 100);
+        // 알림마다 고른 소리: 알림 수만큼만 두고, 없는 소리 번호는 기본 소리로 (AlertSound.Pick이 읽을 때도 거른다)
+        p.SoundPicks = p.SoundPicks?.Take(AlertSound.KindNames.Length).Select(i => i >= 0 && i < AlertSound.Count ? i : -1).ToList();
         p.ComboKey = K(p.ComboKey); p.JanusKey = K(p.JanusKey); p.JanusMod = K(p.JanusMod);
         p.NpcKey = K(p.NpcKey); p.ErdaKey = K(p.ErdaKey);
         if (p.JanusCycleSec is int c) p.JanusCycleSec = Math.Clamp(c, 0, 3600);

@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Product>메이플 바</Product>
     <AssemblyTitle>메이플 바</AssemblyTitle>
-    <Version>1.1.81</Version>
+    <Version>1.1.9</Version>
     <!-- WFO1000: 디자이너 저장 설정 검사. 이 앱은 디자이너 없이 코드로만 화면을 만들어 해당 없음 -->
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>

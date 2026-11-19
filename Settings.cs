@@ -21,6 +21,10 @@ public class Settings
     public int? WinY { get; set; }
     /// <summary>창 종류마다 마지막 위치·크기 (코디, 웹툰, 사이트 주소별 등). 값은 x, y, 폭, 높이</summary>
     public Dictionary<string, int[]> WinPlaces { get; set; } = new();
+    /// <summary>바에서 떼어 둔 남은 시간 칩의 자리 (칩 이름 → 화면 x, y). 없으면 바에 붙어 있다</summary>
+    public Dictionary<string, int[]> ChipSpots { get; set; } = new();
+    /// <summary>바를 직접 숨기면(Ctrl+Alt+M) 떼어 낸 칩도 같이 숨긴다</summary>
+    public bool ChipsHideWithBar { get; set; } = true;
     public int WinW { get; set; }
     public int WinH { get; set; }
     public bool WinTopMost { get; set; } = true;
@@ -48,11 +52,15 @@ public class Settings
     // 알림 소리: 켜기와 크기(%)
     public bool SoundOn { get; set; } = true;
     public int SoundVol { get; set; } = 60;
+    /// <summary>알림마다 고른 소리 번호 (AlertSound.Kind 순서). 없으면 기본 소리</summary>
+    public List<int>? SoundPicks { get; set; }
     /// <summary>화면 가장자리 빛·글자 알림. 끄면 소리만 난다</summary>
     public bool AlertVisual { get; set; } = true;
     /// <summary>알림 방식: 화면 전체가 물드는 효과 / 가장자리를 빛이 한 바퀴 도는 효과</summary>
     public bool AlertFlash { get; set; } = true;
     public bool AlertEdge { get; set; } = true;
+    /// <summary>알림 방식: 알림이 울릴 때 알림 이름(글자)을 띄울지</summary>
+    public bool AlertText { get; set; } = true;
     // 조합 키: 이 키를 누른 채로 버프·도핑 키를 눌러야 세는 칸이 있다 (0이면 없음)
     public int ComboKey { get; set; }
     // 뮤직 칸을 바에서 꺼내 따로 둔 자리 (MusicFloat가 false면 바 안에 있다)
@@ -327,9 +335,11 @@ public class AlertPreset
     public string Name { get; set; } = "";
     public bool SoundOn { get; set; } = true;
     public int SoundVol { get; set; } = 60;
+    public List<int>? SoundPicks { get; set; }
     public bool AlertVisual { get; set; } = true;
     public bool AlertFlash { get; set; } = true;
     public bool AlertEdge { get; set; } = true;
+    public bool AlertText { get; set; } = true;
     public int ComboKey { get; set; }
     public bool JanusOn { get; set; }
     public int JanusKey { get; set; }
@@ -362,7 +372,7 @@ public class AlertPreset
         var p = new AlertPreset
         {
             Name = name,
-            SoundOn = s.SoundOn, SoundVol = s.SoundVol, AlertVisual = s.AlertVisual, AlertFlash = s.AlertFlash, AlertEdge = s.AlertEdge,
+            SoundOn = s.SoundOn, SoundVol = s.SoundVol, SoundPicks = s.SoundPicks?.ToList(), AlertVisual = s.AlertVisual, AlertFlash = s.AlertFlash, AlertEdge = s.AlertEdge, AlertText = s.AlertText,
             ComboKey = s.ComboKey,
             JanusOn = s.JanusOn, JanusKey = s.JanusKey, JanusMod = s.JanusMod, JanusCycleSec = JanusWatch.Cycle(s),
             JanusRealertOn = s.JanusRealertOn, JanusRealertSec = s.JanusRealertSec,
@@ -382,7 +392,7 @@ public class AlertPreset
     /// <summary>프리셋 값을 설정에 넣는다. 지금 세는 중인 시각은 칸 번호대로 그대로 둔다</summary>
     public void ApplyTo(Settings s)
     {
-        s.SoundOn = SoundOn; s.SoundVol = SoundVol; s.AlertVisual = AlertVisual; s.AlertFlash = AlertFlash; s.AlertEdge = AlertEdge;
+        s.SoundOn = SoundOn; s.SoundVol = SoundVol; s.SoundPicks = SoundPicks?.ToList(); s.AlertVisual = AlertVisual; s.AlertFlash = AlertFlash; s.AlertEdge = AlertEdge; s.AlertText = AlertText;
         s.ComboKey = ComboKey;
         s.JanusOn = JanusOn; s.JanusKey = JanusKey; s.JanusMod = JanusMod; s.JanusCycleSec = JanusCycleSec ?? 0;
         s.JanusRealertOn = JanusRealertOn; s.JanusRealertSec = JanusRealertSec;

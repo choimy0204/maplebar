@@ -276,7 +276,7 @@ return (!b||b.disabled||(b.innerText||'').trim()!=='정보 갱신')?'busy':'idle
 
     /// <summary>미착용 알림: 노랑으로 돌다가 6시 방향에서 잠깐 파랑, 다시 노랑으로 끝난다.</summary>
     public static void PlayAlert(float sc) =>
-        JanusAlert.Play(sc, "정령의 펜던트 미착용", Yellow, Color.FromArgb(255, 252, 210), AlertSound.Kind.Buff,
+        JanusAlert.Play(sc, "정령의 펜던트 미착용", Yellow, Color.FromArgb(255, 252, 210), AlertSound.Kind.Pendant,
             flash: Blue, flashLight: Color.FromArgb(205, 228, 255));
 
     public void Dispose()

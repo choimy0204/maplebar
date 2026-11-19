@@ -48,8 +48,53 @@ static class Native
 
     static BLENDFUNCTION Blend(byte alpha) => new() { BlendOp = 0, SourceConstantAlpha = alpha, AlphaFormat = 1 };
 
+    [StructLayout(LayoutKind.Sequential)]
+    struct BITMAPINFOHEADER
+    {
+        public int biSize, biWidth, biHeight;
+        public short biPlanes, biBitCount;
+        public int biCompression, biSizeImage, biXPelsPerMeter, biYPelsPerMeter, biClrUsed, biClrImportant;
+    }
+    [DllImport("gdi32.dll")] static extern IntPtr CreateDIBSection(IntPtr dc, ref BITMAPINFOHEADER bmi, uint usage, out IntPtr bits, IntPtr section, uint offset);
+
+    /// <summary>겹창에 자주 올리는 그림판: 윈도우 그림(DIB)을 한 번 만들어 두고 그 위에 바로 그린다.
+    /// PushLayered처럼 올릴 때마다 그림을 새로 만들어 복사하지 않아 빠르다.</summary>
+    public sealed class LayerSurface : IDisposable
+    {
+        readonly IntPtr dc, hb, old;
+        public readonly Bitmap Bmp;
+        public int Width => Bmp.Width;
+        public int Height => Bmp.Height;
+
+        public LayerSurface(int w, int h)
+        {
+            var bi = new BITMAPINFOHEADER { biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = w, biHeight = -h, biPlanes = 1, biBitCount = 32 };
+            dc = CreateCompatibleDC(IntPtr.Zero);
+            hb = CreateDIBSection(dc, ref bi, 0, out var bits, IntPtr.Zero, 0);
+            old = SelectObject(dc, hb);
+            Bmp = new Bitmap(w, h, w * 4, System.Drawing.Imaging.PixelFormat.Format32bppPArgb, bits);
+        }
+
+        public void Push(IntPtr hwnd, Point at)
+        {
+            var size = new SIZE { cx = Width, cy = Height };
+            var src = new POINT();
+            var dst = new POINT { x = at.X, y = at.Y };
+            var blend = Blend(255);
+            UpdateLayeredWindow(hwnd, IntPtr.Zero, ref dst, ref size, dc, ref src, 0, ref blend, 2);
+        }
+
+        public void Dispose()
+        {
+            Bmp.Dispose();
+            SelectObject(dc, old);
+            DeleteObject(hb);
+            DeleteDC(dc);
+        }
+    }
+
     /// <summary>그림을 창에 올리고 at 자리에 놓는다.</summary>
-    public static void PushLayered(IntPtr hwnd, Bitmap bmp, Point at)
+    public static void PushLayered(IntPtr hwnd, Bitmap bmp, Point at, byte alpha = 255)
     {
         IntPtr screen = GetDC(IntPtr.Zero), mem = CreateCompatibleDC(screen), hb = IntPtr.Zero, old = IntPtr.Zero;
         try
@@ -59,7 +104,7 @@ static class Native
             var size = new SIZE { cx = bmp.Width, cy = bmp.Height };
             var src = new POINT();
             var dst = new POINT { x = at.X, y = at.Y };
-            var blend = Blend(255);
+            var blend = Blend(alpha);
             UpdateLayeredWindow(hwnd, screen, ref dst, ref size, mem, ref src, 0, ref blend, 2);
         }
         finally

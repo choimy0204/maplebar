@@ -344,7 +344,7 @@ sealed class JanusWatch
             if (now < due) continue;
             o.Start = null; st.Save();
             // 바를 꺼 둔 사이에 지난 알림은 늦게 울리지 않는다
-            if (!Mute && (now - due).TotalSeconds < 10) PlayRepeat(sc, o.Title(i), Color.FromArgb(o.Argb));
+            if (!Mute && (now - due).TotalSeconds < 10) PlayRepeat(sc, o.Title(i), Color.FromArgb(o.Argb), once: true);
         }
     }
 
@@ -353,9 +353,10 @@ sealed class JanusWatch
         st.Onces[i].Start is DateTime s ? Math.Max(0, (s.AddSeconds(st.Onces[i].Sec) - DateTime.Now).TotalSeconds) : null;
     public void CancelOnce(int i) { if (st.Onces[i].Start != null) { st.Onces[i].Start = null; st.Save(); } onceKeyAt[i] = null; }
 
-    public static void PlayRepeat(float sc, string text, Color c) =>
+    public static void PlayRepeat(float sc, string text, Color c, bool once = false) =>
         JanusAlert.Play(sc, text, c,
-            Color.FromArgb(c.R + (255 - c.R) * 3 / 4, c.G + (255 - c.G) * 3 / 4, c.B + (255 - c.B) * 3 / 4), AlertSound.Kind.Buff);
+            Color.FromArgb(c.R + (255 - c.R) * 3 / 4, c.G + (255 - c.G) * 3 / 4, c.B + (255 - c.B) * 3 / 4),
+            once ? AlertSound.Kind.Once : AlertSound.Kind.Repeat);
 
     void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, int dope, int arrows)
     {
@@ -419,7 +420,7 @@ sealed class JanusWatch
     public void CancelErda() { if (st.ErdaStart != null) { st.ErdaStart = null; st.Save(); } }
     public static readonly Color ErdaMain = Color.FromArgb(110, 210, 255), ErdaLight = Color.FromArgb(220, 245, 255);
     public static void PlayErda(float sc, bool early) =>
-        JanusAlert.Play(sc, early ? "에르다 파운틴이 곧 사라져요" : "에르다 파운틴이 사라졌어요", ErdaMain, ErdaLight, AlertSound.Kind.Buff);
+        JanusAlert.Play(sc, early ? "에르다 파운틴이 곧 사라져요" : "에르다 파운틴이 사라졌어요", ErdaMain, ErdaLight, AlertSound.Kind.Erda);
 
     void ErdaKey(DateTime at, bool inGame)
     {

@@ -45,8 +45,8 @@ static class JanusAlert
         Played?.Invoke();
         stop?.Invoke();
         if (AlertSound.St is { AlertVisual: false }) return; // 화면 알림을 끄면 소리만 낸다
-        // 알림 방식: 화면 플래시(물듦) · 테두리 강조(한 바퀴). 둘 다 끄면 글씨만 뜬다
-        bool doFlash = AlertSound.St?.AlertFlash ?? true, doEdge = AlertSound.St?.AlertEdge ?? true;
+        // 알림 방식: 화면 플래시(물듦) · 테두리 강조(한 바퀴) · 알림 명 표기
+        bool doFlash = AlertSound.St?.AlertFlash ?? true, doEdge = AlertSound.St?.AlertEdge ?? true, doText = AlertSound.St?.AlertText ?? true;
         Text = text;
         Main = main ?? Color.FromArgb(150, 80, 255);
         Light = light ?? Color.FromArgb(228, 205, 255);
@@ -128,7 +128,7 @@ static class JanusAlert
             // 글씨: 처음에 살짝 늦게 떠서 끝날 때 같이 사라진다
             double a = Math.Clamp((el - 0.15) / 0.3, 0, 1) * Math.Clamp((Lap + Fade - el) / 0.6, 0, 1);
             mix = FlashMain == null ? 0 : FlashMix(el);
-            var pb = PillFor(a, sc);
+            var pb = doText ? PillFor(a, sc) : null;
             foreach (var (area, rects, strips, bmps, tint, tint2, pill) in sets)
             {
                 double tc = Math.Clamp(ta, 0, 1);
@@ -145,7 +145,7 @@ static class JanusAlert
                     }
                     strips[i].Present(bmps[i], new Point(area.X + rects[i].X, area.Y + rects[i].Y));
                 }
-                pill.Present(pb, new Point(area.X + (area.Width - pb.Width) / 2, area.Y + (int)(area.Height * 0.28)));
+                if (pb != null) pill.Present(pb, new Point(area.X + (area.Width - pb.Width) / 2, area.Y + (int)(area.Height * 0.28)));
             }
         };
         timer.Start();
