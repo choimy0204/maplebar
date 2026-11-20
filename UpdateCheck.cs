@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -124,7 +124,9 @@ static class UpdateCheck
     {
         try
         {
-            using var res = TagHttp.Send(new HttpRequestMessage(HttpMethod.Head, Repo + "/releases/latest"));
+            // 깃허브가 같은 주소에 예전 답(옛 버전)을 한동안 돌려줄 때가 있어, 매번 다른 값을 붙여 새로 묻는다
+            var url = $"{Repo}/releases/latest?t={DateTime.UtcNow.Ticks}";
+            using var res = TagHttp.Send(new HttpRequestMessage(HttpMethod.Head, url));
             var m = TagVer.Match(res.Headers.Location?.ToString() ?? "");
             if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return null;
             var t = m.Groups[1].Value;

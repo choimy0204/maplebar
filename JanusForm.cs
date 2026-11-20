@@ -67,10 +67,10 @@ sealed class JanusForm : Form, IMessageFilter
     int captureMod; // 야누스 키를 받는 중에 먼저 누른 Shift·Ctrl·Alt (다음 키와 같이 쓴다)
     readonly Dictionary<int, Toggle> comboSws = new(); // 칸 번호(capturing 값) → 그 칸의 조합 키 스위치 // 1 = 솔 야누스 키, 3 = NPC 대화 키, 4 = 웹툰 위로, 5 = 웹툰 아래로 키를 받는 중, 30~ = 반복 알림 키
 
-    // 알림 창은 두 페이지: 1 = 야누스·룬·버프·도핑·정펜, 2 = 반복 주기 알림 · 알림 띄울 모니터
-    readonly List<Control>[] pages = { new(), new() };
-    readonly int[] pageEnd = new int[2];
-    const int PageCount = 2;
+    // 알림 창은 세 페이지: 1 = 야누스·룬·버프·도핑·정펜, 2 = 반복 주기 알림 · 단일 알림, 3 = 00시 알림 · 알림 띄울 모니터
+    readonly List<Control>[] pages = { new(), new(), new() };
+    readonly int[] pageEnd = new int[3];
+    const int PageCount = 3;
     readonly List<(RoundLabel prev, RoundLabel label, RoundLabel next)> pageNavs = new();
     Label? foot;
     int page;
@@ -90,7 +90,7 @@ sealed class JanusForm : Form, IMessageFilter
         if (capturing != 0) { capturing = 0; UpdateKeys(); }
         // 새 페이지를 먼저 보이고 이전 페이지를 숨긴다
         foreach (var c in pages[p]) c.Visible = true;
-        foreach (var c in pages[1 - p]) c.Visible = false;
+        for (int i = 0; i < PageCount; i++) if (i != p) foreach (var c in pages[i]) c.Visible = false;
         ApplySlotPages(); // 1페이지를 다 보이게 했으니 버프·도핑은 고른 칸만 다시 남긴다
         foreach (var (prev, label, next) in pageNavs)
         {
@@ -335,13 +335,16 @@ sealed class JanusForm : Form, IMessageFilter
         for (int c = 1; c <= 2; c++)
             Controls.Add(new Panel { BackColor = UI.T(Color.FromArgb(225, 225, 230)), Bounds = new Rectangle(pad + colW * c + gap * (c - 1) + gap / 2, top + S(4), Math.Max(1, S(1)), y - top - S(14)) });
 
-        // 1페이지 칸을 모아 두고, 같은 자리에 2페이지(반복 주기 알림 · 모니터)를 만든다
+        // 1페이지 칸을 모아 두고, 같은 자리에 2페이지(반복 · 단일 알림)와 3페이지(00시 알림 · 모니터)를 만든다
         pages[0] = Controls.Cast<Control>().Skip(pageStart).ToList();
         pageEnd[0] = y;
         int page2Start = Controls.Count;
         pageEnd[1] = MakePage2(pad, top, colW, gap, contentR - pad);
         pages[1] = Controls.Cast<Control>().Skip(page2Start).ToList();
-        foreach (var c in pages[1]) c.Visible = false;
+        int page3Start = Controls.Count;
+        pageEnd[2] = MakePage3(pad, top, contentR - pad);
+        pages[2] = Controls.Cast<Control>().Skip(page3Start).ToList();
+        foreach (var c in pages[1].Concat(pages[2])) c.Visible = false;
         ApplySlotPages();
         RefreshSlotNavs();
 
@@ -596,6 +599,14 @@ sealed class JanusForm : Form, IMessageFilter
         if (wide) volLbl.Left = minus.Left - volLbl.PreferredWidth - S(8);
         cy += S(38);
 
+        // 띠링 같은 알림음을 울릴지. 끄고 읽어 주기만 켜면 목소리만 들린다
+        var chimeLbl = RowLabel("알림음", ip, cy);
+        var chimeSw = new Toggle { On = st.ChimeOn, Size = new Size(S(40), S(22)) };
+        chimeSw.Location = new Point(right - chimeSw.Width, cy + (S(30) - chimeSw.Height) / 2);
+        card.Controls.AddRange(new Control[] { chimeLbl, chimeSw });
+        chimeSw.Changed += v => { st.ChimeOn = v; st.Save(); };
+        cy += S(38);
+
         // 알림마다 다른 소리를 고르는 창을 연다
         var kindLbl = RowLabel("알림마다 소리", ip, cy);
         var pickBtn = UI.Button("고르기", "", () => SoundPickBox.Open(this, st), sc, back: UI.HoverBack);
@@ -613,7 +624,7 @@ sealed class JanusForm : Form, IMessageFilter
         cy += S(38);
 
         // 끄면 크기 줄을 흐리게 해서 소리가 안 난다는 걸 보여 준다
-        void Dim() { shown.ForeColor = st.SoundOn ? UI.Text : Gray; plus.Enabled = minus.Enabled = saySw.Enabled = st.SoundOn; }
+        void Dim() { shown.ForeColor = st.SoundOn ? UI.Text : Gray; plus.Enabled = minus.Enabled = saySw.Enabled = chimeSw.Enabled = st.SoundOn; }
         sw.Changed += v => { st.SoundOn = v; st.Save(); Dim(); if (v) AlertSound.Play(AlertSound.Kind.Janus); };
         Dim();
 
@@ -1227,7 +1238,7 @@ sealed class JanusForm : Form, IMessageFilter
         return card;
     }
 
-    /// <summary>2페이지: 왼쪽 반복 주기 알림 15칸 · 오른쪽 단일 알림 15칸 (◀ ▶로 한 칸씩) · 알림 띄울 모니터. 끝난 높이를 돌려준다.</summary>
+    /// <summary>2페이지: 왼쪽 반복 주기 알림 15칸 · 오른쪽 단일 알림 15칸 (◀ ▶로 한 칸씩). 끝난 높이를 돌려준다.</summary>
     int MakePage2(int x, int top, int colW, int gap, int fullW)
     {
         int hw = (fullW - gap) / 2, ox = x + hw + gap;
@@ -1253,9 +1264,13 @@ sealed class JanusForm : Form, IMessageFilter
         for (int i = 0; i < JanusWatch.RepeatSlots; i++) h = Math.Max(h, (repeatCards[i] = MakeRepeatCard(x, y, hw, i)).Height);
         for (int i = 0; i < JanusWatch.OnceSlots; i++) h = Math.Max(h, (onceCards[i] = MakeRepeatCard(ox, y, hw, i, once: true)).Height);
         foreach (var c in repeatCards.Concat(onceCards)) if (c != null) c.Height = h;
-        y += h + S(20);
+        return y + h + S(10);
+    }
 
-        y += Section("00시 알림", Teal, x, y, fullW);
+    /// <summary>3페이지: 00시 알림 · 알림 띄울 모니터. 끝난 높이를 돌려준다.</summary>
+    int MakePage3(int x, int top, int fullW)
+    {
+        int y = top + Section("00시 알림", Teal, x, top, fullW);
         y += MakeMidnightCard(x, y, fullW).Height + S(20);
 
         y += Section("알림 띄울 모니터", Teal, x, y, fullW);

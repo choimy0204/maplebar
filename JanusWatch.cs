@@ -374,7 +374,7 @@ sealed class JanusWatch
 
     public static void PlayMidnight(float sc, int n)
     {
-        var text = n <= 0 ? "00시가 됐어요" : $"{n}분 뒤 00시예요";
+        var text = n <= 0 ? "00시가 됐어요" : $"{n}분 뒤 초기화 됩니다";
         JanusAlert.Play(sc, text, MidnightMain, MidnightLight, AlertSound.Kind.Midnight, say: text);
     }
 

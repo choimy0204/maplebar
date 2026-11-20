@@ -41,9 +41,11 @@ static class JanusAlert
     public static void Play(float sc, string text = "솔 야누스가 꺼졌어요", Color? main = null, Color? light = null,
         AlertSound.Kind sound = AlertSound.Kind.Janus, Color? flash = null, Color? flashLight = null, string? say = null)
     {
-        AlertSound.Play(sound);
+        // 알림음을 끄면 띠링 없이 바로 읽어 주기만 한다
+        bool chime = AlertSound.St is not { ChimeOn: false };
+        if (chime) AlertSound.Play(sound);
         // 제목 읽어 주기: 화면에 뜨는 문구를 그대로 읽는다 (say를 주면 그 글)
-        AlertVoice.Say(say ?? text, AlertSound.Lead(sound));
+        AlertVoice.Say(say ?? text, chime ? AlertSound.Lead(sound) : 0);
         Played?.Invoke();
         stop?.Invoke();
         if (AlertSound.St is { AlertVisual: false }) return; // 화면 알림을 끄면 소리만 낸다

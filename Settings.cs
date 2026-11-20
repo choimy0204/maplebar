@@ -56,6 +56,8 @@ public class Settings
     public List<int>? SoundPicks { get; set; }
     /// <summary>알림음 뒤에 알림 제목을 목소리로 읽어 준다</summary>
     public bool SpeakOn { get; set; }
+    /// <summary>알림음(띠링 등)을 울린다. 끄면 읽어 주기만 들린다</summary>
+    public bool ChimeOn { get; set; } = true;
     /// <summary>화면 가장자리 빛·글자 알림. 끄면 소리만 난다</summary>
     public bool AlertVisual { get; set; } = true;
     /// <summary>알림 방식: 화면 전체가 물드는 효과 / 가장자리를 빛이 한 바퀴 도는 효과</summary>
@@ -342,6 +344,7 @@ public class AlertPreset
     public int SoundVol { get; set; } = 60;
     public List<int>? SoundPicks { get; set; }
     public bool? SpeakOn { get; set; }   // 예전 프리셋에는 없다 (없으면 지금 값을 그대로 둔다)
+    public bool? ChimeOn { get; set; }   // 예전 프리셋에는 없다
     public bool AlertVisual { get; set; } = true;
     public bool AlertFlash { get; set; } = true;
     public bool AlertEdge { get; set; } = true;
@@ -381,7 +384,7 @@ public class AlertPreset
         {
             Name = name,
             SoundOn = s.SoundOn, SoundVol = s.SoundVol, SoundPicks = s.SoundPicks?.ToList(), AlertVisual = s.AlertVisual, AlertFlash = s.AlertFlash, AlertEdge = s.AlertEdge, AlertText = s.AlertText,
-            SpeakOn = s.SpeakOn, ComboKey = s.ComboKey,
+            SpeakOn = s.SpeakOn, ChimeOn = s.ChimeOn, ComboKey = s.ComboKey,
             JanusOn = s.JanusOn, JanusKey = s.JanusKey, JanusMod = s.JanusMod, JanusCycleSec = JanusWatch.Cycle(s),
             JanusRealertOn = s.JanusRealertOn, JanusRealertSec = s.JanusRealertSec,
             RuneOn = s.RuneOn, NpcKey = s.NpcKey, RuneMin = s.RuneMin,
@@ -403,6 +406,7 @@ public class AlertPreset
     {
         s.SoundOn = SoundOn; s.SoundVol = SoundVol; s.SoundPicks = SoundPicks?.ToList(); s.AlertVisual = AlertVisual; s.AlertFlash = AlertFlash; s.AlertEdge = AlertEdge; s.AlertText = AlertText;
         if (SpeakOn is bool sp) s.SpeakOn = sp;
+        if (ChimeOn is bool ch) s.ChimeOn = ch;
         s.ComboKey = ComboKey;
         s.JanusOn = JanusOn; s.JanusKey = JanusKey; s.JanusMod = JanusMod; s.JanusCycleSec = JanusCycleSec ?? 0;
         s.JanusRealertOn = JanusRealertOn; s.JanusRealertSec = JanusRealertSec;
