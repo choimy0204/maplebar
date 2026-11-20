@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace MapleBar;
 
@@ -54,6 +54,8 @@ public class Settings
     public int SoundVol { get; set; } = 60;
     /// <summary>알림마다 고른 소리 번호 (AlertSound.Kind 순서). 없으면 기본 소리</summary>
     public List<int>? SoundPicks { get; set; }
+    /// <summary>알림음 뒤에 알림 제목을 목소리로 읽어 준다</summary>
+    public bool SpeakOn { get; set; }
     /// <summary>화면 가장자리 빛·글자 알림. 끄면 소리만 난다</summary>
     public bool AlertVisual { get; set; } = true;
     /// <summary>알림 방식: 화면 전체가 물드는 효과 / 가장자리를 빛이 한 바퀴 도는 효과</summary>
@@ -128,6 +130,9 @@ public class Settings
     public List<OnceSlot> Onces { get; set; } = new();
     // 전체 알림 켜기·끄기: 끄면 모든 알림이 키를 세지도 울리지도 않는다 (칸마다 켜 둔 값은 그대로)
     public bool AlertsOn { get; set; } = true;
+    // 00시 알림: 날짜가 바뀌기 MidnightMin분 전에 한 번 알린다
+    public bool MidnightOn { get; set; }
+    public int MidnightMin { get; set; } = 10;
     // 알림을 띄울 모니터 (Screen.DeviceName). "ALL"이면 모든 모니터, 비어 있어도 모든 모니터
     public List<string> AlertScreens { get; set; } = new() { "ALL" };
     // 알림 설정 프리셋: 알림 창 1·2페이지 값을 이름 붙여 저장해 두고 불러온다
@@ -336,6 +341,7 @@ public class AlertPreset
     public bool SoundOn { get; set; } = true;
     public int SoundVol { get; set; } = 60;
     public List<int>? SoundPicks { get; set; }
+    public bool? SpeakOn { get; set; }   // 예전 프리셋에는 없다 (없으면 지금 값을 그대로 둔다)
     public bool AlertVisual { get; set; } = true;
     public bool AlertFlash { get; set; } = true;
     public bool AlertEdge { get; set; } = true;
@@ -361,6 +367,8 @@ public class AlertPreset
     public List<RepeatSlot> Repeats { get; set; } = new();
     public List<OnceSlot>? Onces { get; set; }
     public List<string> AlertScreens { get; set; } = new() { "ALL" };
+    public bool? MidnightOn { get; set; }   // 없던 옛 프리셋이면 지금 값을 그대로 둔다
+    public int? MidnightMin { get; set; }
 
     // 칸 목록은 JSON으로 한 번 돌려 따로 떼어 낸 복사본을 쓴다 (원본을 고쳐도 프리셋이 바뀌지 않게)
     static List<T> Copy<T>(List<T>? src) =>
@@ -373,7 +381,7 @@ public class AlertPreset
         {
             Name = name,
             SoundOn = s.SoundOn, SoundVol = s.SoundVol, SoundPicks = s.SoundPicks?.ToList(), AlertVisual = s.AlertVisual, AlertFlash = s.AlertFlash, AlertEdge = s.AlertEdge, AlertText = s.AlertText,
-            ComboKey = s.ComboKey,
+            SpeakOn = s.SpeakOn, ComboKey = s.ComboKey,
             JanusOn = s.JanusOn, JanusKey = s.JanusKey, JanusMod = s.JanusMod, JanusCycleSec = JanusWatch.Cycle(s),
             JanusRealertOn = s.JanusRealertOn, JanusRealertSec = s.JanusRealertSec,
             RuneOn = s.RuneOn, NpcKey = s.NpcKey, RuneMin = s.RuneMin,
@@ -381,6 +389,7 @@ public class AlertPreset
             Buffs = Copy(s.Buffs), Dopes = Copy(s.Dopes), Repeats = Copy(s.Repeats), Onces = Copy(s.Onces),
             MapleNick = s.MapleNick, PendantOn = s.PendantOn, PendantBuff = s.PendantBuff,
             AlertScreens = new(s.AlertScreens ?? new()),
+            MidnightOn = s.MidnightOn, MidnightMin = s.MidnightMin,
         };
         foreach (var b in p.Buffs) { b.Start = null; b.KeyAt = null; b.EnterAt = null; }
         foreach (var d in p.Dopes) d.Start = null;
@@ -393,12 +402,15 @@ public class AlertPreset
     public void ApplyTo(Settings s)
     {
         s.SoundOn = SoundOn; s.SoundVol = SoundVol; s.SoundPicks = SoundPicks?.ToList(); s.AlertVisual = AlertVisual; s.AlertFlash = AlertFlash; s.AlertEdge = AlertEdge; s.AlertText = AlertText;
+        if (SpeakOn is bool sp) s.SpeakOn = sp;
         s.ComboKey = ComboKey;
         s.JanusOn = JanusOn; s.JanusKey = JanusKey; s.JanusMod = JanusMod; s.JanusCycleSec = JanusCycleSec ?? 0;
         s.JanusRealertOn = JanusRealertOn; s.JanusRealertSec = JanusRealertSec;
         s.RuneOn = RuneOn; s.NpcKey = NpcKey; s.RuneMin = RuneMin;
         s.ErdaOn = ErdaOn; s.ErdaKey = ErdaKey; s.ErdaEarly = ErdaEarly;
         s.MapleNick = MapleNick; s.PendantOn = PendantOn; s.PendantBuff = PendantBuff;
+        if (MidnightOn is bool mo) s.MidnightOn = mo;
+        if (MidnightMin is int mm) s.MidnightMin = Math.Clamp(mm, 0, 180);
         s.AlertScreens = new(AlertScreens ?? new() { "ALL" });
         if (s.AlertScreens.Count == 0) s.AlertScreens.Add("ALL");
         var buffs = Copy(Buffs);

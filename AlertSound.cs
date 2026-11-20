@@ -1,4 +1,4 @@
-using System.Media;
+﻿using System.Media;
 
 namespace MapleBar;
 
@@ -7,14 +7,14 @@ namespace MapleBar;
 static class AlertSound
 {
     // 순서를 바꾸지 말 것: 설정(SoundPicks)이 이 순서로 저장된다. 새 알림은 맨 뒤에 붙인다.
-    public enum Kind { Janus, Rune, Buff, Dope, Erda, Repeat, Once, Pendant }
+    public enum Kind { Janus, Rune, Buff, Dope, Erda, Repeat, Once, Pendant, Midnight }
 
     /// <summary>알림 이름 (Kind 순서)</summary>
     public static readonly string[] KindNames =
-        { "솔 야누스", "룬", "버프", "도핑", "에르다 파운틴", "반복 알림", "단일 알림", "정령의 펜던트" };
+        { "솔 야누스", "룬", "버프", "도핑", "에르다 파운틴", "반복 알림", "단일 알림", "정령의 펜던트", "00시 알림" };
 
     /// <summary>알림마다 처음 쓰는 소리 (예전 소리와 같게)</summary>
-    static readonly int[] Defaults = { 0, 1, 2, 3, 2, 2, 2, 2 };
+    static readonly int[] Defaults = { 0, 1, 2, 3, 2, 2, 2, 2, 1 };
 
     /// <summary>켜기·크기·고른 소리를 읽을 설정 (JanusWatch가 넣는다)</summary>
     public static Settings? St;
@@ -67,7 +67,15 @@ static class AlertSound
         ("노크", new[] { N(300, 0, 0.06, 0.8, odd: 0.5), N(300, 0.15, 0.06, 0.8, odd: 0.5), N(300, 0.3, 0.06, 0.8, odd: 0.5), N(C6, 0.6, 1.8, 0.2), N(G5, 0.6, 1.8, 0.2, amp: 0.5) }),
         ("팡파레", new[] { N(G5, 0, 0.12, 0.5), N(G5, 0.14, 0.12, 0.5), N(G5, 0.28, 0.12, 0.5), N(C6, 0.42, 0.5, 0.5), N(G5, 0.9, 0.15, 0.5), N(C6, 1.05, 0.15, 0.5), N(E6, 1.2, 1.3, 0.5), N(C6, 1.2, 1.3, 0.5, amp: 0.5) }),
         ("마무리", new[] { N(C6, 0, 0.3), N(G5, 0.2, 0.3), N(E5, 0.4, 0.3), N(C5, 0.6, 0.5), N(G4, 0.9, 0.4), N(C5, 1.1, 1.4), N(E5, 1.1, 1.4, amp: 0.4), N(G5, 1.1, 1.4, amp: 0.4) }),
+        // 1.1.9 전에 쓰던 짧고 또렷한 소리 (울림 없이 그대로)
+        ("(구) 띵동", new[] { N(E6, 0, 0.45), N(C6, 0.2, 0.6) }),
+        ("(구) 띠링", new[] { N(C6, 0, 0.4), N(E6, 0.09, 0.4), N(G6, 0.18, 0.55) }),
+        ("(구) 띵 띵", new[] { N(A5, 0, 0.28), N(A5, 0.24, 0.4) }),
+        ("(구) 삐빅", new[] { N(B6, 0, 0.1, 0.5), N(B6, 0.13, 0.14, 0.5) }),
     };
+
+    /// <summary>이 번호부터는 예전 짧은 소리 (울림을 넣지 않는다)</summary>
+    const int OldFrom = 30;
 
     /// <summary>소리 이름 (번호 순서)</summary>
     public static readonly string[] Names = Lib.Select(s => s.Name).ToArray();
@@ -101,6 +109,15 @@ static class AlertSound
     /// <summary>설정과 상관없이 주어진 크기로 낸다 (소리 크기를 바꿀 때 들려주기용)</summary>
     public static void Play(Kind k, int vol) => PlaySound(Pick(k), vol);
 
+    /// <summary>제목을 읽기 전에 기다릴 초: 고른 소리의 가락이 대충 끝날 때까지 (길어도 1.2초)</summary>
+    public static double Lead(Kind k) => Math.Min(1.2, Lib[Pick(k)].Notes.Max(n => n.At + n.Len * 0.5));
+
+    /// <summary>나고 있는 알림음을 멈춘다 (제목을 읽기 시작할 때)</summary>
+    public static void Stop()
+    {
+        try { player?.Stop(); } catch (Exception ex) { Log.Write("sound", "알림음을 멈추지 못함", ex); }
+    }
+
     /// <summary>번호로 고른 소리를 주어진 크기로 낸다 (소리 고르기 창에서 들려주기용)</summary>
     public static void PlaySound(int idx, int vol)
     {
@@ -108,7 +125,7 @@ static class AlertSound
         if (vol == 0 || idx < 0 || idx >= Count) return;
         try
         {
-            if (!cache.TryGetValue((idx, vol), out var wav)) cache[(idx, vol)] = wav = Make(Lib[idx].Notes, vol / 100.0);
+            if (!cache.TryGetValue((idx, vol), out var wav)) cache[(idx, vol)] = wav = Make(Lib[idx].Notes, vol / 100.0, echo: idx < OldFrom);
             player?.Stop();
             player?.Dispose();
             player = new SoundPlayer(new MemoryStream(wav));
@@ -120,9 +137,9 @@ static class AlertSound
     // 울림: 0.2초 뒤에 작게 한 번 더 들리게 해서 소리가 부드럽게 이어지고 사라지게 한다
     const double EchoDelay = 0.2, EchoGain = 0.25;
 
-    static byte[] Make(Note[] notes, double vol)
+    static byte[] Make(Note[] notes, double vol, bool echo = true)
     {
-        double total = notes.Max(n => n.At + n.Len) + 0.45;
+        double total = notes.Max(n => n.At + n.Len) + (echo ? 0.45 : 0.05);
         int count = (int)(total * Rate);
         var mix = new double[count];
         foreach (var n in notes)
@@ -141,7 +158,7 @@ static class AlertSound
             }
         }
         int d = (int)(EchoDelay * Rate);
-        for (int i = d; i < count; i++) mix[i] += EchoGain * mix[i - d];
+        if (echo) for (int i = d; i < count; i++) mix[i] += EchoGain * mix[i - d];
         // 크기: 가장 클 때 0.55 정도까지만 (게임 소리 위에서도 거슬리지 않게)
         double peak = Math.Max(1, mix.Max(Math.Abs));
         double gain = 0.55 * vol * vol / peak; // 귀에 맞게 제곱으로 줄인다

@@ -39,9 +39,11 @@ static class JanusAlert
     /// <summary>기본은 솔 야누스(보라). 룬 알림은 글과 색만 바꿔 같은 효과를 쓴다.
     /// flash를 주면 빛이 6시 방향에 닿을 때 잠깐 그 색으로 바뀌었다가 돌아온다.</summary>
     public static void Play(float sc, string text = "솔 야누스가 꺼졌어요", Color? main = null, Color? light = null,
-        AlertSound.Kind sound = AlertSound.Kind.Janus, Color? flash = null, Color? flashLight = null)
+        AlertSound.Kind sound = AlertSound.Kind.Janus, Color? flash = null, Color? flashLight = null, string? say = null)
     {
         AlertSound.Play(sound);
+        // 제목 읽어 주기: 화면에 뜨는 문구를 그대로 읽는다 (say를 주면 그 글)
+        AlertVoice.Say(say ?? text, AlertSound.Lead(sound));
         Played?.Invoke();
         stop?.Invoke();
         if (AlertSound.St is { AlertVisual: false }) return; // 화면 알림을 끄면 소리만 낸다

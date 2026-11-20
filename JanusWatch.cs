@@ -177,6 +177,7 @@ sealed class JanusWatch
             return;
         }
         alertsWereOn = true;
+        MidnightTick(DateTime.Now);
         if (KeyHook.Active)
         {
             // 누른 키를 하나씩, 누른 순서와 시각 그대로 처리한다 (2와 엔터가 한꺼번에 와도 둘 다 센다)
@@ -353,10 +354,34 @@ sealed class JanusWatch
         st.Onces[i].Start is DateTime s ? Math.Max(0, (s.AddSeconds(st.Onces[i].Sec) - DateTime.Now).TotalSeconds) : null;
     public void CancelOnce(int i) { if (st.Onces[i].Start != null) { st.Onces[i].Start = null; st.Save(); } onceKeyAt[i] = null; }
 
+    // ── 00시 알림: 날짜가 바뀌기 n분 전에 한 번 ──
+    DateTime lastMidnight;
+    public static readonly Color MidnightMain = Color.FromArgb(90, 110, 230);
+    static readonly Color MidnightLight = Color.FromArgb(214, 220, 248);
+
+    void MidnightTick(DateTime now)
+    {
+        if (!st.MidnightOn) return;
+        int n = Math.Clamp(st.MidnightMin, 0, 180);
+        // 오늘 00시 기준과 내일 00시 기준 둘 다 본다 (n분 전이 어제 날짜에 걸칠 수 있어서)
+        foreach (var t in new[] { now.Date.AddMinutes(-n), now.Date.AddDays(1).AddMinutes(-n) })
+        {
+            if (now < t || (now - t).TotalSeconds >= 10 || lastMidnight == t) continue;
+            lastMidnight = t;
+            if (!Mute) PlayMidnight(sc, n);
+        }
+    }
+
+    public static void PlayMidnight(float sc, int n)
+    {
+        var text = n <= 0 ? "00시가 됐어요" : $"{n}분 뒤 00시예요";
+        JanusAlert.Play(sc, text, MidnightMain, MidnightLight, AlertSound.Kind.Midnight, say: text);
+    }
+
     public static void PlayRepeat(float sc, string text, Color c, bool once = false) =>
         JanusAlert.Play(sc, text, c,
             Color.FromArgb(c.R + (255 - c.R) * 3 / 4, c.G + (255 - c.G) * 3 / 4, c.B + (255 - c.B) * 3 / 4),
-            once ? AlertSound.Kind.Once : AlertSound.Kind.Repeat);
+            once ? AlertSound.Kind.Once : AlertSound.Kind.Repeat, say: text);
 
     void Step(DateTime now, bool inGame, bool janus, bool npc, int buff, bool enter, int dope, int arrows)
     {

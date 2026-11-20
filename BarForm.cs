@@ -882,7 +882,23 @@ public class BarForm : Form
         }
         var erdaChip = new TimerChip(TimerChip.Kind.Buff, sc) { Key = "erda", Visible = false, Margin = new Padding(S(2), 0, S(2), 0), BuffTint = JanusWatch.ErdaMain };
         erdaChip.Click += (_, _) => { w.CancelErda(); if (erdaChip.SetTime(null)) LayoutBar(); };
-        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips))
+        // 반복·단일 알림 칸마다 칩 하나 (칸 제목 + 남은 시간, 칸 색)
+        var repeatChips = new TimerChip[JanusWatch.RepeatSlots];
+        for (int i = 0; i < repeatChips.Length; i++)
+        {
+            int slot = i;
+            var rc = repeatChips[i] = new TimerChip(TimerChip.Kind.Custom, sc) { Key = "repeat" + i, Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+            rc.Click += (_, _) => { w.CancelRepeat(slot); if (rc.SetTime(null)) LayoutBar(); };
+        }
+        var onceChips = new TimerChip[JanusWatch.OnceSlots];
+        for (int i = 0; i < onceChips.Length; i++)
+        {
+            int slot = i;
+            var oc = onceChips[i] = new TimerChip(TimerChip.Kind.Custom, sc) { Key = "once" + i, Visible = false, Margin = new Padding(S(2), 0, S(2), 0) };
+            oc.Click += (_, _) => { w.CancelOnce(slot); if (oc.SetTime(null)) LayoutBar(); };
+        }
+        var customChips = repeatChips.Concat(onceChips).ToArray();
+        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips).Concat(customChips))
         {
             right.Controls.Add(c);
             right.Controls.SetChildIndex(c, 0);
@@ -890,7 +906,7 @@ public class BarForm : Form
         // 칩을 끌어서 바에서 떼어 내거나 다시 붙인다 (떼어 둔 자리는 저장)
         // 바가 보이면 보이고, 직접 숨겼을 때는 설정에 따라 남긴다 (게임을 꺼서 저절로 숨으면 같이 숨는다)
         var dock = chipDock = new ChipDock(settings, this, sc, LayoutBar, () => Visible || (userHidden && !settings.ChipsHideWithBar));
-        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips)) dock.Add(c);
+        foreach (var c in new[] { runeChip, janusChip, erdaChip }.Concat(buffChips).Concat(dopeChips).Concat(customChips)) dock.Add(c);
         dock.Restore();
         chipTimer.Tick += (_, _) =>
         {
@@ -903,6 +919,20 @@ public class BarForm : Form
                 changed |= buffChips[i].SetTime(w.BuffRemaining(i));
             }
             for (int i = 0; i < dopeChips.Length; i++) changed |= dopeChips[i].SetTime(w.DopeRemaining(i));
+            for (int i = 0; i < repeatChips.Length && i < settings.Repeats.Count; i++)
+            {
+                var r = settings.Repeats[i];
+                repeatChips[i].SetLabel(r.Title(i));
+                repeatChips[i].BuffTint = Color.FromArgb(255, Color.FromArgb(r.Argb));
+                changed |= repeatChips[i].SetTime(w.RepeatRemaining(i));
+            }
+            for (int i = 0; i < onceChips.Length && i < settings.Onces.Count; i++)
+            {
+                var o = settings.Onces[i];
+                onceChips[i].SetLabel(o.Title(i));
+                onceChips[i].BuffTint = Color.FromArgb(255, Color.FromArgb(o.Argb));
+                changed |= onceChips[i].SetTime(w.OnceRemaining(i));
+            }
             if (changed) LayoutBar();
             dock.Sync();
         };

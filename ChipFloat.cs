@@ -9,6 +9,7 @@ namespace MapleBar;
 /// · 바에서 끌면 바에 있던 칩이 모두 한 덩어리로 떨어져 나온다 (나중에 켜지는 칩도 그 덩어리 옆에 생긴다).
 /// · 덩어리에서 칩 하나를 끌면 쭉 늘어나다 떨어져 따로 논다. 가까이 가져가면 자석처럼 끌려가 찰싹 붙는다.
 /// · 바에 놓으면 덩어리째(또는 하나만) 바의 제자리로 빨려 들어간다.
+/// · 덩어리를 오른쪽 클릭하면 세로로(위에서 아래로) 쌓을 수 있다. 화면 끝 가까이 두면 딱 붙는다.
 /// 덩어리와 자리는 설정에 저장해 다시 켜도 그대로 뜬다.</summary>
 sealed class ChipDock
 {
@@ -45,10 +46,10 @@ sealed class ChipDock
 
     ChipGroup? GroupOf(TimerChip chip) => groups.FirstOrDefault(g => g.Has(chip));
 
-    /// <summary>저장된 덩어리를 그 자리에 되살린다. 값: [x, y, 덩어리 번호, 순서] (옛 [x, y]는 혼자인 덩어리)</summary>
+    /// <summary>저장된 덩어리를 그 자리에 되살린다. 값: [x, y, 덩어리 번호, 순서, 세로면 1] (옛 [x, y]는 혼자인 덩어리)</summary>
     public void Restore()
     {
-        var sets = new Dictionary<int, List<(int ord, TimerChip c, Point at)>>();
+        var sets = new Dictionary<int, List<(int ord, TimerChip c, Point at, bool vert)>>();
         int solo = 1 << 20;
         foreach (var c in chips)
         {
@@ -56,7 +57,7 @@ sealed class ChipDock
             int gid = p.Length >= 4 ? p[2] : solo++;
             int ord = p.Length >= 4 ? p[3] : 0;
             if (!sets.TryGetValue(gid, out var list)) sets[gid] = list = new();
-            list.Add((ord, c, new Point(p[0], p[1])));
+            list.Add((ord, c, new Point(p[0], p[1]), p.Length >= 5 && p[4] == 1));
         }
         foreach (var list in sets.Values)
         {
@@ -64,7 +65,7 @@ sealed class ChipDock
             var at = row[0].at;
             if (!OnAnyScreen(at, row[0].c.Size)) continue; // 모니터를 빼서 화면 밖이 된 자리는 버린다 (바에 남는다)
             foreach (var e in row) e.c.Detached = true;
-            groups.Add(ChipGroup.Restored(this, row.Select(e => e.c), at));
+            groups.Add(ChipGroup.Restored(this, row.Select(e => e.c), at, row[0].vert));
         }
         if (groups.Count > 0) relayout();
         Save();
@@ -78,7 +79,7 @@ sealed class ChipDock
             var g = groups[gi];
             var at = g.Spot;
             int oi = 0;
-            foreach (var c in g.Chips) st.ChipSpots[c.Key] = new[] { at.X, at.Y, gi, oi++ };
+            foreach (var c in g.Chips) st.ChipSpots[c.Key] = new[] { at.X, at.Y, gi, oi++, g.Vert ? 1 : 0 };
         }
         st.Save();
     }
@@ -132,28 +133,30 @@ sealed class ChipDock
     {
         float range = S(44);
         ChipGroup? best = null;
-        float bd = range;
-        float w = g.RowWidthT;
+        float bd = range, bw = 0;
         snap = want; at = 0;
         foreach (var t in groups)
         {
             if (t == g || !t.CanJoin) continue;
+            if (t.Vert != g.Vert && g.CountT > 1) continue; // 방향이 다르면 칩 하나만 붙을 수 있다
+            float w = g.LengthFor(t.Vert);
             foreach (var (i, p) in t.Snaps(w))
             {
-                float d = Dist(want, p);
-                if (d < bd) { bd = d; best = t; snap = p; at = i; }
+                float d = Dist(want, p, t.Vert);
+                if (d < bd) { bd = d; best = t; snap = p; at = i; bw = w; }
             }
         }
         s = best == null ? 0 : 1 - bd / range;
-        foreach (var t in groups) if (t != g) t.Court(t == best ? s : 0, t == best ? at : -1, w);
+        foreach (var t in groups) if (t != g) t.Court(t == best ? s : 0, t == best ? at : -1, bw);
         return best;
     }
 
     public void ClearCourt() { foreach (var t in groups) t.Court(0, -1, 0); }
 
-    static float Dist(PointF a, PointF b)
+    static float Dist(PointF a, PointF b, bool vert)
     {
-        float dx = a.X - b.X, dy = (a.Y - b.Y) * 1.3f; // 옆으로 붙으니 위아래로 어긋난 건 더 멀게 친다
+        // 옆으로(세로면 위아래로) 붙으니 그 반대로 어긋난 건 더 멀게 친다
+        float dx = (a.X - b.X) * (vert ? 1.3f : 1), dy = (a.Y - b.Y) * (vert ? 1 : 1.3f);
         return MathF.Sqrt(dx * dx + dy * dy);
     }
 
@@ -161,7 +164,7 @@ sealed class ChipDock
     public void Merge(ChipGroup moving, ChipGroup target, int at)
     {
         ClearCourt();
-        target.Absorb(moving.TakeAll(), at, moving.RowWidthT);
+        target.Absorb(moving.TakeAll(), at, moving.LengthFor(target.Vert));
         groups.Remove(moving);
         moving.Hide();
         moving.Dispose();
@@ -207,6 +210,19 @@ sealed class ChipDock
         var wa = Screen.FromPoint(new Point(spot.X + size.Width / 2, spot.Y + size.Height / 2)).WorkingArea;
         return new Point(Math.Clamp(spot.X, wa.Left, Math.Max(wa.Left, wa.Right - size.Width)),
                          Math.Clamp(spot.Y, wa.Top, Math.Max(wa.Top, wa.Bottom - size.Height)));
+    }
+
+    /// <summary>화면 가장자리 가까이 두면 그 끝에 딱 붙인다 (칩 둘레 판까지 화면 안에 들어오게)</summary>
+    public Point Stick(Point spot, Size size)
+    {
+        var wa = Screen.FromPoint(new Point(spot.X + size.Width / 2, spot.Y + size.Height / 2)).WorkingArea;
+        int near = S(28), m = S(4);
+        int x = spot.X, y = spot.Y;
+        if (Math.Abs(x - (wa.Left + m)) <= near) x = wa.Left + m;
+        else if (Math.Abs(wa.Right - m - (x + size.Width)) <= near) x = wa.Right - m - size.Width;
+        if (Math.Abs(y - (wa.Top + m)) <= near) y = wa.Top + m;
+        else if (Math.Abs(wa.Bottom - m - (y + size.Height)) <= near) y = wa.Bottom - m - size.Height;
+        return new Point(x, y);
     }
 
     static bool OnAnyScreen(Point spot, Size size) =>
@@ -419,10 +435,13 @@ sealed class ChipGroup : GooWindow
         public ChipSpring X, Y, W, A, P; // X, Y: 칩 왼쪽 위 화면 좌표 · W: 자리 너비(0이면 없음) · A: 진하기 · P: 누름 크기
         public Bitmap? Fade;
         public RectangleF Plate;         // 마지막으로 그린 판 (눌렀을 때 찾기)
-        public Member(TimerChip c) { Chip = c; P.Set(1); }
+        public bool V;                   // 세로 덩어리에 들어 있다 (위아래로 자란다)
+        public float Wd;                 // 그리는 너비 (세로면 가장 넓은 칩에 맞춘다)
+        public Member(TimerChip c) { Chip = c; P.Set(1); Wd = c.Width; }
         public float Wv => Math.Clamp(W.V, 0, 1);
         public bool Seen => W.V > 0.04f;
-        public PointF Center => new(X.V + Chip.Width * Wv / 2f, Y.V + Chip.Height / 2f);
+        public PointF Center => V ? new(X.V + Wd / 2f, Y.V + Chip.Height * Wv / 2f)
+                                  : new(X.V + Wd * Wv / 2f, Y.V + Chip.Height / 2f);
     }
 
     /// <summary>떨어져 나간 자리에 남는 짧은 꼬리: 쏙 들어가며 사라진다</summary>
@@ -434,9 +453,11 @@ sealed class ChipGroup : GooWindow
     }
 
     static readonly ToolTip tip = new();
-    const string GroupTip = "끌면 한꺼번에 옮겨요\n바에 놓으면 다시 들어가요";
+    const string GroupTip = "끌면 한꺼번에 옮겨요\n바에 놓으면 다시 들어가요\n오른쪽 클릭으로 세로·가로 바꾸기";
 
     readonly List<Member> members = new();
+    bool vert;           // 칩을 위에서 아래로 쌓는다
+    ContextMenuStrip? menu;
     readonly List<Nub> nubs = new();
     ChipSpring ax, ay, lift, flat, hint, wob, grip;
 
@@ -474,9 +495,9 @@ sealed class ChipGroup : GooWindow
 
     // ── 만들기 ──
 
-    public static ChipGroup Restored(ChipDock dock, IEnumerable<TimerChip> chips, Point at)
+    public static ChipGroup Restored(ChipDock dock, IEnumerable<TimerChip> chips, Point at, bool vert)
     {
-        var g = new ChipGroup(dock);
+        var g = new ChipGroup(dock) { vert = vert };
         g.InitRestored(chips, at);
         return g;
     }
@@ -517,9 +538,9 @@ sealed class ChipGroup : GooWindow
     }
 
     /// <summary>덩어리에서 떨어져 나온 칩 하나로 새 덩어리: 커서 쪽으로 톡 튀어 오고, 떨어진 쪽에 꼬리가 남는다</summary>
-    static ChipGroup Split(ChipDock dock, Member m, PointF grabInChip, PointF back)
+    static ChipGroup Split(ChipDock dock, Member m, PointF grabInChip, PointF back, bool vert)
     {
-        var g = new ChipGroup(dock);
+        var g = new ChipGroup(dock) { vert = vert };
         g.InitSplit(m, grabInChip, back);
         return g;
     }
@@ -556,32 +577,42 @@ sealed class ChipGroup : GooWindow
     public IEnumerable<TimerChip> Chips => members.Select(m => m.Chip);
     public Point Spot => new((int)Math.Round(ax.T), (int)Math.Round(ay.T));
     float RowH => members.Count == 0 ? 1 : members.Max(m => m.Chip.Height);
-    int CountT => members.Count(m => m.W.T > 0);
+    /// <summary>세로일 때 칸 너비: 가장 넓은 칩</summary>
+    float ColW => members.Count == 0 ? 1 : members.Max(m => m.Chip.Width);
+    public int CountT => members.Count(m => m.W.T > 0);
     int CountV => members.Count(m => m.Seen);
+    public bool Vert => vert;
 
-    /// <summary>다 자리 잡았을 때 칩 줄의 너비</summary>
-    public float RowWidthT
+    /// <summary>다 자리 잡았을 때 칩 줄의 길이 (가로면 너비, 세로면 높이)</summary>
+    float Len => LengthFor(vert);
+
+    /// <summary>이 덩어리의 칩을 가로(또는 세로)로 늘어놓았을 때의 길이</summary>
+    public float LengthFor(bool v)
     {
-        get
-        {
-            float w = 0; int n = 0;
-            foreach (var m in members) if (m.W.T > 0) { w += m.Chip.Width + dock.Gap; n++; }
-            return n == 0 ? 0 : w - dock.Gap;
-        }
+        float w = 0; int n = 0;
+        foreach (var m in members) if (m.W.T > 0) { w += (v ? m.Chip.Height : m.Chip.Width) + dock.Gap; n++; }
+        return n == 0 ? 0 : w - dock.Gap;
+    }
+
+    /// <summary>칩마다 방향과 그리는 너비를 맞춘다</summary>
+    void Shape()
+    {
+        float cw = ColW;
+        foreach (var m in members) { m.V = vert; m.Wd = vert ? cw : m.Chip.Width; }
     }
 
     public bool CanJoin => live && mode == Mode.Rest && !IsDisposed && CountT > 0;
     /// <summary>끼어들 수 있는 자리마다 (앞에 남는 칩 수, 끄는 덩어리의 왼쪽 위가 올 곳).
-    /// 맨 앞은 덩어리 왼쪽에, 사이는 그 칩이 있던 자리에(뒤 칩들이 비켜난다), 맨 뒤는 오른쪽에.</summary>
-    public IEnumerable<(int at, PointF p)> Snaps(float movingWidth)
+    /// 맨 앞은 덩어리 왼쪽(세로면 위)에, 사이는 그 칩이 있던 자리에(뒤 칩들이 비켜난다), 맨 뒤는 오른쪽(세로면 아래)에.</summary>
+    public IEnumerable<(int at, PointF p)> Snaps(float movingLen)
     {
-        yield return (0, new PointF(ax.T - dock.Gap - movingWidth, ay.T));
+        yield return (0, vert ? new PointF(ax.T, ay.T - dock.Gap - movingLen) : new PointF(ax.T - dock.Gap - movingLen, ay.T));
         float run = 0; int i = 0;
         foreach (var m in members)
         {
             if (m.W.T <= 0) continue;
-            run += m.Chip.Width + dock.Gap;
-            yield return (++i, new PointF(ax.T + run, ay.T));
+            run += (vert ? m.Chip.Height : m.Chip.Width) + dock.Gap;
+            yield return (++i, vert ? new PointF(ax.T, ay.T + run) : new PointF(ax.T + run, ay.T));
         }
     }
 
@@ -629,13 +660,13 @@ sealed class ChipGroup : GooWindow
         {
             var c = m.Center;
             float s = m.P.V;
-            var r = new RectangleF(c.X - m.Chip.Width * s / 2, c.Y - m.Chip.Height * s / 2, m.Chip.Width * s, m.Chip.Height * s);
+            var r = new RectangleF(c.X - m.Wd * s / 2, c.Y - m.Chip.Height * s / 2, m.Wd * s, m.Chip.Height * s);
             yield return (m.Chip, r, m.Seen && m.A.V > 0.3f);
         }
     }
 
     /// <summary>다른 덩어리의 칩들을 at 자리(앞·뒤·사이)에 끼운다: 지금 있던 자리에서 미끄러져 들어와 찰싹 출렁인다</summary>
-    public void Absorb(List<object> list, int at, float movingWidth)
+    public void Absorb(List<object> list, int at, float movingLen)
     {
         var add = list.Cast<Member>().ToList();
         foreach (var m in add) m.P.T = 1;
@@ -643,7 +674,9 @@ sealed class ChipGroup : GooWindow
         Member? before = null, after = null;
         if (at <= 0)
         {
-            ax.Set(ax.T - dock.Gap - movingWidth); // 칩들은 제 자리에서 용수철로 옮겨 가니 자리값은 바로 옮긴다
+            // 칩들은 제 자리에서 용수철로 옮겨 가니 자리값은 바로 옮긴다
+            if (vert) ay.Set(ay.T - dock.Gap - movingLen);
+            else ax.Set(ax.T - dock.Gap - movingLen);
             after = present.FirstOrDefault();
             members.InsertRange(0, add);
         }
@@ -658,11 +691,21 @@ sealed class ChipGroup : GooWindow
             members.InsertRange(members.IndexOf(after), add);
         }
         // 끼워질 때 양옆이 살짝 밀려났다가 돌아온다 (찰싹)
-        if (before != null) before.X.Vel -= S(90);
-        if (after != null) after.X.Vel += S(90);
-        foreach (var m in add) m.Y.Vel += S(40);
+        if (vert)
+        {
+            if (before != null) before.Y.Vel -= S(90);
+            if (after != null) after.Y.Vel += S(90);
+            foreach (var m in add) m.X.Vel += S(40);
+        }
+        else
+        {
+            if (before != null) before.X.Vel -= S(90);
+            if (after != null) after.X.Vel += S(90);
+            foreach (var m in add) m.Y.Vel += S(40);
+        }
         splat = 0.7f;
         wob.Vel += 16;
+        Shape();
         ApplyLive();
         Kick();
     }
@@ -710,6 +753,53 @@ sealed class ChipGroup : GooWindow
         Kick();
     }
 
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button == MouseButtons.Right && mode == Mode.Rest && live) ShowMenu();
+    }
+
+    /// <summary>오른쪽 클릭: 세로·가로 바꾸기</summary>
+    void ShowMenu()
+    {
+        if (menu == null)
+        {
+            menu = UI.Rounded(new ContextMenuStrip { Font = new Font("맑은 고딕", 9.5f * UI.Z), ShowImageMargin = false });
+            var turn = new ToolStripMenuItem();
+            turn.Click += (_, _) => Turn();
+            menu.Opening += (_, _) => turn.Text = vert ? "가로로 놓기" : "세로로 놓기";
+            menu.Items.Add(turn);
+        }
+        menu.Show(Cursor.Position);
+    }
+
+    /// <summary>세로·가로를 바꾼다: 칩들이 용수철로 새 자리로 옮겨 가고, 화면 오른쪽(아래쪽) 끝에 붙어 있었으면 그대로 붙어 있다</summary>
+    void Turn()
+    {
+        if (mode != Mode.Rest || IsDisposed) return;
+        var before = BoxAt(ax.T, ay.T);
+        var wa = Screen.FromRectangle(before).WorkingArea;
+        bool right = before.Right >= wa.Right - S(12), bottom = before.Bottom >= wa.Bottom - S(12);
+        vert = !vert;
+        Shape();
+        var after = BoxAt(ax.T, ay.T);
+        if (right) ax.T += before.Right - after.Right;
+        if (bottom) ay.T += before.Bottom - after.Bottom;
+        splat = 0.6f;
+        wob.Vel += 10;
+        Settle();
+        Kick();
+    }
+
+    /// <summary>자리(x, y)에 다 자리 잡았을 때 손잡이까지 든 덩어리 상자</summary>
+    Rectangle BoxAt(float x, float y)
+    {
+        float gw = CountT >= 2 ? GW + dock.Gap : 0;
+        return vert
+            ? new Rectangle((int)Math.Round(x), (int)Math.Round(y - gw), Math.Max(1, (int)Math.Ceiling(ColW)), Math.Max(1, (int)Math.Ceiling(Len + gw)))
+            : new Rectangle((int)Math.Round(x - gw), (int)Math.Round(y), Math.Max(1, (int)Math.Ceiling(Len + gw)), Math.Max(1, (int)Math.Ceiling(RowH)));
+    }
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
@@ -724,6 +814,7 @@ sealed class ChipGroup : GooWindow
 
     protected override void Tick(float dt)
     {
+        Shape();
         var cur = Cursor.Position;
         bool down = (MouseButtons & MouseButtons.Left) != 0;
         splat = Math.Max(0, splat - dt);
@@ -779,6 +870,13 @@ sealed class ChipGroup : GooWindow
             float e = Ease(s) * 0.92f;
             ax.T = want.X + (snap.X - want.X) * e;
             ay.T = want.Y + (snap.Y - want.Y) * e;
+            if (mag == null && !over && CountT > 0)
+            {
+                // 화면 끝 가까이 가면 딱 붙는다
+                var box = BoxAt(ax.T, ay.T);
+                var stuck = dock.Stick(box.Location, box.Size);
+                ax.T += stuck.X - box.X; ay.T += stuck.Y - box.Y;
+            }
             // 바 위: 바에 들어갈 자리를 벌리고, 칩들은 그쪽으로 살짝 끌려가며 작아진다
             bool wantPocket = over && CountT > 0;
             if (wantPocket != pocket)
@@ -818,7 +916,7 @@ sealed class ChipGroup : GooWindow
         grip.T = CountT >= 2 && court <= 0 && !(bridgeTo != null && bridgeRight) ? 1 : 0;
 
         // 칩 자리 목표
-        float H = RowH, run = 0;
+        float H = RowH, CW = ColW, run = 0;
         float open = OpenBy();
         int pi = 0; // 자리 잡은 칩 차례 (끼어들 자리 뒤 칩은 open만큼 비켜난다)
         int oi = 0; // 보이거나 자리 잡은 칩 차례
@@ -834,9 +932,20 @@ sealed class ChipGroup : GooWindow
         for (int i = 0; i < members.Count; i++)
         {
             var m = members[i];
-            float tx = ax.V + run, ty = ay.V + (H - m.Chip.Height) / 2f;
-            run += (m.Chip.Width + dock.Gap) * m.Wv;
-            if (open > 0 && pi >= courtAt) tx += open;
+            float tx, ty;
+            if (vert)
+            {
+                // 세로: 위에서 아래로 쌓고, 너비는 가장 넓은 칩에 맞춘다
+                tx = ax.V + (CW - m.Wd) / 2f; ty = ay.V + run;
+                run += (m.Chip.Height + dock.Gap) * m.Wv;
+                if (open > 0 && pi >= courtAt) ty += open;
+            }
+            else
+            {
+                tx = ax.V + run; ty = ay.V + (H - m.Chip.Height) / 2f;
+                run += (m.Chip.Width + dock.Gap) * m.Wv;
+                if (open > 0 && pi >= courtAt) tx += open;
+            }
             if (m.W.T > 0) pi++;
             int ord = m.W.T > 0 || m.Seen ? oi++ : -1;
             if (mode == Mode.Pull && heldOrdNow >= 0 && ord >= 0)
@@ -922,16 +1031,15 @@ sealed class ChipGroup : GooWindow
         splat = 0.6f;
         wob.Vel += 10;
         // 잡았던 점을 그대로 쥔 채 떨어져 나간다
-        dock.SplitOff(Split(dock, m, grabInChip, back));
+        dock.SplitOff(Split(dock, m, grabInChip, back, vert));
     }
 
     /// <summary>바 밖에 놓음: 화면 안으로 넣고 그 자리를 저장한다</summary>
     void Settle()
     {
-        float gw = CountT >= 2 ? GW + dock.Gap : 0;
-        var size = new Size(Math.Max(1, (int)Math.Ceiling(RowWidthT + gw)), Math.Max(1, (int)Math.Ceiling(RowH)));
-        var p = ChipDock.Clamp(new Point((int)Math.Round(ax.T - gw), (int)Math.Round(ay.T)), size);
-        ax.T = p.X + gw; ay.T = p.Y;
+        var box = BoxAt(ax.T, ay.T);
+        var p = dock.Stick(ChipDock.Clamp(box.Location, box.Size), box.Size); // 화면 안으로, 끝 가까이면 딱 붙게
+        ax.T += p.X - box.X; ay.T += p.Y - box.Y;
         foreach (var m in members) m.P.T = 1;
         wob.Vel += 5; // 통 내려앉는다
         dock.Save();
@@ -950,17 +1058,19 @@ sealed class ChipGroup : GooWindow
         if (fresh) Raise(); // 빛은 덩어리 아래에
     }
 
-    /// <summary>보이는 맨 앞(또는 맨 뒤) 칩의 바깥쪽 가장자리 가운데</summary>
-    PointF Edge(bool right)
+    /// <summary>보이는 맨 앞(또는 맨 뒤) 칩의 바깥쪽 가장자리 가운데 (v면 위·아래 가장자리)</summary>
+    PointF Edge(bool right, bool v)
     {
         var m = right ? members.LastOrDefault(x => x.Seen) : members.FirstOrDefault(x => x.Seen);
         if (m == null) return new PointF(ax.V, ay.V + RowH / 2);
+        if (v) return new PointF(m.Plate.Left + m.Plate.Width / 2, right ? m.Plate.Bottom - S(2) : m.Plate.Top + S(2));
         return new PointF(right ? m.Plate.Right - S(2) : m.Plate.Left + S(2), m.Plate.Top + m.Plate.Height / 2);
     }
 
     void Draw()
     {
         if (IsDisposed) return;
+        Shape();
         float up = 1 - Math.Clamp(flat.V, 0, 1);
         float pad = S(4) * up;
         float H = RowH;
@@ -975,8 +1085,10 @@ sealed class ChipGroup : GooWindow
         {
             var c = m.Center;
             float edge = 2 * pad * Math.Min(1, m.Wv * 3);
-            float pw = m.Chip.Width * m.P.V * Math.Min(1, m.Wv * 1.4f) + edge;
-            float ph = m.Chip.Height * m.P.V * (0.55f + 0.45f * m.Wv) + edge;
+            // 자라는 쪽(가로면 너비, 세로면 높이)은 빨리, 반대쪽은 덜 줄어든다
+            float grow = Math.Min(1, m.Wv * 1.4f), keep = 0.55f + 0.45f * m.Wv;
+            float pw = m.Wd * m.P.V * (vert ? keep : grow) + edge;
+            float ph = m.Chip.Height * m.P.V * (vert ? grow : keep) + edge;
             m.Plate = new RectangleF(c.X - pw / 2, c.Y - ph / 2, pw, ph);
         }
         RectangleF? gripR = null;
@@ -985,15 +1097,17 @@ sealed class ChipGroup : GooWindow
         {
             var f = seen[0].Plate;
             float gw = GW * gv;
-            gripR = new RectangleF(f.Left - dock.Gap - gw + S(2), f.Top + f.Height * 0.08f, gw + dock.Gap + S(6), f.Height * 0.84f);
+            gripR = vert
+                ? new RectangleF(f.Left + f.Width * 0.08f, f.Top - dock.Gap - gw + S(2), f.Width * 0.84f, gw + dock.Gap + S(6))
+                : new RectangleF(f.Left - dock.Gap - gw + S(2), f.Top + f.Height * 0.08f, gw + dock.Gap + S(6), f.Height * 0.84f);
         }
 
         // 다른 덩어리로 뻗는 다리
         PointF? bFrom = null, bTo = null; float reach = 0;
         if (bridgeTo != null && bridgeS > 0.01f && !bridgeTo.IsDisposed)
         {
-            bFrom = Edge(!bridgeRight);
-            var tgt = bridgeTo.Edge(bridgeRight);
+            bFrom = Edge(!bridgeRight, bridgeTo.vert);
+            var tgt = bridgeTo.Edge(bridgeRight, bridgeTo.vert);
             reach = Math.Min(1, bridgeS / 0.35f);
             bTo = new PointF(bFrom.Value.X + (tgt.X - bFrom.Value.X) * reach, bFrom.Value.Y + (tgt.Y - bFrom.Value.Y) * reach);
         }
@@ -1056,11 +1170,12 @@ sealed class ChipGroup : GooWindow
             {
                 var a = seen[i]; var b = seen[i + 1];
                 PointF ca = a.Center, cb = b.Center;
-                float rest = a.Chip.Width * a.Wv / 2 + dock.Gap + b.Chip.Width * b.Wv / 2;
-                float ex = cb.X - ca.X - rest, ey = cb.Y - ca.Y, excess = MathF.Sqrt(ex * ex + ey * ey);
-                float hh = Math.Min(a.Plate.Height, b.Plate.Height);
-                float wm = hh * Math.Clamp(1 - excess / S(56), 0.16f, 1) * 0.85f;
-                FillNeck(gm, white, ca, cb, a.Plate.Height * 0.8f, b.Plate.Height * 0.8f, wm);
+                float rest = vert ? a.Chip.Height * a.Wv / 2 + dock.Gap + b.Chip.Height * b.Wv / 2
+                                  : a.Chip.Width * a.Wv / 2 + dock.Gap + b.Chip.Width * b.Wv / 2;
+                float ex = cb.X - ca.X - (vert ? 0 : rest), ey = cb.Y - ca.Y - (vert ? rest : 0), excess = MathF.Sqrt(ex * ex + ey * ey);
+                float ta = vert ? a.Plate.Width : a.Plate.Height, tb = vert ? b.Plate.Width : b.Plate.Height; // 목 굵기는 쌓는 방향의 옆 길이
+                float wm = Math.Min(ta, tb) * Math.Clamp(1 - excess / S(56), 0.16f, 1) * 0.85f;
+                FillNeck(gm, white, ca, cb, ta * 0.8f, tb * 0.8f, wm);
             }
             // 떨어진 자리의 꼬리
             foreach (var nb in nubs)
@@ -1086,12 +1201,23 @@ sealed class ChipGroup : GooWindow
             {
                 float a = Math.Clamp(gv, 0, 1);
                 var f = seen[0].Plate;
-                float gx = f.Left - dock.Gap - GW * gv / 2 + S(3), gy = f.Top + f.Height / 2;
                 float d = S(1.5f), sp = S(4.5f);
                 using var b = new SolidBrush(Color.FromArgb((int)(255 * a), UI.Sub));
-                for (int cx = 0; cx < 2; cx++)
-                    for (int cy = -1; cy <= 1; cy++)
-                        g.FillEllipse(b, gx + (cx - 0.5f) * sp * 0.9f - d, gy + cy * sp - d, 2 * d, 2 * d);
+                if (vert)
+                {
+                    // 세로: 맨 위 칩 위에 옆으로 누운 점 여섯 개
+                    float gx = f.Left + f.Width / 2, gy = f.Top - dock.Gap - GW * gv / 2 + S(3);
+                    for (int cx = -1; cx <= 1; cx++)
+                        for (int cy = 0; cy < 2; cy++)
+                            g.FillEllipse(b, gx + cx * sp - d, gy + (cy - 0.5f) * sp * 0.9f - d, 2 * d, 2 * d);
+                }
+                else
+                {
+                    float gx = f.Left - dock.Gap - GW * gv / 2 + S(3), gy = f.Top + f.Height / 2;
+                    for (int cx = 0; cx < 2; cx++)
+                        for (int cy = -1; cy <= 1; cy++)
+                            g.FillEllipse(b, gx + (cx - 0.5f) * sp * 0.9f - d, gy + cy * sp - d, 2 * d, 2 * d);
+                }
             }
             foreach (var m in seen) DrawChip(g, m);
         }
@@ -1105,18 +1231,18 @@ sealed class ChipGroup : GooWindow
     {
         var c = m.Center;
         float s = m.P.V * (0.4f + 0.6f * m.Wv);
-        int w = m.Chip.Width, h = m.Chip.Height;
+        int w = Math.Max(1, (int)MathF.Round(m.Wd)), h = m.Chip.Height; // 세로면 가장 넓은 칩 너비로 그린다
         var st = g.Save();
         g.TranslateTransform(c.X, c.Y);
         g.ScaleTransform(s, s);
         g.TranslateTransform(-w / 2f, -h / 2f);
         float a = Math.Clamp(m.A.V, 0, 1);
-        if (a >= 0.98f) m.Chip.Render(g, m.Chip.Size, smooth: true);
+        if (a >= 0.98f) m.Chip.Render(g, new Size(w, h), smooth: true);
         else if (a > 0.01f)
         {
             // 흐릿하게: 따로 그려 진하기만 낮춘다
             if (m.Fade == null || m.Fade.Width != w || m.Fade.Height != h) { m.Fade?.Dispose(); m.Fade = new Bitmap(Math.Max(1, w), Math.Max(1, h), PixelFormat.Format32bppArgb); }
-            using (var fg = Graphics.FromImage(m.Fade)) { fg.Clear(Color.Transparent); m.Chip.Render(fg, m.Chip.Size, smooth: true); }
+            using (var fg = Graphics.FromImage(m.Fade)) { fg.Clear(Color.Transparent); m.Chip.Render(fg, new Size(w, h), smooth: true); }
             fadeM.Matrix33 = a;
             fadeA.SetColorMatrix(fadeM);
             g.DrawImage(m.Fade, new Rectangle(0, 0, w, h), 0, 0, w, h, GraphicsUnit.Pixel, fadeA);
@@ -1130,6 +1256,7 @@ sealed class ChipGroup : GooWindow
         {
             foreach (var m in members) { m.Fade?.Dispose(); m.Fade = null; }
             glow?.Dispose(); glow = null;
+            if (menu != null) { var f = menu.Font; menu.Dispose(); f.Dispose(); menu = null; }
         }
         base.Dispose(disposing);
     }

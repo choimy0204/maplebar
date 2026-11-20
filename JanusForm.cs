@@ -604,8 +604,16 @@ sealed class JanusForm : Form, IMessageFilter
         pickBtn.Location = new Point(right - pickBtn.PreferredSize.Width, cy + (S(30) - pickBtn.PreferredSize.Height) / 2);
         cy += S(38);
 
+        // 알림음 뒤에 알림 문구를 목소리로 읽어 준다
+        var sayLbl = RowLabel("제목 읽어 주기", ip, cy);
+        var saySw = new Toggle { On = st.SpeakOn, Size = new Size(S(40), S(22)) };
+        saySw.Location = new Point(right - saySw.Width, cy + (S(30) - saySw.Height) / 2);
+        card.Controls.AddRange(new Control[] { sayLbl, saySw });
+        saySw.Changed += v => { st.SpeakOn = v; st.Save(); };
+        cy += S(38);
+
         // 끄면 크기 줄을 흐리게 해서 소리가 안 난다는 걸 보여 준다
-        void Dim() { shown.ForeColor = st.SoundOn ? UI.Text : Gray; plus.Enabled = minus.Enabled = st.SoundOn; }
+        void Dim() { shown.ForeColor = st.SoundOn ? UI.Text : Gray; plus.Enabled = minus.Enabled = saySw.Enabled = st.SoundOn; }
         sw.Changed += v => { st.SoundOn = v; st.Save(); Dim(); if (v) AlertSound.Play(AlertSound.Kind.Janus); };
         Dim();
 
@@ -1162,6 +1170,63 @@ sealed class JanusForm : Form, IMessageFilter
 
     static readonly Color Teal = Color.FromArgb(0, 165, 155);
 
+    /// <summary>00시 알림: 켜기 / 몇 분 전 / 상태 · 미리 보기</summary>
+    Card MakeMidnightCard(int x, int y, int w)
+    {
+        var card = new Card { Location = new Point(x, y), Width = w, Radius = S(12) };
+        Controls.Add(card);
+        int ip = S(14), cy = S(12);
+        var main = JanusWatch.MidnightMain;
+
+        var dot = new Label { Text = "●", ForeColor = main, Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) };
+        var name = new Label { Text = "00시 알림", Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy) };
+        var sw = new Toggle { On = st.MidnightOn, Size = new Size(S(40), S(22)) };
+        sw.Location = new Point(w - ip - sw.Width, cy + S(1));
+        sw.Changed += v => { st.MidnightOn = v; st.Save(); UpdateStatus(); };
+        offAll.Add(() => { if (sw.On) { sw.On = false; st.MidnightOn = false; } });
+        card.Controls.AddRange(new Control[] { dot, name, sw });
+        cy += S(38);
+
+        card.Controls.Add(RowLabel("몇 분 전", ip, cy));
+        var unit = new Label { Text = "분", AutoSize = true, ForeColor = UI.T(Color.FromArgb(80, 80, 80)) };
+        card.Controls.Add(unit);
+        unit.Location = new Point(w - ip - unit.PreferredWidth, cy + (S(30) - unit.PreferredHeight) / 2);
+        var nb = new NumBox
+        {
+            Maximum = 180, Value = Math.Clamp(st.MidnightMin, 0, 180), Size = new Size(S(54), S(30)), Radius = S(8),
+            Font = F(10.5f, FontStyle.Bold), ForeColor = UI.Text,
+        };
+        nb.Location = new Point(unit.Left - S(4) - nb.Width, cy);
+        nb.ValueChanged += (_, _) => { st.MidnightMin = (int)nb.Value; st.Save(); UpdateStatus(); };
+        card.Controls.Add(nb);
+        cy += S(40);
+
+        var hint = new Label
+        {
+            Text = "매일 00시가 되기 전에 한 번 알려요. 0분이면 00시에 알려요.",
+            Font = F(8.5f), ForeColor = Gray, AutoSize = true, MaximumSize = new Size(w - ip * 2, 0), Location = new Point(ip, cy),
+        };
+        card.Controls.Add(hint);
+        cy += hint.PreferredSize.Height + S(10);
+
+        var look = UI.Button("미리 보기", "", () => JanusWatch.PlayMidnight(sc, st.MidnightMin), sc, fore: main, back: Color.FromArgb(24, main));
+        look.Font = F(9, FontStyle.Bold);
+        card.Controls.Add(look);
+        look.Location = new Point(w - ip - look.PreferredSize.Width, cy);
+        var status = new Label { AutoSize = false, AutoEllipsis = true, Font = F(9.5f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft,
+            Location = new Point(ip, cy), Size = new Size(look.Left - ip - S(6), look.PreferredSize.Height) };
+        card.Controls.Add(status);
+        liveHints.Add(() =>
+        {
+            status.Text = st.MidnightOn ? $"매일 {DateTime.Today.AddMinutes(-Math.Clamp(st.MidnightMin, 0, 180)):HH:mm}에 알려요" : "꺼져 있어요";
+            status.ForeColor = st.MidnightOn ? Readable(main) : Gray;
+        });
+        cy += look.PreferredSize.Height + S(12);
+
+        card.Height = cy;
+        return card;
+    }
+
     /// <summary>2페이지: 왼쪽 반복 주기 알림 15칸 · 오른쪽 단일 알림 15칸 (◀ ▶로 한 칸씩) · 알림 띄울 모니터. 끝난 높이를 돌려준다.</summary>
     int MakePage2(int x, int top, int colW, int gap, int fullW)
     {
@@ -1189,6 +1254,9 @@ sealed class JanusForm : Form, IMessageFilter
         for (int i = 0; i < JanusWatch.OnceSlots; i++) h = Math.Max(h, (onceCards[i] = MakeRepeatCard(ox, y, hw, i, once: true)).Height);
         foreach (var c in repeatCards.Concat(onceCards)) if (c != null) c.Height = h;
         y += h + S(20);
+
+        y += Section("00시 알림", Teal, x, y, fullW);
+        y += MakeMidnightCard(x, y, fullW).Height + S(20);
 
         y += Section("알림 띄울 모니터", Teal, x, y, fullW);
         y += MakeScreenCard(x, y, fullW).Height + S(10);

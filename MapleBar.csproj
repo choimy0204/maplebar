@@ -10,13 +10,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Product>메이플 바</Product>
     <AssemblyTitle>메이플 바</AssemblyTitle>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <!-- WFO1000: 디자이너 저장 설정 검사. 이 앱은 디자이너 없이 코드로만 화면을 만들어 해당 없음 -->
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="System.Speech" Version="10.0.0" />
   </ItemGroup>
 
   <!-- WebView2 패키지가 넣는 WPF용 dll은 이 앱(WinForms)에 필요 없고 .NET 10에서 WindowsBase 충돌 경고를 내서 뺀다 -->

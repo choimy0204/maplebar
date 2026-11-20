@@ -6,7 +6,7 @@ namespace MapleBar;
 /// <summary>바에 붙는 작은 칩: 솔 야누스·룬 아이콘(직접 그린 것)과 남은 시간.</summary>
 sealed class TimerChip : Control
 {
-    public enum Kind { Janus, Rune, Buff, Off } // Off: 전체 알림을 꺼 둔 표시 (아이콘 없이 "OFF")
+    public enum Kind { Janus, Rune, Buff, Off, Custom } // Off: 전체 알림을 꺼 둔 표시 (아이콘 없이 "OFF") · Custom: 반복·단일 알림 (제목 + 남은 시간)
     /// <summary>버프 칩 색 (20분 주황 · 10분 노랑)</summary>
     public Color BuffTint { get => buffTint; set { if (value != buffTint) { buffTint = value; Invalidate(); Changed?.Invoke(); } } }
     Color buffTint = Color.FromArgb(255, 140, 0);
@@ -31,7 +31,8 @@ sealed class TimerChip : Control
     /// <summary>바에 붙은 칩을 끌기 시작하면 (누른 점, 칩 안 좌표)</summary>
     public event Action<TimerChip, Point>? DragOut;
     /// <summary>마우스를 올렸을 때 보이는 설명 (누르면 무엇을 하는지까지)</summary>
-    public string TipText { get; }
+    public string TipText { get; private set; }
+    string label = ""; // 반복·단일 알림 칩: 칸 제목
 
     public TimerChip(Kind kind, float sc)
     {
@@ -46,6 +47,7 @@ sealed class TimerChip : Control
             Kind.Janus => "솔 야누스 남은 시간 (누르면 취소)",
             Kind.Rune => "다음 룬까지 남은 시간 (누르면 취소)",
             Kind.Off => "알림이 모두 꺼져 있어요 (누르면 켜요)",
+            Kind.Custom => "알림까지 남은 시간 (누르면 취소)",
             _ => "버프 남은 시간 (누르면 취소)",
         };
         tip.SetToolTip(this, TipText + "\n끌어서 원하는 곳에 둘 수 있어요");
@@ -118,8 +120,33 @@ sealed class TimerChip : Control
     {
         bool show = sec != null || ready;
         string t = ready ? "나옴" : sec is double s ? $"{(int)s / 60}:{(int)s % 60:00}" : "";
-        if (t != text || ready != alert) { text = t; alert = ready; Invalidate(); Changed?.Invoke(); }
-        return SetShown(show);
+        if (kind == Kind.Custom && t != "") t = label + " " + t;
+        bool resized = false;
+        if (t != text || ready != alert) { text = t; alert = ready; resized = FitWidth(); Invalidate(); Changed?.Invoke(); }
+        return SetShown(show) || (resized && Visible);
+    }
+
+    /// <summary>반복·단일 알림 칩의 제목을 넣는다 (길면 줄인다)</summary>
+    public void SetLabel(string title)
+    {
+        var t = title.Length > 8 ? title[..7] + "…" : title;
+        if (t == label) return;
+        label = t;
+        TipText = $"{title} 남은 시간 (누르면 취소)";
+        tip.SetToolTip(this, TipText + "\n끌어서 원하는 곳에 둘 수 있어요");
+    }
+
+    /// <summary>반복·단일 알림 칩은 글 길이에 맞춰 넓힌다. 숫자는 0으로 재서 1초마다 흔들리지 않게. 넓이가 바뀌면 true.</summary>
+    bool FitWidth()
+    {
+        if (kind != Kind.Custom || text == "") return false;
+        var sample = new string(text.Select(ch => char.IsDigit(ch) ? '0' : ch).ToArray());
+        int textW = TextRenderer.MeasureText(sample, Font, Size.Empty, TextFormatFlags.NoPadding).Width;
+        int icon = Height - S(4);
+        int w = Math.Max(S(84), S(4) + icon + S(3) + textW + S(12));
+        if (w == Width) return false;
+        Width = w;
+        return true;
     }
 
     /// <summary>글자나 색이 바뀌면 (떠 있는 칸을 다시 그리라고)</summary>
@@ -160,6 +187,7 @@ sealed class TimerChip : Control
         var icon = new RectangleF(S(4), (Height - isz) / 2f, isz, isz);
         if (kind == Kind.Janus) DrawJanus(g, icon);
         else if (kind == Kind.Rune) DrawRune(g, icon);
+        else if (kind == Kind.Custom) DrawBell(g, icon, c);
         else if (kind != Kind.Off) DrawBuff(g, icon, c);
 
         var tr = kind == Kind.Off ? new RectangleF(0, 0, Width, Height) : new RectangleF(icon.Right + S(3), 0, Width - icon.Right - S(8), Height);
@@ -245,6 +273,26 @@ sealed class TimerChip : Control
         using var pen = new Pen(Color.White, Math.Max(1.5f, r.Width / 9f)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
         foreach (float y in new[] { disc.Y + disc.Height * 0.32f, disc.Y + disc.Height * 0.56f })
             g.DrawLines(pen, new[] { new PointF(cx - hw, y + h), new PointF(cx, y), new PointF(cx + hw, y + h) });
+    }
+
+    // 반복·단일 알림: 칩 색 원 안에 흰 종
+    static void DrawBell(Graphics g, RectangleF r, Color c)
+    {
+        var disc = Inset(r, r.Width * 0.1f);
+        using (var b = new SolidBrush(c)) g.FillEllipse(b, disc);
+        using (var p = new Pen(Color.FromArgb(200, 255, 255, 255), Math.Max(1f, r.Width / 22f))) g.DrawEllipse(p, Inset(disc, disc.Width * 0.08f));
+        float cx = disc.X + disc.Width / 2, top = disc.Y + disc.Height * 0.24f, bot = disc.Y + disc.Height * 0.66f;
+        float hw = disc.Width * 0.24f, rw = disc.Width * 0.3f;
+        using var bell = new GraphicsPath();
+        bell.AddArc(cx - hw * 0.7f, top, hw * 1.4f, hw * 1.2f, 180, 180);
+        bell.AddLine(cx + hw * 0.7f, top + hw * 0.6f, cx + hw, bot - disc.Height * 0.05f);
+        bell.AddLine(cx + rw, bot, cx - rw, bot);
+        bell.AddLine(cx - hw, bot - disc.Height * 0.05f, cx - hw * 0.7f, top + hw * 0.6f);
+        bell.CloseFigure();
+        using var wb = new SolidBrush(Color.White);
+        g.FillPath(wb, bell);
+        float d = disc.Width * 0.12f;
+        g.FillEllipse(wb, cx - d / 2, bot + disc.Height * 0.03f, d, d);
     }
 
     static Color Mix(Color a, Color b, float t) =>
