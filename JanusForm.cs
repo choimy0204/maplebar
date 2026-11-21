@@ -200,7 +200,7 @@ sealed class JanusForm : Form, IMessageFilter
             // 프리셋 칸은 두 페이지에 다 보이게 페이지 목록 밖에 둔다 (높이는 ShowPage에서 맞춘다)
             presetPanel = MakePresetPanel(contentR + presetGap, y, presetW);
             int g10 = S(10), sx = pad;
-            var sound = MakeSoundCard(sx, y, S(260)); sx += sound.Width + g10;
+            var sound = MakeSoundCard(sx, y, S(470)); sx += sound.Width + g10;
             var combo = MakeComboCard(sx, y, S(270)); sx += combo.Width + g10;
             var method = MakeMethodCard(sx, y, contentR - sx);
             int h4 = new[] { sound.Height, combo.Height, method.Height }.Max();
@@ -579,12 +579,22 @@ sealed class JanusForm : Form, IMessageFilter
         var sw = new Toggle { On = st.SoundOn, Size = new Size(S(40), S(22)) };
         sw.Location = new Point(w - ip - sw.Width, cy + S(1));
         card.Controls.AddRange(new Control[] { dot, name, sw });
-        // 넓은 창에서는 한 줄에: 이름 … 소리 크기 − 값 + · 스위치
-        bool wide = w > S(500);
-        int right = wide ? sw.Left - S(18) : w - ip;
-        if (wide) cy -= S(4); else cy += S(38);
+        cy += S(38);
+        // 넓으면 두 칸으로: 왼쪽 소리 크기 · 알림마다 소리 / 오른쪽 알림음 · 제목 읽어 주기
+        bool twoCol = w >= S(400);
+        // 왼쪽은 − 값 + 칸이 들어가야 해서 더 넓게 (오른쪽은 글 + 스위치뿐)
+        int colGap = S(24), colW = (w - ip * 2 - colGap) * 3 / 5, top0 = cy;
+        int lx = ip, right = twoCol ? ip + colW : w - ip;
+        void Next(int i)
+        {
+            if (!twoCol) { cy += S(38); return; }
+            bool rightCol = i % 2 == 0;
+            lx = rightCol ? ip + colW + colGap : ip;
+            right = rightCol ? w - ip : ip + colW;
+            cy = top0 + (i + 1) / 2 * S(38);
+        }
 
-        var volLbl = RowLabel("소리 크기", ip, cy);
+        var volLbl = RowLabel("소리 크기", lx, cy);
         card.Controls.Add(volLbl);
         int vol = Math.Clamp((int)Math.Round(st.SoundVol / 10.0) * 10, 10, 100);
         var shown = ValueLabel(vol + "%");
@@ -596,32 +606,31 @@ sealed class JanusForm : Form, IMessageFilter
             AlertSound.Play(AlertSound.Kind.Janus, vol);
         }
         var (minus, plus) = AddStepper(card, shown, right, cy, Change, 10);
-        if (wide) volLbl.Left = minus.Left - volLbl.PreferredWidth - S(8);
-        cy += S(38);
+        Next(0);
 
         // 띠링 같은 알림음을 울릴지. 끄고 읽어 주기만 켜면 목소리만 들린다
-        var chimeLbl = RowLabel("알림음", ip, cy);
+        var chimeLbl = RowLabel("알림음", lx, cy);
         var chimeSw = new Toggle { On = st.ChimeOn, Size = new Size(S(40), S(22)) };
         chimeSw.Location = new Point(right - chimeSw.Width, cy + (S(30) - chimeSw.Height) / 2);
         card.Controls.AddRange(new Control[] { chimeLbl, chimeSw });
         chimeSw.Changed += v => { st.ChimeOn = v; st.Save(); };
-        cy += S(38);
+        Next(1);
 
         // 알림마다 다른 소리를 고르는 창을 연다
-        var kindLbl = RowLabel("알림마다 소리", ip, cy);
+        var kindLbl = RowLabel("알림마다 소리", lx, cy);
         var pickBtn = UI.Button("고르기", "", () => SoundPickBox.Open(this, st), sc, back: UI.HoverBack);
         pickBtn.Font = F(9, FontStyle.Bold);
         card.Controls.AddRange(new Control[] { kindLbl, pickBtn });
         pickBtn.Location = new Point(right - pickBtn.PreferredSize.Width, cy + (S(30) - pickBtn.PreferredSize.Height) / 2);
-        cy += S(38);
+        Next(2);
 
         // 알림음 뒤에 알림 문구를 목소리로 읽어 준다
-        var sayLbl = RowLabel("제목 읽어 주기", ip, cy);
+        var sayLbl = RowLabel("제목 읽어 주기", lx, cy);
         var saySw = new Toggle { On = st.SpeakOn, Size = new Size(S(40), S(22)) };
         saySw.Location = new Point(right - saySw.Width, cy + (S(30) - saySw.Height) / 2);
         card.Controls.AddRange(new Control[] { sayLbl, saySw });
         saySw.Changed += v => { st.SpeakOn = v; st.Save(); };
-        cy += S(38);
+        Next(3);
 
         // 끄면 크기 줄을 흐리게 해서 소리가 안 난다는 걸 보여 준다
         void Dim() { shown.ForeColor = st.SoundOn ? UI.Text : Gray; plus.Enabled = minus.Enabled = saySw.Enabled = chimeSw.Enabled = st.SoundOn; }
