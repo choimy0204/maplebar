@@ -19,21 +19,7 @@ public class BarForm : Form
 
     readonly Settings settings = Settings.Load();
     readonly FlowLayoutPanel left, right;
-    readonly Panel searchBox;
-    readonly TextBox search = new();
-    readonly RecentDrop drop;
-
-    long dropHiddenAt;
-    void HideDropIfLeft()
-    {
-        if (search.Focused && ActiveForm == this) return;
-        if (drop.Visible) dropHiddenAt = Environment.TickCount64;
-        drop.Hide();
-    }
-
-    void ShowDrop() => drop.Open(new Point(searchBox.PointToScreen(Point.Empty).X, Bottom + S(8)), searchBox.Width,
-        // 글이 통째로 골라져 있으면(막 들어온 상태) 걸러 내지 않고 모두 보여 준다
-        search.SelectionLength > 0 && search.SelectionLength == search.TextLength ? "" : search.Text.Trim());
+    readonly SearchBox searchBox;
     readonly float sc;
 
     int S(int v) => UI.Scale(v, sc);
@@ -46,7 +32,6 @@ public class BarForm : Form
     {
         base.Dispose(disposing); // 컨트롤이 먼저 정리된 뒤에 글꼴을 푼다
         if (!disposing) return;
-        searchFlash?.Dispose();
         foreach (var f in ownedFonts) f.Dispose();
         ownedFonts.Clear();
     }
@@ -137,68 +122,10 @@ public class BarForm : Form
         // ── 오른쪽: 뮤직 컨트롤(듣는 중일 때만), 닉네임 검색, 최근 기록, 설정/숨기기/종료 ──
         AddMusicControls();
 
-        searchBox = new Panel { Size = new Size(S(230), S(36)), BackColor = UI.Back, Margin = new Padding(S(10), 0, S(4), 0) };
-        searchBox.Paint += PaintSearchBorder;
-        search.BorderStyle = BorderStyle.None;
-        search.BackColor = UI.Back; // 다크 모드에서 흰 칸이 튀지 않게 바탕과 맞춘다
-        search.ForeColor = UI.Text;
-        search.PlaceholderText = "닉네임을 입력하세요";
-        // 메이플에서 넘어오면 입력기가 꺼진 채로 남아 한/영이 안 먹을 때가 있다.
-        // 칸에 들어오면 입력기를 다시 붙이고, 마지막에 쓰던 한글/영문 상태로 돌려놓는다
-        search.GotFocus += (_, _) => ImeRestore(search.Handle);
-        search.LostFocus += (_, _) => ImeRemember(search.Handle);
-        search.Font = OwnFont(new Font("맑은 고딕", 10.5f * UI.Z));
-        search.Width = searchBox.Width - S(44);
-        search.Location = new Point(S(12), (searchBox.Height - search.PreferredHeight) / 2);
-        // 최근 검색 목록: 검색칸에 들어오면 콤보박스처럼 아래로 펼쳐진다
-        drop = new RecentDrop(this, settings, sc)
-        {
-            PickInfo = n => { search.Text = n; Search(SiteMenu.InfoPath); },
-        };
-        drop.VisibleChanged += (_, _) => menusOpen = Math.Max(0, menusOpen + (drop.Visible ? 1 : -1));
-        // 칸을 눌렀을 때·글자를 칠 때만 펼친다. 포커스가 들락날락할 때마다 열고 닫으면 깜빡이므로,
-        // 닫는 건 잠깐 뒤에 정말로 칸을 떠났는지 보고 정한다
-        search.MouseDown += (_, _) => { if (!drop.Visible) ShowDrop(); };
-        // 칸에 포커스가 오면 펼친다 (방금 닫힌 직후면 다시 열지 않아 깜빡이지 않게)
-        search.GotFocus += (_, _) => BeginInvoke(() =>
-        {
-            if (search.Focused && ActiveForm == this && Environment.TickCount64 - dropHiddenAt > 400) ShowDrop();
-        });
-        // 포커스가 있는 칸 위에 마우스를 올려도 펼친다
-        search.MouseEnter += (_, _) => { if (search.Focused && !drop.Visible) ShowDrop(); };
-        search.TextChanged += (_, _) => { if (search.Focused && ActiveForm == this) ShowDrop(); };
-        search.LostFocus += (_, _) => BeginInvoke(HideDropIfLeft);
-        Deactivate += (_, _) => BeginInvoke(HideDropIfLeft);
-        search.KeyDown += (_, e) =>
-        {
-            if (e.KeyCode == Keys.Enter)
-            {
-                e.SuppressKeyPress = true;
-                if (drop.Selected is string pick) search.Text = pick;
-                Search(SiteMenu.InfoPath);
-            }
-            else if (e.KeyCode == Keys.Escape)
-            {
-                e.SuppressKeyPress = true;
-                if (drop.Visible) drop.Hide(); else search.Clear();
-            }
-            else if (e.KeyCode is Keys.Down or Keys.Up)
-            {
-                e.Handled = true;
-                if (!drop.Visible) ShowDrop(); else drop.Step(e.KeyCode == Keys.Down ? 1 : -1);
-            }
-        };
-        // 🔍 글자는 파란 컬러 그림으로 나와서 튀므로, 돋보기를 글씨색으로 직접 그린다
-        var searchIcon = UI.Button(" ", "캐릭터정보 검색 (Enter)", () => Search(SiteMenu.InfoPath), sc);
-        searchIcon.Font = OwnFont(new Font("Segoe UI Emoji", 10f * UI.Z));
-        searchIcon.Paint += (_, e) => DrawMagnifier(e.Graphics, searchIcon.ClientRectangle, UI.Sub);
-        searchIcon.Padding = new Padding(S(2));
-        searchIcon.Location = new Point(searchBox.Width - S(34), (searchBox.Height - searchIcon.PreferredSize.Height) / 2);
-        searchBox.Controls.Add(search);
-        searchBox.Controls.Add(searchIcon);
-        searchBox.Click += (_, _) => search.Focus();
-        search.GotFocus += (_, _) => searchBox.Invalidate();
-        search.LostFocus += (_, _) => searchBox.Invalidate();
+        // 닉네임 검색칸 + 최근 검색 목록 (여닫는 규칙은 SearchBox 안에 모아 둠)
+        searchBox = new SearchBox(this, settings, sc) { Margin = new Padding(S(10), 0, S(4), 0) };
+        searchBox.Submit += () => Search(SiteMenu.InfoPath);
+        searchBox.ListVisibleChanged += v => menusOpen = Math.Max(0, menusOpen + (v ? 1 : -1));
         right.Controls.Add(searchBox);
 
         // 설정 아이콘 왼쪽: 전체 알림 켜기·끄기 (끄면 각 알림 스위치는 그대로 두고 아무 알림도 세지 않는다)
@@ -469,7 +396,7 @@ public class BarForm : Form
     {
         var name = args.FirstOrDefault(a => !a.StartsWith("--"));
         if (name == null) return;
-        search.Text = name;
+        searchBox.Value = name;
         Search(args.Contains("--boss") ? SiteMenu.BossCutPath : SiteMenu.InfoPath);
     }
 
@@ -487,30 +414,20 @@ public class BarForm : Form
     /// <summary>검색칸의 닉네임. 비어 있으면 별표한 캐릭터.</summary>
     string NameOrStar()
     {
-        var name = search.Text.Trim();
+        var name = searchBox.Value.Trim();
         return name.Length > 0 ? name : (settings.StarNick ?? "").Trim();
     }
-
-    System.Windows.Forms.Timer? searchFlash; // 닉네임 없이 검색하면 검색칸 색을 잠깐 바꿨다 되돌린다
 
     void Search(string path)
     {
         var name = NameOrStar();
         if (name.Length == 0)
         {
-            search.Focus();
-            searchBox.BackColor = UI.T(Color.FromArgb(255, 240, 230));
-            // 타이머 하나를 다시 쓴다. 다시 누르면 처음부터 0.4초를 센다
-            if (searchFlash == null)
-            {
-                searchFlash = new System.Windows.Forms.Timer { Interval = 400 };
-                searchFlash.Tick += (_, _) => { searchFlash.Stop(); searchBox.BackColor = UI.Back; };
-            }
-            searchFlash.Stop();
-            searchFlash.Start();
+            searchBox.FocusBox();
+            searchBox.Flash(); // 닉네임 없이 검색하면 검색칸 색을 잠깐 바꿨다 되돌린다
             return;
         }
-        drop.Hide();
+        searchBox.CloseList();
         settings.AddRecent(name);
         settings.Save();
 
@@ -584,6 +501,7 @@ public class BarForm : Form
             BeginInvoke(() => DisposeMenu(cms));
             return;
         }
+        searchBox.CloseList(); // 메뉴를 열면 검색 목록은 닫는다
         cms.Opened += (_, _) => menusOpen++;
         cms.Closed += (_, e) =>
         {
@@ -750,8 +668,7 @@ public class BarForm : Form
         userHidden = false;
         keepShown = !Game.Running();
         Activate();
-        search.Focus();
-        search.SelectAll();
+        searchBox.FocusBox(selectAll: true);
         if (settings.JanusChanged) BeginInvoke(JanusNotice);
     }
 
@@ -954,7 +871,7 @@ public class BarForm : Form
         pendant = new PendantCheck(settings, janus, sc);
         study = new StudyRun(settings, sc);
         clock =new ClockForm(settings, sc);
-        search.Focus();
+        searchBox.FocusBox();
         keepTop.Tick += (_, _) => StayOnTop();
         keepTop.Start();
         MakePeek();
@@ -1160,32 +1077,6 @@ public class BarForm : Form
     readonly System.Windows.Forms.Timer foldTimer = new() { Interval = 15 };
     Panel? peek;
 
-    [DllImport("imm32.dll")] static extern bool ImmAssociateContextEx(IntPtr hWnd, IntPtr hIMC, uint flags);
-    [DllImport("imm32.dll")] static extern IntPtr ImmGetContext(IntPtr hWnd);
-    [DllImport("imm32.dll")] static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
-    [DllImport("imm32.dll")] static extern bool ImmGetConversionStatus(IntPtr hIMC, out uint conv, out uint sent);
-    [DllImport("imm32.dll")] static extern bool ImmSetConversionStatus(IntPtr hIMC, uint conv, uint sent);
-    bool? imeHangul; // 검색칸에서 마지막으로 쓰던 상태 (모르면 건드리지 않음)
-
-    void ImeRemember(IntPtr h)
-    {
-        var c = ImmGetContext(h);
-        if (c == IntPtr.Zero) return;
-        if (ImmGetConversionStatus(c, out uint conv, out _)) imeHangul = (conv & 1) != 0; // IME_CMODE_NATIVE
-        ImmReleaseContext(h, c);
-    }
-
-    void ImeRestore(IntPtr h)
-    {
-        ImmAssociateContextEx(h, IntPtr.Zero, 0x10); // IACE_DEFAULT: 기본 입력기를 다시 붙인다
-        if (imeHangul is not bool want) return;
-        var c = ImmGetContext(h);
-        if (c == IntPtr.Zero) return;
-        if (ImmGetConversionStatus(c, out uint conv, out uint sent) && ((conv & 1) != 0) != want)
-            ImmSetConversionStatus(c, want ? conv | 1 : conv & ~1u, sent);
-        ImmReleaseContext(h, c);
-    }
-
     bool InUse()
     {
         var cur = Cursor.Position;
@@ -1196,7 +1087,7 @@ public class BarForm : Form
         if (shown >= 1) vis.Inflate(S(6), S(6));
         if (vis.Contains(cur)) return true;
         if (openMega != null || menusOpen > 0) return true;
-        if (ContainsFocus && search.Focused && search.TextLength > 0) return true; // 닉네임을 치는 중
+        if (ContainsFocus && searchBox.Typing) return true; // 닉네임을 치는 중
         // 바에서 띄운 소리 조절기·곡 목록 위에 마우스가 있으면 쓰는 중
         foreach (Form f in Application.OpenForms)
             if (f.Visible && f is VolumeDial or MusicPicker && f.Bounds.Contains(cur)) return true;
@@ -1318,28 +1209,5 @@ public class BarForm : Form
                 if (f != this && f is not WebWindow && f is not UpdateWindow && f.Owner is not WebWindow) f.Close();
         }
         base.OnFormClosed(e);
-    }
-
-    static void DrawMagnifier(Graphics g, Rectangle r, Color c)
-    {
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        float s = Math.Min(r.Width, r.Height) * 0.62f;
-        float x = r.X + (r.Width - s) / 2f, y = r.Y + (r.Height - s) / 2f;
-        float d = s * 0.66f, w = Math.Max(1.6f, s / 8f);
-        using var pen = new Pen(c, w) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        g.DrawEllipse(pen, x, y, d, d);
-        float k = d * 0.85f; // 원 오른쪽 아래에서 손잡이가 나간다
-        g.DrawLine(pen, x + k, y + k, x + s, y + s);
-    }
-
-    void PaintSearchBorder(object? sender, PaintEventArgs e)
-    {
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        var r = new Rectangle(0, 0, searchBox.Width - 1, searchBox.Height - 1);
-        int d = S(10);
-        using var path = UI.RoundRect(r, d / 2f); // 지름이 d가 되는 반지름
-        using var pen = new Pen(search.Focused ? UI.Accent : UI.Line, Math.Max(1, S(1)));
-        g.DrawPath(pen, path);
     }
 }

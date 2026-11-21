@@ -11,11 +11,15 @@ sealed class RecentDrop : Form
 {
     readonly Settings st;
     readonly float sc;
-    readonly Font font, small;
+    readonly Font font;
+    readonly SolidBrush hotBack = new(UI.SoftAccent); // 테마를 바꾸면 바와 함께 새로 만들어지므로 한 번만 만든다
+    readonly int starW;                                // ★ 칸 너비 (글꼴이 그대로라 한 번만 잰다)
     readonly ToolTip tip = new() { InitialDelay = 0, ShowAlways = true };
     readonly List<string> names = new();
+    string lastFilter = "";
     bool hasClear, empty;
-    int hot = -1;
+    int hot = -1;  // 마우스가 가리킨 줄
+    int sel = -1;  // 위아래 키로 고른 줄 (엔터는 이것만 쓴다)
     bool hotStar, tipOn;
 
     public Action<string>? PickInfo;
@@ -41,7 +45,7 @@ sealed class RecentDrop : Form
         AutoScaleMode = AutoScaleMode.None;
         BackColor = UI.Back;
         font = new Font("맑은 고딕", 10f * UI.Z);
-        small = new Font("맑은 고딕", 8.5f * UI.Z);
+        starW = TextRenderer.MeasureText("★", font).Width + S(14);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
     }
 
@@ -86,6 +90,9 @@ sealed class RecentDrop : Form
         hasClear = filter.Length == 0 && st.Recent.Count > 0;
         if (RowCount == 0) { Hide(); return; }
         if (hot >= RowCount) hot = -1;
+        // 거르는 글이 바뀌면 줄 순서도 바뀌므로 키로 고른 줄은 풀어 준다
+        if (filter != lastFilter || sel >= names.Count) sel = -1;
+        lastFilter = filter;
 
         Bounds = new Rectangle(at, new Size(width, RowTop(RowCount - 1) + RowH + Pad));
         if (!Visible) Show(Owner);
@@ -96,17 +103,16 @@ sealed class RecentDrop : Form
     public void Step(int d)
     {
         if (empty || names.Count == 0) return;
-        hot = hot < 0 ? (d > 0 ? 0 : names.Count - 1) : (hot + d + names.Count) % names.Count;
-        hotStar = false;
+        sel = sel < 0 ? (d > 0 ? 0 : names.Count - 1) : (sel + d + names.Count) % names.Count;
         Invalidate();
     }
 
-    /// <summary>화살표로 고른 캐릭터 (없으면 null)</summary>
-    public string? Selected => Visible && hot >= 0 && hot < names.Count ? names[hot] : null;
+    /// <summary>화살표로 고른 캐릭터 (없으면 null). 마우스로 가리키기만 한 줄은 넣지 않는다</summary>
+    public string? Selected => Visible && sel >= 0 && sel < names.Count ? names[sel] : null;
 
     public new void Hide()
     {
-        hot = -1;
+        hot = sel = -1;
         if (tipOn) { tipOn = false; tip.Hide(this); }
         if (Visible) base.Hide();
     }
@@ -116,12 +122,15 @@ sealed class RecentDrop : Form
 
     int RowTop(int i) => Pad + i * RowH + (hasClear && i == ClearIdx ? S(9) : 0);
     Rectangle RowRect(int i) => new(S(4), RowTop(i), Width - S(8), RowH);
-    int StarW => TextRenderer.MeasureText("★", font).Width + S(14);
+    int StarW => starW;
 
+    // 줄 높이가 모두 같으니 세로 위치로 바로 몇 번째 줄인지 구한다 (기록 지우기 줄만 틈이 있어 따로 본다)
     int HitRow(Point p)
     {
-        for (int i = 0; i < RowCount; i++) if (RowRect(i).Contains(p)) return empty ? -1 : i;
-        return -1;
+        if (empty || p.X < S(4) || p.X >= Width - S(4) || p.Y < Pad) return -1;
+        if (hasClear && RowRect(ClearIdx).Contains(p)) return ClearIdx;
+        int i = (p.Y - Pad) / RowH;
+        return i < names.Count ? i : -1;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -187,12 +196,11 @@ sealed class RecentDrop : Form
             return;
         }
 
-        using var hotBack = new SolidBrush(UI.SoftAccent);
         for (int i = 0; i < names.Count; i++)
         {
             var r = RowRect(i);
-            bool isHot = i == hot;
-            if (isHot) using (var path = UI.RoundRect(r, S(7))) g.FillPath(hotBack, path);
+            bool isHot = i == hot || (hot < 0 && i == sel); // 마우스가 목록 밖이면 키로 고른 줄을 칠한다
+            if (isHot || i == sel) using (var path = UI.RoundRect(r, S(7))) g.FillPath(hotBack, path);
 
             var n = names[i];
             bool starred = Starred(n);
@@ -218,7 +226,7 @@ sealed class RecentDrop : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { font.Dispose(); small.Dispose(); tip.Dispose(); }
+        if (disposing) { font.Dispose(); hotBack.Dispose(); tip.Dispose(); }
         base.Dispose(disposing);
     }
 }

@@ -274,6 +274,9 @@ public class Settings
         return s;
     }
 
+    // 저장할 때마다 새로 만들면 .NET이 변환 준비를 매번 처음부터 다시 하므로 하나를 계속 쓴다
+    static readonly JsonSerializerOptions SaveJson = new() { WriteIndented = true };
+
     public void Save()
     {
         // 같은 폴더의 임시 파일에 쓴 뒤 바꿔치기해서, 쓰다 끊겨도 기존 설정이 깨지지 않게 한다
@@ -282,7 +285,7 @@ public class Settings
         {
             Directory.CreateDirectory(Dir);
             File.WriteAllText(tmp,
-                JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+                JsonSerializer.Serialize(this, SaveJson));
             File.Move(tmp, FilePath, true);
         }
         catch (Exception ex)
