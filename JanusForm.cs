@@ -1319,14 +1319,14 @@ sealed class JanusForm : Form, IMessageFilter
     /// 단일 알림(once)은 '반복 시간' 줄이 없고 시간은 분·초만 쓴다.</summary>
     Card MakeRepeatCard(int x, int y, int w, int i, bool once = false)
     {
-        // 두 칸은 값 이름이 같아 아래에서 한 번에 다룬다
+        // 두 칸은 값 이름이 같아 아래에서 한 번에 다룬다. 값은 once로 골라 읽는다 (rs?.Name ?? os!.Name 꼴은 이름이 비어 있으면 없는 os를 읽어 터진다)
         RepeatSlot? rs = once ? null : st.Repeats[i];
         OnceSlot? os = once ? st.Onces[i] : null;
         int code = (once ? OnceId : RepeatId) + i;
         string defName = once ? $"단일 알림 {i + 1}" : $"반복 알림 {i + 1}";
-        int Argb() => rs?.Argb ?? os!.Argb;
+        int Argb() => (once ? os!.Argb : rs!.Argb);
         void SetArgb(int v) { if (rs != null) rs.Argb = v; else os!.Argb = v; }
-        string Title() => rs?.Title(i) ?? os!.Title(i);
+        string Title() => (once ? os!.Title(i) : rs!.Title(i));
         void Cancel() { if (once) watch.CancelOnce(i); else watch.CancelRepeat(i); }
         void SetOn(bool v) { if (rs != null) rs.On = v; else os!.On = v; }
         if (Array.IndexOf(RepeatSlot.Palette, Argb()) < 0) { SetArgb(RepeatSlot.Palette[2]); st.Save(); }
@@ -1337,12 +1337,12 @@ sealed class JanusForm : Form, IMessageFilter
         var dot = new Label { Text = "●", Font = F(9), AutoSize = true, Location = new Point(ip, cy + S(3)) };
         // 이름 = 알림에 뜨는 글: 누르면 그 자리에서 바꾼다 (비우면 기본 이름 "반복 알림 1")
         var name = new Label { Text = Title(), Font = F(11, FontStyle.Bold), AutoSize = true, Location = new Point(ip + S(18), cy), Cursor = Cursors.IBeam };
-        var sw = new Toggle { On = rs?.On ?? os!.On, Size = new Size(S(40), S(22)) };
+        var sw = new Toggle { On = (once ? os!.On : rs!.On), Size = new Size(S(40), S(22)) };
         sw.Location = new Point(w - ip - sw.Width, cy + S(1));
         sw.Changed += v => { SetOn(v); if (!v) Cancel(); st.Save(); UpdateStatus(); };
         offAll.Add(() => { if (sw.On) { sw.On = false; SetOn(false); Cancel(); } });
         var (pen, box) = MakeNameEditor(name, ip, cy, sw.Left, defName, 20,
-            Title, () => rs?.Name ?? os!.Name, v => { if (rs != null) rs.Name = v; else os!.Name = v; }, refreshNavs: true);
+            Title, () => (once ? os!.Name : rs!.Name), v => { if (rs != null) rs.Name = v; else os!.Name = v; }, refreshNavs: true);
         card.Controls.AddRange(new Control[] { dot, name, pen, box, sw });
         cy += S(38);
 
@@ -1351,8 +1351,8 @@ sealed class JanusForm : Form, IMessageFilter
         // 엔터 기다리기 · 조합 키 (일반 버프와 같은 방식)
         foreach (var (label, on, set, combo) in new (string, bool, Action<bool>, bool)[]
         {
-            ("엔터를 누르면 엔터 시간부터 세기", rs?.WaitEnter ?? os!.WaitEnter, v => { if (rs != null) rs.WaitEnter = v; else os!.WaitEnter = v; }, false),
-            ("조합 키 누른 채로 쓰기", rs?.Combo ?? os!.Combo, v => { if (rs != null) rs.Combo = v; else os!.Combo = v; }, true),
+            ("엔터를 누르면 엔터 시간부터 세기", (once ? os!.WaitEnter : rs!.WaitEnter), v => { if (rs != null) rs.WaitEnter = v; else os!.WaitEnter = v; }, false),
+            ("조합 키 누른 채로 쓰기", (once ? os!.Combo : rs!.Combo), v => { if (rs != null) rs.Combo = v; else os!.Combo = v; }, true),
         })
         {
             card.Controls.Add(RowLabel(label, ip, cy - S(2)));
