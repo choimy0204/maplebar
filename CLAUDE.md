@@ -5,6 +5,7 @@
 - 기술: .NET 10 WinForms + WebView2, 단일 프로젝트 `MapleBar.csproj`
 - 저장소: https://github.com/choimy0204/maplebar (브랜치 main)
 - 홈페이지: `docs/` (GitHub Pages), 공지: `docs/dev.json`
+- 디자인(색·부품·화면별 모양): [DESIGN.md](DESIGN.md). 화면을 만들거나 고치기 전에 읽는다.
 
 ## 일하는 방식
 
