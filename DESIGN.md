@@ -51,6 +51,66 @@
 | `GooWindow` 계열 | ChipFloat.cs | 떼어 낸 알림 칩. 여러 판이 붙으면 한 몸처럼 보이고, 떼고 붙일 때 움직임이 있다 |
 | `RoundMenuRenderer` / `CardMenuRenderer` | UI.cs | 톱니 메뉴 등 둥근 메뉴 |
 
+## 어디에 있나 (모양 → 파일)
+
+고치고 싶은 모양을 찾아 그 파일을 연다.
+
+### 칸 · 버튼 · 작은 부품
+- 글 입력 칸 → `TextField.cs`
+- 숫자 칸 (˄ ˅ 붙은 칸) → `NumBox.cs`
+- 글 입력 칸 + 펼쳐지는 목록 (콤보박스, 바의 닉네임 검색칸) → `SearchBox.cs` (칸) + `RecentDrop.cs` (아래 목록)
+- 둥근 버튼 → `UI.cs` (`RoundLabel`, `UI.Button`)
+- 둥근 메뉴 (톱니 메뉴, 오른쪽 클릭 메뉴) → `UI.cs` (`RoundMenuRenderer`, `CardMenuRenderer`)
+- 색 (밝은·다크 모드) → `UI.cs`
+- 둥근 직사각형 스위치 (바의 종 스위치) → `RectSwitch.cs`
+- 설정 창의 작은 켜기/끄기 스위치 → `JanusForm.cs` 안 `Toggle`
+- 둥근 테두리 카드 → `JanusForm.cs` 안 `Card`
+- 얇은 스크롤 막대 → `SlimScroll.cs`
+- 예/아니요 질문 창 → `AskBox.cs`
+- 소리 고르기 줄 (`< 소리 이름 ▾ >`) → `SoundPickBox.cs`
+- 투명도 막대 (사이트 창 제목 줄) → `AlphaSlider.cs`
+
+### 바
+- 바 전체 (메뉴 줄, 끌어서 순서 바꾸기) → `BarForm.cs`
+- 바 아래로 넓게 펼쳐지는 메뉴 → `MegaMenuForm.cs`
+- 남은 시간 칩 → `TimerChip.cs`
+- 떼어 둔 칩과 붙고 떨어지는 움직임 → `ChipFloat.cs`
+- 바를 끌 때 보이는 가운데 세로선 → `DragGuide.cs`
+- 바 아래 새 글 알림 띠 → `NoticeStrip.cs`
+- 뮤직 칸 꺼내기 (물방울 움직임) → `MusicFloat.cs` + `MusicDock.Draw.cs`
+- 가사 카드 → `LyricsCard.cs`
+
+### 설정 창
+- 알림 설정 창 (3페이지, 반복·단일 알림, 프리셋) → `JanusForm.cs`
+- 프로그램 설정 창 (탭) → `ProgramForm.cs`
+- 설정 관리 창 (저장·불러오기) → `CfgForm.cs`
+- 자기계발 설정 창 → `StudyForm.cs`
+
+### 게임 화면 위에 뜨는 것
+- 야누스 화면 테두리 알림 → `JanusAlert.cs`
+- 정펜 미착용 창 → `PendantAsk.cs`
+- 작은 시계 → `ClockForm.cs`
+- 자기계발 카드 → `StudyCard.cs`
+
+### 도구
+- 계산기 → `CalcForm.cs`
+- 계산기 안 스크립트 화면 → `CalcForm.Script.cs`
+- 메모 → `MemoForm.cs`
+
+### 사이트 창 · 웹 화면
+- 사이트 창 (얇은 손잡이, 제목 줄) → `WebWindow.cs` (+ `.Guard` `.Live` `.Music` `.Webtoon` `.YouTube`)
+- 웹 화면에 넣는 다크 모드·모양 고치기 → `WebScripts.cs`
+- 우리 경매장 화면 (조건 칸, 남은 검색, 대기 시간, 결과) → `SiteLinks.cs` 안 `Nexon.AuctionUiScript`
+- 경매장 결과 저장·불러오기 → `AuctionSaves.cs` (화면 쪽은 `WebWindow.cs`)
+- 헥사 강화 계산기 화면 → `HexaCalc.cs`
+
+### 그 밖의 창
+- 개발자 정보·공지 창 → `DevInfo.cs`
+- 패치노트 창 → `PatchNotes.cs`
+- 업데이트 창 → `UpdateWindow.cs`
+- 업데이트 알림 (오른쪽 아래) → `UpdateToast.cs`
+- 홈페이지 → `docs/index.html`
+
 ## 화면별 디자인
 
 ### 바
