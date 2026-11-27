@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Security;
 using System.Security.Principal;
 using System.Text;
@@ -114,15 +114,31 @@ static class AutoStart
               </Actions>
             </Task>
             """;
-        // 매번 다른 이름으로 만들고, schtasks가 읽는 동안 다른 프로그램이 못 고치게 열어 둔다
+        // 매번 다른 이름으로 만들고, schtasks가 읽는 동안 다른 프로그램이 못 고치게 열어 둔다.
+        // 쓰기 핸들이 열려 있으면 schtasks가 공유 위반으로 파일을 못 연다.
+        // 그래서 다 쓰고 닫은 뒤, 읽기 전용(쓰기 공유 안 함)으로 다시 열어 둔다.
         string file = Path.Combine(Path.GetTempPath(), "MapleBar_" + Guid.NewGuid().ToString("N") + ".xml");
         try
         {
-            using var fs = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
             var bytes = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
-            fs.Write(bytes);
-            fs.Flush(true);
-            return Run("/Create", "/TN", TaskName, "/XML", file, "/F").code == 0;
+            using (var w = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                w.Write(bytes);
+                w.Flush(true);
+            }
+            using var hold = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+            // 닫았다 다시 여는 사이에 바뀌었으면 등록하지 않는다
+            var now = new byte[bytes.Length + 1];
+            int n = 0, r;
+            while (n < now.Length && (r = hold.Read(now, n, now.Length - n)) > 0) n += r;
+            if (n != bytes.Length || !now.AsSpan(0, n).SequenceEqual(bytes))
+            {
+                Log.Write("autostart", "작업 파일이 바뀌어 있어 등록하지 않음");
+                return false;
+            }
+            var (code, output) = Run("/Create", "/TN", TaskName, "/XML", file, "/F");
+            if (code != 0) Log.Write("autostart", $"작업 등록 실패 (code {code}): {output.Trim()}");
+            return code == 0;
         }
         finally { try { File.Delete(file); } catch { } }
     }
