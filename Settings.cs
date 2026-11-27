@@ -12,6 +12,7 @@ public class Settings
     public int? BarX { get; set; }
     public int? BarY { get; set; }
     public int? BarCX { get; set; } // 바의 가운데 x (폭이 바뀌어도 자리가 밀리지 않게)
+    public float? BarZoom { get; set; } // 바 크기 배율. 바 양 끝을 끌어서 바꾼다 (없으면 처음 켤 때 화면에 맞춰 한 번 정한다)
     // 게임 창에 붙어 있을 때의 자리: 게임 화면 가로 가운데·위쪽 끝에서 얼마나 떨어졌는지 (게임 화면 폭에 대한 비율)
     public double? GameDX { get; set; }
     public double? GameDY { get; set; }

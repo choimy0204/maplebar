@@ -38,9 +38,14 @@ public class BarForm : Form
 
     public BarForm()
     {
-        // Windows 배율(DPI)에 더해 모니터 가로 해상도에 맞춰 크기와 글꼴을 같이 키우거나 줄인다
-        // 메이플이 켜져 있으면 게임 화면 가로를, 없으면 모니터 가로를 기준으로 한다
-        UI.Z = Game.Area() is Rectangle game ? Game.ZoomFor(game, DeviceDpi) : UI.FitZoom(Screen.PrimaryScreen!, DeviceDpi);
+        // 바 크기(배율)는 사용자가 바 양 끝을 끌어서 정한다. 해상도가 바뀌어도 저절로 바꾸지 않는다.
+        // 처음 한 번만 화면에 알맞은 크기를 정해 둔다 (메이플이 켜져 있으면 게임 화면 가로, 없으면 모니터 가로 기준)
+        if (settings.BarZoom is not float bz)
+        {
+            bz = Game.Area() is Rectangle game ? Game.ZoomFor(game, DeviceDpi) : UI.FitZoom(Screen.PrimaryScreen!, DeviceDpi);
+            settings.BarZoom = (float)Math.Round(bz, 2); settings.Save();
+        }
+        UI.Z = Math.Clamp(bz, MinZoom, MaxZoom);
         sc = DeviceDpi / 96f * UI.Z;
         UI.Dark = settings.DarkMode; // 이 바와 앞으로 여는 창이 쓸 색
         Text = "메이플 바";
@@ -62,6 +67,8 @@ public class BarForm : Form
         Controls.Add(right);
         Controls.Add(filler);
         filler.BringToFront();
+        sizeL = MakeSizeGrip(DockStyle.Left, -1);
+        sizeR = MakeSizeGrip(DockStyle.Right, 1);
 
         // ── 왼쪽: 이동 손잡이, 로고, 메뉴 ──
         var grip = new Label
@@ -743,15 +750,61 @@ public class BarForm : Form
     {
         if (dragging || !Visible || WindowState == FormWindowState.Minimized || musicDock?.Floating == true && MouseButtons != MouseButtons.None) return;
         if (Game.Area() is not Rectangle g) return;
-        // 게임 해상도가 바뀌면 크기를 다시 잡기 위해 바를 새로 띄운다 (쓰는 중이면 손을 뗄 때까지 기다린다)
-        if (Math.Abs(Game.ZoomFor(g, DeviceDpi) - UI.Z) > 0.03f)
-        {
-            if (!InUse() && MouseButtons == MouseButtons.None) { Program.RestartRequested = true; Close(); }
-            return;
-        }
         if (!settings.GameFollow) return;
         var p = GameAnchor(g);
         if (p != Location) Location = p;
+    }
+
+    // ── 바 크기: 양 끝을 끌어서 바꾼다 ──
+    const float MinZoom = 0.6f, MaxZoom = 2f;
+    readonly Panel sizeL, sizeR;
+    SizeGhost? sizeGhost;
+
+    /// <summary>바 끝의 크기 손잡이. 끄는 동안 새 크기를 테두리로 보여 주고, 놓으면 그 크기로 바를 다시 만든다.
+    /// 바는 가운데를 기준으로 커지므로 끄는 쪽 끝이 마우스를 따라오게 양쪽으로 같은 만큼 늘린다.</summary>
+    Panel MakeSizeGrip(DockStyle dock, int dir)
+    {
+        var g = new Panel { Dock = dock, Width = Math.Max(4, S(6)), BackColor = UI.Back, Cursor = Cursors.SizeWE };
+        int startX = 0;
+        float z = UI.Z;
+        bool down = false;
+        g.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            down = true; startX = Cursor.Position.X; z = UI.Z;
+        };
+        g.MouseMove += (_, _) =>
+        {
+            if (!down) return;
+            int grow = dir * (Cursor.Position.X - startX);
+            z = Math.Clamp(UI.Z * (Width + 2 * grow) / Width, MinZoom, MaxZoom);
+            float k = z / UI.Z;
+            int w = (int)(Width * k), h = (int)(Height * k);
+            sizeGhost ??= new SizeGhost();
+            sizeGhost.Place(new Rectangle(Left + Width / 2 - w / 2, Top, w, h), (int)Math.Round(z * 100));
+        };
+        void End(bool apply)
+        {
+            if (!down) return;
+            down = false;
+            sizeGhost?.Close(); sizeGhost = null;
+            if (apply) ApplyBarZoom(z);
+        }
+        g.MouseUp += (_, _) => End(true);
+        g.MouseCaptureChanged += (_, _) => { if (MouseButtons == MouseButtons.None) End(true); else End(false); };
+        Controls.Add(g);
+        g.SendToBack(); // 가장 바깥 끝에 붙인다
+        return g;
+    }
+
+    /// <summary>바 크기를 저장하고 바와 작은 창을 새 크기로 다시 만든다 (다크 모드를 바꿀 때와 같은 길)</summary>
+    void ApplyBarZoom(float z)
+    {
+        z = (float)Math.Round(z, 2);
+        if (Math.Abs(z - UI.Z) < 0.02f) return;
+        settings.BarZoom = z; settings.Save();
+        Program.RestartRequested = true;
+        BeginInvoke(Close); // 마우스 처리를 끝낸 뒤에 닫는다
     }
 
     bool fitPending;
@@ -760,7 +813,7 @@ public class BarForm : Form
         int rowH = ClientSize.Height - Padding.Vertical;
         foreach (Control c in left.Controls) UI.CenterV(c, rowH);
         foreach (Control c in right.Controls) UI.CenterV(c, rowH);
-        int w = left.PreferredSize.Width + right.PreferredSize.Width + S(24) + Padding.Horizontal;
+        int w = left.PreferredSize.Width + right.PreferredSize.Width + sizeL.Width + sizeR.Width + S(24) + Padding.Horizontal;
         if (w == Width) return;
         // 폭이 바뀌어도 바의 가운데는 그대로 둔다
         if (IsHandleCreated) SetBounds(Left - (w - Width) / 2, Top, w, Height);

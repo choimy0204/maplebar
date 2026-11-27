@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 
 using static MapleBar.Native;
@@ -62,6 +62,9 @@ static class KeyHook
 
     static readonly ConcurrentQueue<Press> queue = new();
     static readonly bool[] down = new bool[256];
+    static readonly long[] downSeen = new long[256]; // 그 키의 누름(꾹 누를 때 반복 포함)이 마지막으로 온 때
+    // 꾹 누르면 길어도 1초 안에 반복 누름이 온다. 그보다 오래 아무것도 없다가 오면 뗀 신호를 놓친 것이니 새로 누른 것으로 본다
+    const long StuckMs = 1500;
     static IntPtr hook;
     static HookProc? proc; // 가비지 수집으로 사라지지 않게 잡아 둔다
 
@@ -140,7 +143,10 @@ static class KeyHook
             if (msg == 0x100 || msg == 0x104) // 누름
             {
                 // 꾹 누르고 있을 때 반복해서 오는 것은 한 번으로 센다
-                if (!down[vk])
+                long t = Environment.TickCount64;
+                bool stuck = down[vk] && t - downSeen[vk] > StuckMs;
+                downSeen[vk] = t;
+                if (!down[vk] || stuck)
                 {
                     bool combo = IsDown(ComboVk); // 이 키를 누르기 전에 조합 키가 눌려 있었는지
                     int mods = (IsDown(16) ? 1 : 0) | (IsDown(17) ? 2 : 0) | (IsDown(18) ? 4 : 0);

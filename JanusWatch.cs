@@ -34,7 +34,8 @@ sealed class JanusWatch
         st.JanusCycleSec = c; st.Save();
         return c;
     }
-    const double IgnoreSec = 50;     // 첫 설치 후 이 시간 안에 누른 건 추가 설치로 보고 무시
+    const double IgnoreSec = 50;     // 첫 설치 후 이 시간 안에, 이어서 누른 건 추가 설치로 보고 무시
+    const double BurstSec = 10;      // 앞서 누른 지 이 시간 안이면 "이어서 누른 것". 그보다 쉬었다 누르면 다시 깐 것으로 센다
     const double ReinstallSec = 15;  // 남은 시간이 이만큼 이하일 때 누르면 50초 안이어도 다시 깐 것으로 센다
     /// <summary>알림 주기가 0이면 세지도 알리지도 않는다.</summary>
     public static bool Endless(Settings st) => Cycle(st) <= 0;
@@ -67,6 +68,7 @@ sealed class JanusWatch
         st.JanusStart = null; st.Save();
     }
     DateTime? lastInstall;           // 마지막으로 센 설치 (50초 안의 추가 설치는 세지 않음)
+    DateTime? lastJanusPress;        // 게임에서 마지막으로 누른 설치 키 (센 것이든 무시한 것이든)
 
     public DateTime? LastKey { get; private set; }
     public string? LastKind { get; private set; }
@@ -80,7 +82,7 @@ sealed class JanusWatch
         // 꺼져 있는 동안 끝난 야누스는 조용히 지운다. 꺼져 있는 동안 나온 룬은 알림 없이 "나옴"으로 보여 준다
         var now = DateTime.Now;
         if (endsAt is DateTime je && now >= je) ClearJanus(je);
-        lastInstall = st.JanusStart;
+        lastInstall = lastJanusPress = st.JanusStart;
         runeAlerted = runeAt is DateTime re && now >= re.AddSeconds(RuneAlertLagSec);
         // 꺼져 있는 동안 버프가 끝난 지 오래면 조용히 지운다 (방금 끝났으면 켜자마자 알린다)
         for (int i = 0; i < BuffSlots; i++)
@@ -398,15 +400,22 @@ sealed class JanusWatch
             return;
         }
 
-        // 여러 개를 이어서 설치하는 동안(첫 설치 후 50초)은 새 설치로 세지 않는다.
-        // 단, 꺼지기 직전(남은 시간 15초 이내)에 깐 건 다시 깐 것으로 센다 (지속시간이 짧으면 50초 안에 꺼지기 직전이 온다)
-        bool nearEnd = endsAt is DateTime ne && (ne - now).TotalSeconds <= ReinstallSec;
-        if (janus && inGame && (nearEnd || !(lastInstall is DateTime li && (now - li).TotalSeconds < IgnoreSec)))
+        // 여러 개를 이어서 설치하는 동안(첫 설치 후 50초 안, 앞서 누른 지 10초 안)은 새 설치로 세지 않는다.
+        // 10초 넘게 쉬었다 누른 건 다시 깐 것으로 센다 (처음 누른 게 안 나갔거나 잘못 깔아 다시 깐 경우. 예전 기준으로 일찍 울리지 않게)
+        // 꺼지기 직전(남은 시간 15초 이내)에 깐 것도 다시 깐 것으로 센다 (지속시간이 짧으면 50초 안에 꺼지기 직전이 온다)
+        if (janus && inGame)
         {
-            lastInstall = now;
-            LastKey = now; LastKind = "설치";
-            // 도는 중에 다시 깔면 그때부터 알림 주기를 새로 센다
-            if (!Endless(st)) { st.JanusStart = now; st.Save(); }
+            bool nearEnd = endsAt is DateTime ne && (ne - now).TotalSeconds <= ReinstallSec;
+            bool inWindow = lastInstall is DateTime li && (now - li).TotalSeconds < IgnoreSec;
+            bool burst = lastJanusPress is DateTime lp && (now - lp).TotalSeconds < BurstSec;
+            if (nearEnd || !inWindow || !burst)
+            {
+                lastInstall = now;
+                LastKey = now; LastKind = "설치";
+                // 도는 중에 다시 깔면 그때부터 알림 주기를 새로 센다
+                if (!Endless(st)) { st.JanusStart = now; st.Save(); }
+            }
+            lastJanusPress = now;
         }
 
         if (Endless(st))
@@ -467,14 +476,14 @@ sealed class JanusWatch
     /// <summary>바의 칩을 눌렀을 때: 세던 시간을 지운다.</summary>
     public void Stop() { poll.Stop(); poll.Dispose(); } // 끝낸 감시는 다시 켜지 않는다 (바를 새로 만들 때 새 감시가 생긴다)
     // 칸을 누르면 50초 무시 기록도 지운다 (잘못 누른 뒤 칸을 누르고 다시 깔면 바로 맞춰지게)
-    public void CancelJanus() { ClearJanus(DateTime.Now); lastInstall = null; }
+    public void CancelJanus() { ClearJanus(DateTime.Now); lastInstall = lastJanusPress = null; }
 
     bool alertsWereOn = true; // 처음부터 꺼져 있으면 첫 확인 때 남은 시간을 비운다
     /// <summary>세던 알림을 모두 멈춘다 (전체 알림을 끌 때). 칸마다 켜 둔 값은 바꾸지 않는다</summary>
     void StopAll()
     {
         ClearJanus(DateTime.Now);
-        realertAt = null; lastInstall = null;
+        realertAt = null; lastInstall = lastJanusPress = null;
         CancelRune(); arrowCount = 0; runeAlerted = false;
         CancelErda();
         for (int i = 0; i < BuffSlots; i++)
